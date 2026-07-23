@@ -13,19 +13,21 @@ from azure.cli.core.aaz import *
 
 @register_command(
     "elastic-san volume-group list",
-    is_preview=True,
 )
 class List(AAZCommand):
     """List Volume Groups.
 
     :example: List Volume Groups.
         az elastic-san volume-group list -g "rg" -e "san_name"
+
+    :example: List soft-deleted volume groups
+        az elastic-san volume-group list -g rg_name -e san_name --access-soft-deleted-resources True
     """
 
     _aaz_info = {
-        "version": "2023-01-01",
+        "version": "2025-09-01",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.elasticsan/elasticsans/{}/volumegroups", "2023-01-01"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.elasticsan/elasticsans/{}/volumegroups", "2025-09-01"],
         ]
     }
 
@@ -93,7 +95,7 @@ class List(AAZCommand):
         @property
         def url(self):
             return self.client.format_url(
-                "/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.ElasticSan/elasticSans/{elasticSanName}/volumeGroups",
+                "/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.ElasticSan/elasticSans/{elasticSanName}/volumegroups",
                 **self.url_parameters
             )
 
@@ -127,7 +129,7 @@ class List(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-01-01",
+                    "api-version", "2025-09-01",
                     required=True,
                 ),
             }
@@ -162,9 +164,10 @@ class List(AAZCommand):
             _schema_on_200 = cls._schema_on_200
             _schema_on_200.next_link = AAZStrType(
                 serialized_name="nextLink",
-                flags={"read_only": True},
             )
-            _schema_on_200.value = AAZListType()
+            _schema_on_200.value = AAZListType(
+                flags={"required": True},
+            )
 
             value = cls._schema_on_200.value
             value.Element = AAZObjectType()
@@ -173,7 +176,7 @@ class List(AAZCommand):
             _element.id = AAZStrType(
                 flags={"read_only": True},
             )
-            _element.identity = AAZObjectType()
+            _element.identity = AAZIdentityObjectType()
             _element.name = AAZStrType(
                 flags={"read_only": True},
             )
@@ -222,6 +225,9 @@ class List(AAZCommand):
             properties.encryption = AAZStrType()
             properties.encryption_properties = AAZObjectType(
                 serialized_name="encryptionProperties",
+            )
+            properties.enforce_data_integrity_check_for_iscsi = AAZBoolType(
+                serialized_name="enforceDataIntegrityCheckForIscsi",
             )
             properties.network_acls = AAZObjectType(
                 serialized_name="networkAcls",

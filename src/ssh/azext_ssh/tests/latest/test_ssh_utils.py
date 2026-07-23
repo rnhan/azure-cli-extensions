@@ -10,7 +10,7 @@ from azext_ssh import ssh_utils
 from azext_ssh import ssh_info
 
 
-class SSHUtilsTests(unittest.TestCase): 
+class SSHUtilsTests(unittest.TestCase):
     @mock.patch.object(ssh_utils, 'do_cleanup')
     @mock.patch.object(ssh_utils, '_check_ssh_logs_for_common_errors')
     @mock.patch.object(ssh_utils, 'get_ssh_client_path')
@@ -32,9 +32,9 @@ class SSHUtilsTests(unittest.TestCase):
         mock_call.return_value = 0
         mock_path.return_value = 'ssh'
         mock_call.return_value = ssh_process
-        mock_copy_env.return_value = {'var1':'value1', 'var2':'value2', 'var3':'value3'}
+        mock_copy_env.return_value = {'var1': 'value1', 'var2': 'value2', 'var3': 'value3'}
         expected_command = ['ssh', 'ip', '-l', 'user', '-i', 'priv', '-o', 'CertificateFile=\"cert\"', '-p', 'port', '-v', 'arg1', 'arg2', 'arg3']
-        expected_env = {'var1':'value1', 'var2':'value2', 'var3':'value3'}
+        expected_env = {'var1': 'value1', 'var2': 'value2', 'var3': 'value3'}
 
         ssh_utils.start_ssh_connection(op_info, True, True)
 
@@ -42,7 +42,7 @@ class SSHUtilsTests(unittest.TestCase):
         mock_call.assert_called_once_with(expected_command, stderr=mock.ANY, env=expected_env, encoding='utf-8')
         mock_read.assert_called_once_with(ssh_process, op_info, True, True)
         mock_cleanup.assert_called_once_with(True, True, False, 'cert', 'priv', 'pub')
- 
+
     @mock.patch.object(ssh_utils, 'do_cleanup')
     @mock.patch.object(ssh_utils, '_wait_to_delete_credentials')
     @mock.patch.object(ssh_utils, 'get_ssh_client_path')
@@ -64,9 +64,9 @@ class SSHUtilsTests(unittest.TestCase):
         mock_call.return_value = 0
         mock_path.return_value = 'ssh'
         mock_call.return_value = ssh_process
-        mock_copy_env.return_value = {'var1':'value1', 'var2':'value2', 'var3':'value3'}
+        mock_copy_env.return_value = {'var1': 'value1', 'var2': 'value2', 'var3': 'value3'}
         expected_command = ['ssh', 'ip', '-l', 'user', '-i', 'priv', '-o', 'CertificateFile=\"cert\"', '-p', 'port', 'arg1', 'arg2', 'arg3']
-        expected_env = {'var1':'value1', 'var2':'value2', 'var3':'value3'}
+        expected_env = {'var1': 'value1', 'var2': 'value2', 'var3': 'value3'}
 
         ssh_utils.start_ssh_connection(op_info, False, False)
 
@@ -74,7 +74,6 @@ class SSHUtilsTests(unittest.TestCase):
         mock_call.assert_called_once_with(expected_command, env=expected_env, encoding='utf-8')
         mock_wait.assert_called_once_with(ssh_process, op_info, False, False)
         mock_cleanup.assert_called_once_with(False, False, False, 'cert', 'priv', 'pub')
-
 
     @mock.patch.object(ssh_utils, 'do_cleanup')
     @mock.patch.object(ssh_utils, '_check_ssh_logs_for_common_errors')
@@ -84,7 +83,7 @@ class SSHUtilsTests(unittest.TestCase):
     @mock.patch('azext_ssh.custom.connectivity_utils.format_relay_info_string')
     @mock.patch('platform.system')
     def test_start_ssh_connection_arc_aad_windows(self, mock_platform, mock_relay_str, mock_call, mock_copy_env, mock_path, mock_read, mock_cleanup):
-        
+
         op_info = ssh_info.SSHSession("rg", "vm", None, None, None, False, "user", None, "port", None, ['arg1'], False, "Microsoft.HybridCompute/machines", None, None, False, False)
         op_info.public_key_file = "pub"
         op_info.private_key_file = "priv"
@@ -95,14 +94,14 @@ class SSHUtilsTests(unittest.TestCase):
 
         ssh_process = mock.Mock()
         ssh_process.poll.return_value = 0
-        
+
         mock_platform.return_value = 'Windows'
         mock_call.return_value = ssh_process
         mock_relay_str.return_value = 'relay_string'
-        mock_copy_env.return_value = {'var1':'value1', 'var2':'value2', 'var3':'value3'}
+        mock_copy_env.return_value = {'var1': 'value1', 'var2': 'value2', 'var3': 'value3'}
         mock_path.return_value = 'ssh'
         expected_command = ['ssh', 'vm', '-l', 'user', '-o', 'ProxyCommand=\"proxy\" -p port', '-i', 'priv', '-o', 'CertificateFile=\"cert\"', '-v', 'arg1']
-        expected_env = {'var1':'value1', 'var2':'value2', 'var3':'value3', 'SSHPROXY_RELAY_INFO':'relay_string'}
+        expected_env = {'var1': 'value1', 'var2': 'value2', 'var3': 'value3', 'SSHPROXY_RELAY_INFO': 'relay_string'}
 
         ssh_utils.start_ssh_connection(op_info, True, True)
 
@@ -112,7 +111,6 @@ class SSHUtilsTests(unittest.TestCase):
         mock_cleanup.assert_called_once_with(True, True, False, 'cert', 'priv', 'pub')
         mock_read.assert_called_once_with(ssh_process, op_info, True, True)
 
-
     @mock.patch.object(ssh_utils, 'do_cleanup')
     @mock.patch.object(ssh_utils, '_wait_to_delete_credentials')
     @mock.patch.object(ssh_utils, 'get_ssh_client_path')
@@ -121,7 +119,6 @@ class SSHUtilsTests(unittest.TestCase):
     @mock.patch('azext_ssh.custom.connectivity_utils.format_relay_info_string')
     @mock.patch('platform.system')
     def test_start_ssh_connection_arc_local_linux(self, mock_platform, mock_relay_str, mock_call, mock_copy_env, mock_path, mock_wait, mock_cleanup):
-        
         op_info = ssh_info.SSHSession("rg", "vm", None, None, None, False, "user", None, "port", None, ['arg1'], False, "Microsoft.HybridCompute/machines", None, None, False, False)
         op_info.public_key_file = "pub"
         op_info.private_key_file = "priv"
@@ -132,14 +129,14 @@ class SSHUtilsTests(unittest.TestCase):
 
         ssh_process = mock.Mock()
         ssh_process.poll.return_value = 0
-        
+
         mock_platform.return_value = 'Linux'
         mock_call.return_value = ssh_process
         mock_relay_str.return_value = 'relay_string'
-        mock_copy_env.return_value = {'var1':'value1', 'var2':'value2', 'var3':'value3'}
+        mock_copy_env.return_value = {'var1': 'value1', 'var2': 'value2', 'var3': 'value3'}
         mock_path.return_value = 'ssh'
         expected_command = ['ssh', 'vm', '-l', 'user', '-o', 'ProxyCommand=\"proxy\" -p port', '-i', 'priv', '-o', 'CertificateFile=\"cert\"', 'arg1']
-        expected_env = {'var1':'value1', 'var2':'value2', 'var3':'value3', 'SSHPROXY_RELAY_INFO':'relay_string'}
+        expected_env = {'var1': 'value1', 'var2': 'value2', 'var3': 'value3', 'SSHPROXY_RELAY_INFO': 'relay_string'}
 
         ssh_utils.start_ssh_connection(op_info, False, False)
 
@@ -149,7 +146,6 @@ class SSHUtilsTests(unittest.TestCase):
         mock_cleanup.assert_called_once_with(False, False, False, 'cert', 'priv', 'pub')
         mock_wait.assert_called_once_with(ssh_process, op_info, False, False)
 
-  
     @mock.patch.object(ssh_utils, '_issue_config_cleanup_warning')
     @mock.patch('os.path.abspath')
     def test_write_ssh_config_ip_and_vm_compute_append(self, mock_abspath, mock_warning):
@@ -215,7 +211,7 @@ class SSHUtilsTests(unittest.TestCase):
         mock_warning.assert_called_once_with(True, True, True, "cert", "relay", "client")
         mock_open.assert_called_once_with("config", 'w', encoding='utf-8')
         mock_file.write.assert_called_once_with('\n'.join(expected_lines))
-    
+
     @mock.patch('os.path.join')
     @mock.patch('platform.system')
     @mock.patch('os.path.isfile')
@@ -286,7 +282,7 @@ class SSHUtilsTests(unittest.TestCase):
             mock.call("rootpath", expected_sysfolder),
             mock.call("system32path", "openSSH", "ssh.exe")
         ]
-        
+
         actual_path = ssh_utils.get_ssh_client_path()
 
         self.assertEqual("sshfilepath", actual_path)
@@ -295,7 +291,6 @@ class SSHUtilsTests(unittest.TestCase):
         mock_environ.__getitem__.assert_called_once_with("SystemRoot")
         mock_join.assert_has_calls(expected_join_calls)
         mock_isfile.assert_called_once_with("sshfilepath")
-
 
     @mock.patch('platform.system')
     @mock.patch('platform.architecture')
@@ -310,3 +305,95 @@ class SSHUtilsTests(unittest.TestCase):
         mock_isfile.return_value = False
 
         self.assertRaises(azclierror.UnclassifiedUserFault, ssh_utils.get_ssh_client_path)
+
+    @mock.patch.object(ssh_utils, 'do_cleanup')
+    def test_check_ssh_logs_no_errors(self, mock_cleanup):
+        lines = [
+            "debug1: OpenSSH_8.9, OpenSSL 1.1.1 11 Sep 2018\n",
+            "debug1: some debug info\n",
+            "debug2: more debug info\n",
+            "Authenticated to host\n",
+            "debug1: Entering interactive session.\n",
+        ]
+        ssh_sub = mock.Mock()
+        ssh_sub.stderr.readline.side_effect = lines + ['']
+
+        op_info = mock.Mock()
+        op_info.delete_credentials = False
+        op_info.cert_file = "cert"
+        op_info.private_key_file = "priv"
+        op_info.public_key_file = "pub"
+
+        result = ssh_utils._check_ssh_logs_for_common_errors(ssh_sub, op_info, delete_cert=False, delete_keys=False)
+
+        self.assertFalse(result)
+        # Cleanup should be called once when "Entering interactive session." is found
+        mock_cleanup.assert_called_once_with(False, False, False, "cert", "priv", "pub")
+        ssh_sub.wait.assert_called_once()
+
+    @mock.patch.object(ssh_utils, 'do_cleanup')
+    def test_check_ssh_logs_service_config_delay_error(self, mock_cleanup):
+        error_line = ('{"level":"fatal","msg":"sshproxy: error connecting to the address: '
+                      '404 Endpoint does not exist","time":"2024-01-01T00:00:00Z"}\n')
+        lines = [
+            "debug1: OpenSSH_8.9, OpenSSL 1.1.1 11 Sep 2018\n",
+            error_line,
+        ]
+        ssh_sub = mock.Mock()
+        ssh_sub.stderr.readline.side_effect = lines + ['']
+
+        op_info = mock.Mock()
+        op_info.delete_credentials = False
+        op_info.cert_file = "cert"
+        op_info.private_key_file = "priv"
+        op_info.public_key_file = "pub"
+
+        result = ssh_utils._check_ssh_logs_for_common_errors(ssh_sub, op_info, delete_cert=False, delete_keys=False)
+
+        self.assertTrue(result)
+        ssh_sub.wait.assert_called_once()
+
+    def test_readline_ssh_logs_returns_line(self):
+        ssh_sub = mock.Mock()
+        ssh_sub.stderr.readline.return_value = "some log line\n"
+        result = ssh_utils._read_ssh_log_lines(ssh_sub)
+        self.assertEqual(result, "some log line\n")
+
+    def test_readline_ssh_logs_skips_errors_and_returns_next_line(self):
+        ssh_sub = mock.Mock()
+        ssh_sub.stderr.readline.side_effect = [
+            UnicodeDecodeError('utf-8', b'\x80invalid', 0, 1, 'invalid start byte'),
+            UnicodeDecodeError('utf-8', b'\x81invalid', 0, 1, 'invalid start byte'),
+            "valid line\n",
+        ]
+        result = ssh_utils._read_ssh_log_lines(ssh_sub)
+        self.assertEqual(result, "valid line\n")
+        self.assertEqual(ssh_sub.stderr.readline.call_count, 3)
+
+    def test_readline_ssh_logs_returns_empty_string_when_stream_ends(self):
+        ssh_sub = mock.Mock()
+        ssh_sub.stderr.readline.return_value = ''
+        result = ssh_utils._read_ssh_log_lines(ssh_sub)
+        self.assertEqual(result, '')
+
+    def test_readline_ssh_logs_returns_none(self):
+        ssh_sub = mock.Mock()
+        ssh_sub.stderr.readline.return_value = None
+        result = ssh_utils._read_ssh_log_lines(ssh_sub)
+        self.assertIsNone(result)
+
+    def test_readline_ssh_logs_skips_errors_and_returns_next_line(self):
+        ssh_sub = mock.Mock()
+        ssh_sub.stderr.readline.side_effect = [
+            UnicodeDecodeError('utf-8', b'\x80invalid', 0, 1, 'invalid start byte'),
+            UnicodeDecodeError('utf-8', b'\x81invalid', 0, 1, 'invalid start byte'),
+            UnicodeDecodeError('utf-8', b'\x81invalid', 0, 1, 'invalid start byte'),
+            UnicodeDecodeError('utf-8', b'\x81invalid', 0, 1, 'invalid start byte'),
+            UnicodeDecodeError('utf-8', b'\x81invalid', 0, 1, 'invalid start byte'),
+            "valid line\n",
+        ]
+        result = ssh_utils._read_ssh_log_lines(ssh_sub)
+        self.assertIsNone(result)
+        self.assertEqual(ssh_sub.stderr.readline.call_count, 5)
+    
+

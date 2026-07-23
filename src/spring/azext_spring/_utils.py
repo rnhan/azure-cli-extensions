@@ -4,6 +4,7 @@
 # --------------------------------------------------------------------------------------------
 import json
 import re
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from enum import Enum
 import os
@@ -16,13 +17,15 @@ import uuid
 from io import open
 from re import (search, match, compile)
 from json import dumps
+from threading import Thread
 
+from azure.cli.core._profile import Profile
 from azure.cli.core.commands.client_factory import get_subscription_id, get_mgmt_service_client
 from azure.cli.core.profiles import ResourceType
 from knack.util import CLIError, todict
 from knack.log import get_logger
 from azure.cli.core.azclierror import ValidationError, CLIInternalError
-from .vendored_sdks.appplatform.v2023_11_01_preview.models._app_platform_management_client_enums import SupportedRuntimeValue
+from .vendored_sdks.appplatform.v2024_05_01_preview.models._app_platform_management_client_enums import SupportedRuntimeValue
 from ._client_factory import cf_resource_groups
 
 
@@ -71,7 +74,7 @@ def _is_java(runtime_version):
 
 
 def _java_runtime_in_number():
-    return [8, 11, 17]
+    return [8, 11, 17, 21]
 
 
 def _pack_source_code(source_location, tar_file_path):
@@ -291,6 +294,11 @@ def get_portal_uri(cli_ctx):
         return 'https://portal.azure.com'
 
 
+def get_hostname(cli_ctx, client, resource_group, service_name):
+    resource = client.services.get(resource_group, service_name)
+    return get_proxy_api_endpoint(cli_ctx, resource)
+
+
 def get_proxy_api_endpoint(cli_ctx, spring_resource):
     """Get the endpoint of the proxy api."""
     if not spring_resource.properties.fqdn:
@@ -327,10 +335,32 @@ def handle_asc_exception(ex):
     try:
         raise CLIError(ex.inner_exception.error.message)
     except AttributeError:
+        logger.debug(f"CLIError ex: {ex}")
+        logger.debug(f"CLIError ex.response.internal_response.text: {ex.response.internal_response.text}")
         if hasattr(ex, 'response') and ex.response.internal_response.text:
-            response_dict = json.loads(ex.response.internal_response.text)
-            raise CLIError(response_dict["error"]["message"])
+            logger.debug("CLIError: Trying to parse the exception message.")
+            try:
+                response_dict = json.loads(ex.response.internal_response.text)
+                logger.debug(f"CLIError response_dict: {response_dict}")
+                raise CLIError(response_dict["error"]["message"])
+            except json.JSONDecodeError:
+                # Try to extract error from XML format
+                try:
+                    root = ET.fromstring(ex.response.internal_response.text)
+                    # Look for common error message patterns in XML
+                    error_msg = root.find('.//Message')
+                    if error_msg is not None and error_msg.text:
+                        raise CLIError(error_msg.text)
+                    # If no Message element, try to find any text content
+                    error_text = ''.join(root.itertext()).strip()
+                    if error_text:
+                        raise CLIError(error_text)
+                except ET.ParseError:
+                    pass
+                # If both JSON and XML parsing fail, return the raw text
+                raise CLIError(ex.response.internal_response.text)
         else:
+            logger.debug("CLIError: Unable to parse the exception message.")
             raise CLIError(ex)
 
 
@@ -381,6 +411,21 @@ def _register_resource_provider(cmd, resource_provider):
         raise ValidationError(resource_provider, msg.format(e.args)) from e
 
 
+def get_bearer_auth(cli_ctx):
+    profile = Profile(cli_ctx=cli_ctx)
+    creds, _, tenant = profile.get_raw_token()
+    token = creds[1]
+    return BearerAuth(token)
+
+
+def _get_value_from_dict(input_dict, *keys):
+    for key in keys:
+        if not isinstance(input_dict, dict):
+            return None
+        input_dict = input_dict.get(key)
+    return input_dict
+
+
 class BearerAuth(requests.auth.AuthBase):
     def __init__(self, token):
         self.token = token
@@ -388,3 +433,43 @@ class BearerAuth(requests.auth.AuthBase):
     def __call__(self, r):
         r.headers["authorization"] = "Bearer " + self.token
         return r
+
+
+def _contains_alive_thread(threads: [Thread]):
+    for t in threads:
+        if t.is_alive():
+            return True
+
+
+def parallel_start_threads(threads: [Thread]):
+    for t in threads:
+        t.daemon = True
+        t.start()
+
+    while _contains_alive_thread(threads):
+        sleep(1)
+        # so that ctrl+c can stop the command
+
+
+def sequential_start_threads(threads: [Thread]):
+    for idx, t in enumerate(threads):
+        t.daemon = True
+        t.start()
+
+        while t.is_alive():
+            sleep(1)
+            # so that ctrl+c can stop the command
+
+
+def string_equals_ignore_case(left: str, right: str):
+    if left is None and right is None:
+        return True
+
+    if left is None or right is None:
+        return False
+
+    return left.casefold() == right.casefold()
+
+
+def get_service_instance_resource_id(sub_id: str, group: str, service: str):
+    return f"/subscriptions/{sub_id}/resourceGroups/{group}/providers/Microsoft.AppPlatform/Spring/{service}"

@@ -20,7 +20,7 @@ class Wait(AAZWaitCommand):
 
     _aaz_info = {
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.avs/privateclouds/{}/clusters/{}/datastores/{}", "2023-03-01"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.avs/privateclouds/{}/clusters/{}/datastores/{}", "2025-09-01"],
         ]
     }
 
@@ -46,7 +46,7 @@ class Wait(AAZWaitCommand):
             required=True,
             id_part="child_name_1",
             fmt=AAZStrArgFormat(
-                pattern="^[-\w\._]+$",
+                pattern="^[-\\w\\._]+$",
             ),
         )
         _args_schema.datastore_name = AAZStrArg(
@@ -55,7 +55,7 @@ class Wait(AAZWaitCommand):
             required=True,
             id_part="child_name_2",
             fmt=AAZStrArgFormat(
-                pattern="^[-\w\._]+$",
+                pattern="^[-\\w\\._]+$",
             ),
         )
         _args_schema.private_cloud = AAZStrArg(
@@ -64,7 +64,7 @@ class Wait(AAZWaitCommand):
             required=True,
             id_part="name",
             fmt=AAZStrArgFormat(
-                pattern="^[-\w\._]+$",
+                pattern="^[-\\w\\._]+$",
             ),
         )
         _args_schema.resource_group = AAZResourceGroupNameArg(
@@ -145,7 +145,7 @@ class Wait(AAZWaitCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-03-01",
+                    "api-version", "2025-09-01",
                     required=True,
                 ),
             }
@@ -187,6 +187,10 @@ class Wait(AAZWaitCommand):
             _schema_on_200.properties = AAZObjectType(
                 flags={"client_flatten": True},
             )
+            _schema_on_200.system_data = AAZObjectType(
+                serialized_name="systemData",
+                flags={"read_only": True},
+            )
             _schema_on_200.type = AAZStrType(
                 flags={"read_only": True},
             )
@@ -195,12 +199,18 @@ class Wait(AAZWaitCommand):
             properties.disk_pool_volume = AAZObjectType(
                 serialized_name="diskPoolVolume",
             )
+            properties.elastic_san_volume = AAZObjectType(
+                serialized_name="elasticSanVolume",
+            )
             properties.net_app_volume = AAZObjectType(
                 serialized_name="netAppVolume",
             )
             properties.provisioning_state = AAZStrType(
                 serialized_name="provisioningState",
                 flags={"read_only": True},
+            )
+            properties.pure_storage_volume = AAZObjectType(
+                serialized_name="pureStorageVolume",
             )
             properties.status = AAZStrType(
                 flags={"read_only": True},
@@ -222,9 +232,45 @@ class Wait(AAZWaitCommand):
                 flags={"required": True},
             )
 
+            elastic_san_volume = cls._schema_on_200.properties.elastic_san_volume
+            elastic_san_volume.target_id = AAZStrType(
+                serialized_name="targetId",
+                flags={"required": True},
+            )
+
             net_app_volume = cls._schema_on_200.properties.net_app_volume
             net_app_volume.id = AAZStrType(
                 flags={"required": True},
+            )
+
+            pure_storage_volume = cls._schema_on_200.properties.pure_storage_volume
+            pure_storage_volume.size_gb = AAZIntType(
+                serialized_name="sizeGb",
+                flags={"required": True},
+            )
+            pure_storage_volume.storage_pool_id = AAZStrType(
+                serialized_name="storagePoolId",
+                flags={"required": True},
+            )
+
+            system_data = cls._schema_on_200.system_data
+            system_data.created_at = AAZStrType(
+                serialized_name="createdAt",
+            )
+            system_data.created_by = AAZStrType(
+                serialized_name="createdBy",
+            )
+            system_data.created_by_type = AAZStrType(
+                serialized_name="createdByType",
+            )
+            system_data.last_modified_at = AAZStrType(
+                serialized_name="lastModifiedAt",
+            )
+            system_data.last_modified_by = AAZStrType(
+                serialized_name="lastModifiedBy",
+            )
+            system_data.last_modified_by_type = AAZStrType(
+                serialized_name="lastModifiedByType",
             )
 
             return cls._schema_on_200

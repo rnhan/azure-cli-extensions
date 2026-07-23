@@ -2,6 +2,192 @@
 
 Release History
 ===============
+
+2.1.0
++++++
+* Add command for generating container policy definitions from radius application templates
+* Add command to insert generated policy into radius application templates
+
+2.0.1
++++++
+* Fix accidental docker dependency even when using tar
+
+2.0.0
++++++
+* Fix path traversal when generating policies from untrusted image tar files
+
+2.0.0b2
++++++++
+* Fix default working directory for Windows containers being set to C:\\ if the image doesn't specify one.
+
+2.0.0b1
++++++++
+* Add Windows container support with CIM-based layer hashing
+* Support for mounted_cim field in security policies for Windows containers
+
+1.8.0
++++++
+* Ensure that fragments are attached to the correct manifest for a multiarch image.
+* Fixed a bug in `fragment attach`.
+
+1.7.2
+++++++
+* Fix ORAS fragment discovery for ORAS CLI >= 1.3.0
+* Fix StatefulSet/Deployment volume mount and securityContext resolution in `containers from_vn2` command to use pod template spec
+* Fix empty command array in `containers from_vn2` command overwriting image entrypoint when no command/args specified in YAML
+* Fix phantom exec_processes entries generated for non-exec probes (httpGet/tcpSocket) in `containers from_vn2` command
+
+1.7.1
+++++++
+* Replace deprecated pkg_resources with packaging for Python 3.13 compatibility
+
+1.7.0
+++++++
+* Add containers from_vn2 command to generate container definitions from a VN2 template.
+
+1.6.0
+++++++
+* Added confcom containers from_image command to generate container definitions from an image reference
+
+1.5.1
+++++++
+* Bumped the Kata genpolicy version to gen4
+
+1.5.0
+++++++
+* restored the behaviour of --upload-fragment in acifragmentgen to attach to first image in input
+* added confcom fragment push command to allow explicit uploading of standalone fragments
+* added confcom fragment attach command to allow explicit uploading of image attached fragments
+
+1.4.5
+++++++
+* Drop the dependency on OPA
+
+1.4.4
+++++++
+* Improve the package building process
+
+1.4.3
+++++++
+* Fix installing OPA on Windows and in strict networking environments
+
+1.4.2
+++++++
+* Update policy model to use pydantic and explicitly declare collections where order doesn't affect function. These fields will serialize in alphabetical order and comparisons will ignore order.
+
+1.4.0
+++++++
+* Add --with-containers flag to acipolicygen and acifragmentgen to allow passing container policy definitions directly
+
+1.3.1
+++++++
+* bugfix for --exclude-default-fragments flag not working as intended
+
+1.3.0
+++++++
+* Add a new --enable-stdio flag, with a warning if neither this or --disable-stdio is set
+
+1.2.7
+++++++
+* bugfix making it so that oras discover function doesn't error when no fragments are found in the remote repository
+* splitting out documentation into command-specific files and adding info about --input flag
+* adding standalone fragment support
+* bugfix for oras pulling fragments when offline
+
+1.2.6
+++++++
+* bugfix making it so the fields in the --input format are case-insensitive
+
+1.2.5
+++++++
+* consolidating functions for --input policygen
+* bugfix for "scenario" field in json input
+* updating tests and examples to use azurelinux
+* "name" field is required when using --input
+
+1.2.4
+++++++
+* rolling back genpolicy version for Azure Linux V2 support instead of V3
+
+1.2.3
+++++++
+* adding fragment support for VN2
+* bugfix for vn2 workload identities
+* no longer encouraged to have multiple images in the same tar file
+
+1.2.2
+++++++
+* support for pure OCI v1 schema 2 formatted images
+* adding debug logging
+* changing where parameters and variables are filled in for arm templates
+* updating documentation about fragments
+* bugfix for exec processes in fragment generation
+* bugfix for custom mount options in fragment generation
+
+1.2.1
+++++++
+* updating genpolicy to version 3.2.0.azl3.genpolicy3
+
+1.2.0
+++++++
+* fixing metadata for uploaded fragments
+* fixing support for non-image feed names and attaching fragments to an image
+* bug fixes for image-attached fragments
+* adding ability to generate a fragment import from an image name using the remote attached fragments
+* updating stdout import statement to look more like the file output
+* adding `--omit-id` to the `acifragmentgen` command
+* updating genpolicy to version 3.2.0.azl3.genpolicy2
+
+1.1.1
+++++++
+* updating dmverity-vhd version with bugfix for empty image layers
+
+1.1.0
+++++++
+* adding support for image-attached fragments via `acifragmentgen`
+* adding workload identity support for VN2
+* adding `--exclude-default-fragments` to disallow sidecars from policy
+* adding `--omit-id` for policy stability across multiple image registries
+* better handle broken base64 policies in templates
+* improve error handling structure
+* make some mount types in VN2 required readonly
+* prompt users if they want to overwrite their policy in VN2
+* changing where dmverity-vhd and sign1util binaries are fetched from. This includes a significant speedup in dmverity-vhd hashing
+
+1.0.1
+++++++
+* getting rid of msrestazure dependency in _validators.py
+
+1.0.0
+++++++
+* adding support for Virtual Node
+* updating genpolicy version up through 3.2.0.azl1.genpolicy1
+
+0.3.6
+++++++
+* updating genpolicy version up through 3.2.0.azl1.genpolicy0. Please note that this is a breaking change for deploying older policies. With the new node image, 0.3.6 or newer will be required.
+* changing genpolicy flags to give full path to config files instead of path as a flag
+* adding genpolicy flags for --containerd-pull, --containerd-socket-path, --rules-file-name, and --print-version
+* `-c` flag for katapolicygen now supports persistent volume claims
+
+0.3.5
+++++++
+* making diff mode more robust
+* bugfix for arm template regex
+* updating genpolicy version up through 3.2.0.azl0.genpolicy1
+* adding configmap sidecar
+* bugfix for seccompProfile missing after injecting policy
+* adding cs2 support
+
+0.3.4
+++++++
+* adding faster hashing flag to use buffered reader in dmverity-vhd
+
+0.3.3
+++++++
+* improving testing standards from pytest recommendations
+* updating genpolicy version up through genpolicy-0.6.2-5
+
 0.3.2
 ++++++
 * updating genpolicy version to allow for topologySpreadConstraints, version genpolicy-0.6.2-2

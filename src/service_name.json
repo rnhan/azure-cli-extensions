@@ -1,5 +1,10 @@
 [
   {
+    "Command": "az acat",
+    "AzureServiceName": "Azure App Compliance Automation Tool",
+    "URL": "https://learn.microsoft.com/en-us/microsoft-365-app-certification/docs/acat-overview"
+  },
+  {
     "Command": "az account",
     "AzureServiceName": "Accounts",
     "URL": ""
@@ -13,6 +18,11 @@
     "Command": "az ad",
     "AzureServiceName": "Azure Active Directory",
     "URL": "https://learn.microsoft.com/azure/active-directory"
+  },
+  {
+    "Command": "az afd",
+    "AzureServiceName": "Azure Front Door",
+    "URL": "https://learn.microsoft.com/azure/frontdoor"
   },
   {
     "Command": "az ai-examples",
@@ -41,13 +51,28 @@
   },
   {
     "Command": "az apic",
-    "AzureServiceName": "ApiCenter Services",
+    "AzureServiceName": "API Center",
     "URL": "https://learn.microsoft.com/en-us/azure/api-center"
+  },
+  {
+    "Command": "az appnet",
+    "AzureServiceName": "Azure Kubernetes Application Network",
+    "URL": ""
   },
   {
     "Command": "az appservice",
     "AzureServiceName": "App Services",
     "URL": "https://learn.microsoft.com/azure/app-service"
+  },
+  {
+    "Command": "az arcgateway",
+    "AzureServiceName": "Arc",
+    "URL": "https://learn.microsoft.com/azure/azure-arc/servers/overview"
+  },
+  {
+    "Command": "az astronomer",
+    "AzureServiceName": "Astronomer",
+    "URL": "https://learn.microsoft.com/en-us/azure/partner-solutions/astronomer"
   },
   {
     "Command": "az attestation",
@@ -70,14 +95,14 @@
     "URL": "https://learn.microsoft.com/en-us/azure/baremetal-infrastructure/concepts-baremetal-infrastructure-overview"
   },
   {
-    "Command": "az blockchain",
-    "AzureServiceName": "Blockchain",
-    "URL": "https://learn.microsoft.com/azure/blockchain"
-  },
-  {
     "Command": "az blueprint",
     "AzureServiceName": "Blueprint",
     "URL": "https://learn.microsoft.com/azure/governance/blueprints"
+  },
+  {
+    "Command": "az cdn",
+    "AzureServiceName": "Azure CDN",
+    "URL": "https://learn.microsoft.com/azure/cdn"
   },
   {
     "Command": "az cli-translator",
@@ -90,9 +115,19 @@
     "URL": "https://learn.microsoft.com/azure/cloud-services-extended-support"
   },
   {
+    "Command": "az cloudhsm",
+    "AzureServiceName": "Azure Cloud HSM",
+    "URL": "https://learn.microsoft.com/en-us/azure/cloud-hsm"
+  },
+  {
     "Command": "az communication",
     "AzureServiceName": "Communication Services",
     "URL": "https://learn.microsoft.com/azure/communication-services"
+  },
+  {
+    "Command": "az computelimit",
+    "AzureServiceName": "Compute Limit",
+    "URL": "https://learn.microsoft.com/en-us/rest/api/computelimit/"
   },
   {
     "Command": "az confcom",
@@ -134,7 +169,7 @@
     "AzureServiceName": "Cost Management",
     "URL": "https://learn.microsoft.com/azure/cost-management-billing"
   },
-    {
+  {
     "Command": "az command-change",
     "AzureServiceName": "Azure CLI",
     "URL": ""
@@ -215,9 +250,19 @@
     "URL": "https://learn.microsoft.com/azure/dns/dns-overview"
   },
   {
+    "Command": "az documentdb",
+    "AzureServiceName": "Azure Cosmos DB for MongoDB vCore",
+    "URL": "https://learn.microsoft.com/azure/cosmos-db/mongodb/vcore/"
+  },
+  {
     "Command": "az dt",
     "AzureServiceName": "Digital Twins",
     "URL": "https://azure.microsoft.com/services/digital-twins"
+  },
+  {
+    "Command": "az durabletask",
+    "AzureServiceName": "Durable Task",
+    "URL": ""
   },
   {
     "Command": "az edgeorder",
@@ -225,9 +270,29 @@
     "URL": "https://review.learn.microsoft.com/azure/azure-edge-hardware-center"
   },
   {
+    "Command": "az edge-action",
+    "AzureServiceName": "Azure Front Door Edge Actions",
+    "URL": "https://learn.microsoft.com/azure/frontdoor"
+  },
+  {
+    "Command": "az edge-zones",
+    "AzureServiceName": "Edge Zones",
+    "URL": "https://review.learn.microsoft.com/en-us/rest/api/documentation-preview/extended-zones"
+  },
+  {
     "Command": "az elastic",
     "AzureServiceName": "Elastic",
     "URL": "https://learn.microsoft.com/azure/partner-solutions/elastic/overview"
+  },
+  {
+    "Command": "az fileshare",
+    "AzureServiceName": "Azure File Shares",
+    "URL": ""
+  },
+  {
+    "Command": "az firmwareanalysis",
+    "AzureServiceName": "Firmware Analysis",
+    "URL": ""
   },
   {
     "Command": "az fleet",
@@ -270,19 +335,14 @@
     "URL": "https://learn.microsoft.com/azure/lab-services/hackathon-labs"
   },
   {
-    "Command": "az hanainstance",
-    "AzureServiceName": "SAP on Azure",
-    "URL": "https://learn.microsoft.com/azure/virtual-machines/workloads/sap/hana-overview-architecture"
-  },
-  {
     "Command": "az healthbot",
     "AzureServiceName": "Bot Service",
     "URL": "https://learn.microsoft.com/azure/bot-service"
   },
   {
     "Command": "az healthcareapis",
-    "AzureServiceName": "API for FHIR",
-    "URL": "https://learn.microsoft.com/azure/healthcare-apis/overview"
+    "AzureServiceName": "Health Data Services",
+    "URL": "https://learn.microsoft.com/azure/healthcare-apis/healthcare-apis-overview"
   },
   {
     "Command": "az hpc-cache",
@@ -298,6 +358,11 @@
     "Command": "az import-export",
     "AzureServiceName": "Storage",
     "URL": "https://learn.microsoft.com/azure/storage/common/storage-import-export-service"
+  },
+  {
+    "Command": "az informatica",
+    "AzureServiceName": "Informatica",
+    "URL": "https://learn.microsoft.com/en-us/azure/partner-solutions/informatica"
   },
   {
     "Command": "az init",
@@ -321,11 +386,6 @@
   },
   {
     "Command": "az k8s-configuration",
-    "AzureServiceName": "Kubernetes Service (AKS)",
-    "URL": "https://learn.microsoft.com/azure/azure-arc/kubernetes"
-  },
-  {
-    "Command": "az k8sconfiguration",
     "AzureServiceName": "Kubernetes Service (AKS)",
     "URL": "https://learn.microsoft.com/azure/azure-arc/kubernetes"
   },
@@ -370,9 +430,19 @@
     "URL": "https://learn.microsoft.com/azure/cosmos-db"
   },
   {
+    "Command": "az managedcleanroom",
+    "AzureServiceName": "CleanRoom",
+    "URL": "https://learn.microsoft.com/en-us/azure/confidential-computing/confidential-clean-rooms"
+  },
+  {
     "Command": "az managementpartner",
     "AzureServiceName": "Partner Network",
     "URL": "https://learn.microsoft.com/partner-center"
+  },
+  {
+    "Command": "az mdp",
+    "AzureServiceName": "Managed DevOps Pools",
+    "URL": "https://aka.ms/mdp-documentation"
   },
   {
     "Command": "az mesh",
@@ -385,9 +455,19 @@
     "URL": "https://learn.microsoft.com/azure/machine-learning"
   },
   {
+    "Command": "az mongo-db",
+    "AzureServiceName": "MongoDB",
+    "URL": "https://learn.microsoft.com/en-us/azure/partner-solutions/mongo-db/overview"
+  },
+  {
     "Command": "az monitor",
     "AzureServiceName": "Monitor",
     "URL": "https://learn.microsoft.com/azure/azure-monitor"
+  },
+  {
+    "Command": "az monitor health-models",
+    "AzureServiceName": "Azure Monitor Health Models",
+    "URL": "https://learn.microsoft.com/azure/azure-monitor/health-model/health-model-overview"
   },
   {
     "Command": "az mysql",
@@ -395,14 +475,14 @@
     "URL": "https://learn.microsoft.com/azure/mysql"
   },
   {
+    "Command": "az napster",
+    "AzureServiceName": "Napster Companion API",
+    "URL": "https://learn.microsoft.com/en-us/azure/partner-solutions/napster/"
+  },
+  {
     "Command": "az network",
     "AzureServiceName": "Networking",
     "URL": "https://azure.microsoft.com/product-categories/networking"
-  },
-  {
-    "Command": "az networkcloud",
-    "AzureServiceName": "Networking",
-    "URL": "https://learn.microsoft.com/en-us/azure/operator-nexus/"
   },
   {
     "Command": "az networkfabric",
@@ -450,6 +530,11 @@
     "URL": "https://learn.microsoft.com/azure/azure-portal/azure-portal-dashboards"
   },
   {
+    "Command": "az planetarycomputer",
+    "AzureServiceName": "Planetary Computer",
+    "URL": "https://learn.microsoft.com/azure/planetary-computer"
+  },
+  {
     "Command": "az postgres",
     "AzureServiceName": "Database for PostgreSQL",
     "URL": "https://learn.microsoft.com/azure/postgresql"
@@ -465,6 +550,16 @@
     "URL": ""
   },
   {
+    "Command": "az dell",
+    "AzureServiceName": "Dell PowerScale",
+    "URL": "https://learn.microsoft.com/en-us/azure/partner-solutions/dell/overview"
+  },
+  {
+    "Command": "az pscloud",
+    "AzureServiceName": "PureStorage Cloud",
+    "URL": "https://learn.microsoft.com/en-us/azure/partner-solutions/pure-storage/overview"
+  },
+  {
     "Command": "az quantum",
     "AzureServiceName": "Quantum",
     "URL": "https://learn.microsoft.com/azure/quantum"
@@ -473,6 +568,11 @@
     "Command": "az redisenterprise",
     "AzureServiceName": "Cache for Redis",
     "URL": "https://learn.microsoft.com/azure/azure-cache-for-redis"
+  },
+  {
+    "Command": "az relationship",
+    "AzureServiceName": "Azure Relationships",
+    "URL": "https://learn.microsoft.com/en-us/rest/api/relationships"
   },
   {
     "Command": "az remote-rendering-account",
@@ -485,11 +585,6 @@
     "URL": "https://azure.microsoft.com/services/resource-mover"
   },
   {
-    "Command": "az sapmonitor",
-    "AzureServiceName": "SAP on Azure",
-    "URL": "https://learn.microsoft.com/azure/virtual-machines/workloads/sap/hana-overview-architecture"
-  },
-  {
     "Command": "az scenario",
     "AzureServiceName": "Azure CLI",
     "URL": ""
@@ -500,9 +595,19 @@
     "URL": "https://learn.microsoft.com/azure/sentinel/overview"
   },
   {
+    "Command": "az service-group",
+    "AzureServiceName": "Service Groups",
+    "URL": "https://learn.microsoft.com/en-us/azure/governance/service-groups/overview"
+  },
+  {
     "Command": "az sig",
     "AzureServiceName": "Virtual Machines",
     "URL": "https://learn.microsoft.com/azure/virtual-machines/shared-image-galleries"
+  },
+  {
+    "Command": "az sftp",
+    "AzureServiceName": "Storage",
+    "URL": "https://learn.microsoft.com/en-us/azure/storage/blobs/secure-file-transfer-protocol-support"
   },
   {
     "Command": "az spatial-anchors-account",
@@ -513,11 +618,6 @@
     "Command": "az sphere",
     "AzureServiceName": "Azure Sphere",
     "URL": "https://learn.microsoft.com/azure-sphere/"
-  },
-  {
-    "Command": "az spring-cloud",
-    "AzureServiceName": "Spring Apps",
-    "URL": "https://learn.microsoft.com/azure/spring-apps"
   },
   {
     "Command": "az spring",
@@ -535,9 +635,24 @@
     "URL": "https://learn.microsoft.com/azure/virtual-machines/linux/mac-create-ssh-keys"
   },
   {
+    "Command": "az dependency-map",
+    "AzureServiceName": "Dependency Map",
+    "URL": "https://learn.microsoft.com/en-us/azure/migrate/concepts-dependency-visualization"
+  },
+  {
     "Command": "az stack-hci",
     "AzureServiceName": "Stack HCI",
     "URL": "https://learn.microsoft.com/azure-stack/hci"
+  },
+  {
+    "Command": "az standby-container-group-pool",
+    "AzureServiceName": "Standby Pool",
+    "URL": "https://aka.ms/StandbyPoolsForACI"
+  },
+  {
+    "Command": "az standby-vm-pool",
+    "AzureServiceName": "Standby Pool",
+    "URL": "https://aka.ms/StandbyPoolsForVMSS"
   },
   {
     "Command": "az stack-hci-vm",
@@ -568,6 +683,21 @@
     "Command": "az support",
     "AzureServiceName": "Azure Support",
     "URL": "https://azure.microsoft.com/support/options"
+  },
+  {
+    "Command": "az terraform",
+    "AzureServiceName": "AzureTerraform",
+    "URL": ""
+  },
+  {
+    "Command": "az trustedsigning",
+    "AzureServiceName": "Trusted signing service",
+    "URL": "https://learn.microsoft.com/en-us/azure/artifact-signing/"
+  },
+  {
+    "Command": "az artifact-signing",
+    "AzureServiceName": "Artifact signing",
+    "URL": "https://learn.microsoft.com/en-us/azure/artifact-signing/"
   },
   {
     "Command": "az tsi",
@@ -630,11 +760,6 @@
     "URL": "https://learn.microsoft.com/azure/azure-arc/kubernetes/conceptual-custom-locations"
   },
   {
-    "Command": "az vm-repair",
-    "AzureServiceName": "Virtual Machines",
-    "URL": "https://learn.microsoft.com/cli/azure/vm/repair"
-  },
-  {
     "Command": "az vm",
     "AzureServiceName": "Virtual Machines",
     "URL": "https://learn.microsoft.com/azure/virtual-machines"
@@ -660,6 +785,11 @@
     "URL": "https://learn.microsoft.com/azure/devops/artifacts"
   },
   {
+    "Command": "az horizondb",
+    "AzureServiceName": "HorizonDB",
+    "URL": "https://azure.microsoft.com/products/horizondb"
+  },
+  {
     "Command": "az devops",
     "AzureServiceName": "DevOps",
     "URL": "https://learn.microsoft.com/azure/devops"
@@ -668,11 +798,6 @@
     "Command": "az purview",
     "AzureServiceName": "Purview",
     "URL": "https://learn.microsoft.com/azure/purview"
-  },
-  {
-    "Command": "az azurestackhci",
-    "AzureServiceName": "Stack HCI",
-    "URL": "https://learn.microsoft.com/azure-stack/hci"
   },
   {
     "Command": "az grafana",
@@ -688,6 +813,16 @@
     "Command": "az change-analysis",
     "AzureServiceName": "Monitor",
     "URL": "https://learn.microsoft.com/azure/azure-monitor/change/change-analysis"
+  },
+  {
+    "Command": "az chaos",
+    "AzureServiceName": "Azure Chaos Studio",
+    "URL": "https://learn.microsoft.com/azure/chaos-studio/"
+  },
+  {
+    "Command": "az oracle-database",
+    "AzureServiceName": "Oracle.Database",
+    "URL": "https://learn.microsoft.com/en-us/azure/oracle/oracle-azure-overview#oracle-databaseazure"
   },
   {
     "Command": "az orbital",
@@ -710,11 +845,6 @@
     "URL": "https://learn.microsoft.com/azure/cost-management-billing/reservations"
   },
   {
-    "Command": "az hybridaks",
-    "AzureServiceName": "Kubernetes Service (AKS)",
-    "URL": "https://learn.microsoft.com/azure-stack/aks-hci/aks-hybrid-preview-overview"
-  },
-  {
     "Command": "az akshybrid",
     "AzureServiceName": "Kubernetes Service (AKS)",
     "URL": "https://learn.microsoft.com/azure-stack/aks-hci/aks-hybrid-preview-overview"
@@ -730,11 +860,6 @@
     "URL": "https://learn.microsoft.com/azure/partner-solutions/dynatrace"
   },
   {
-    "Command": "az adp",
-    "AzureServiceName": "Autonomous Development Platform",
-    "URL": ""
-  },
-  {
     "Command": "az partnercenter",
     "AzureServiceName": "Microsoft Partner Center",
     "URL": "https://learn.microsoft.com/en-us/partner-center/"
@@ -743,11 +868,6 @@
     "Command": "az billing-benefits",
     "AzureServiceName": "Cost Management",
     "URL": "https://learn.microsoft.com/azure/cost-management-billing/savings-plan"
-  },
-  {
-    "Command": "az mobile-network",
-    "AzureServiceName": "Mobile Networking",
-    "URL": "https://learn.microsoft.com/azure/private-5g-core"
   },
   {
     "Command": "az automanage",
@@ -805,16 +925,6 @@
     "URL": "https://learn.microsoft.com/en-us/azure/event-grid"
   },
   {
-    "Command": "az mariner-baremetal",
-    "AzureServiceName": "Mariner BareMetal Platform",
-    "URL": ""
-  },
-  {
-    "Command": "az hdinsight-on-aks",
-    "AzureServiceName": "HDInsight",
-    "URL": "https://learn.microsoft.com/azure/hdinsightonaks"
-  },
-  {
     "Command": "az network-analytics",
     "AzureServiceName": "Azure Operator Insights - Network Analytics",
     "URL": "https://learn.microsoft.com/en-us/azure/operator-insights/"
@@ -828,5 +938,135 @@
     "Command": "az large-storage-instance",
     "AzureServiceName": "Azure Large Instance",
     "URL": "https://learn.microsoft.com/en-us/azure/azure-large-instances/"
+  },
+  {
+    "Command": "az k8s-runtime",
+    "AzureServiceName": "Azure Arc Kubernetes Runtime",
+    "URL": ""
+  },
+  {
+    "Command": "az gallery",
+    "AzureServiceName": "Azure Compute Gallery",
+    "URL": "https://learn.microsoft.com/en-us/azure/virtual-machines/azure-compute-gallery"
+  },
+  {
+    "Command": "az nexusidentity",
+    "AzureServiceName": "Nexus Identity",
+    "URL": "https://learn.microsoft.com/en-us/azure/operator-nexus/"
+  },
+  {
+    "Command": "az storage-actions",
+    "AzureServiceName": "Azure Storage Actions",
+    "URL": "https://learn.microsoft.com/azure/storage-actions/"
+  },
+  {
+    "Command": "az storage-discovery",
+    "AzureServiceName": "Azure Storage Discovery",
+    "URL": "https://learn.microsoft.com/azure/storage-discovery/"
+  },
+  {
+    "Command": "az baremetalinstance",
+    "AzureServiceName": "BareMetal Infrastructure",
+    "URL": "https://learn.microsoft.com/en-us/azure/baremetal-infrastructure/"
+  },
+  {
+    "Command": "az baremetalstorageinstance",
+    "AzureServiceName": "BareMetal Infrastructure",
+    "URL": "https://learn.microsoft.com/en-us/azure/baremetal-infrastructure/"
+  },
+  {
+    "Command": "az fabric",
+    "AzureServiceName": "Microsoft Fabric",
+    "URL": "https://learn.microsoft.com/en-us/fabric/"
+  },
+  {
+    "Command": "az arc-multicloud",
+    "AzureServiceName": "Multi-cloud Connector",
+    "URL": "https://learn.microsoft.com/en-us/azure/azure-arc/multicloud-connector/"
+  },
+  {
+    "Command": "az mcc",
+    "AzureServiceName": "Microsoft Connected Cache",
+    "URL": ""
+  },
+  {
+    "Command": "az zones",
+    "AzureServiceName": "Availability Zones",
+    "URL": "https://learn.microsoft.com/azure/availability-zones/az-overview"
+  },
+  {
+    "Command": "az playwright-testing",
+    "AzureServiceName": "Playwright Testing",
+    "URL": "https://learn.microsoft.com/en-us/azure/playwright-testing/"
+  },
+  {
+    "Command": "az computeschedule",
+    "AzureServiceName": "Computeschedule",
+    "URL": "https://learn.microsoft.com/en-us/rest/api/computeschedule/"
+  },
+  {
+    "Command": "az lambda-test",
+    "AzureServiceName": "LambdaTest",
+    "URL": "https://learn.microsoft.com/en-us/azure/partner-solutions"
+  },
+  {
+    "Command": "az carbon",
+    "AzureServiceName": "Carbon Optimization",
+    "URL": "https://learn.microsoft.com/en-us/azure/carbon-optimization/"
+  },
+  {
+    "Command": "az vme",
+    "AzureServiceName": "Azure Arc Kubernetes Version Managed Extensions",
+    "URL": ""
+  },
+  {
+    "Command": "az data-transfer",
+    "AzureServiceName": "Azure Data Transfer (ADT)",
+    "URL": ""
+  },
+  {
+    "Command": "az workload-orchestration",
+    "AzureServiceName": "Workload Orchestration Manager",
+    "URL": "https://learn.microsoft.com/en-us/azure/azure-arc/workload-orchestration"
+  },
+  {
+    "Command": "az arize-ai",
+    "AzureServiceName": "Arize AI",
+    "URL": "https://learn.microsoft.com/en-us/azure/partner-solutions/arize-ai/"
+  },
+  {
+    "Command": "az networkcloud",
+    "AzureServiceName": "AFOI-Network Cloud",
+    "URL": "https://learn.microsoft.com/en-us/azure/operator-nexus"
+  },
+  {
+    "Command": "az networkfabric",
+    "AzureServiceName": "Nexus Network Fabric",
+    "URL": "https://learn.microsoft.com/en-us/azure/operator-nexus/concepts-network-fabric"
+  },
+  {
+    "Command": "az site",
+    "AzureServiceName": "Azure Arc site manager",
+    "URL": "https://learn.microsoft.com/en-us/azure/azure-arc/site-manager/"
+  },
+  {
+    "Command": "az migrate",
+    "AzureServiceName": "Azure Migrate",
+    "URL": "https://learn.microsoft.com/azure/migrate"
+  },
+  {
+    "Command": "az prototype",
+    "AzureServiceName": "Azure Prototype",
+    "URL": "https://github.com/Azure/az-prototype"
+  },
+  {
+    "Command": "az vi",
+    "AzureServiceName": "Azure Video Indexer",
+    "URL": "https://learn.microsoft.com/en-us/azure/azure-video-indexer"
+  },
+  {
+    "Command": "az changesafety",
+    "AzureServiceName": "ChangeSafety",
+    "URL": ""
   }
 ]

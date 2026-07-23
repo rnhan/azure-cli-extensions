@@ -22,9 +22,9 @@ class Show(AAZCommand):
     """
 
     _aaz_info = {
-        "version": "2023-06-15",
+        "version": "2026-01-15-preview",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.managednetworkfabric/internetgateways/{}", "2023-06-15"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.managednetworkfabric/internetgateways/{}", "2026-01-15-preview"],
         ]
     }
 
@@ -49,9 +49,11 @@ class Show(AAZCommand):
             help="Name of the Internet Gateway.",
             required=True,
             id_part="name",
+            fmt=AAZStrArgFormat(
+                pattern="^[a-zA-Z]{1}[a-zA-Z0-9-_]{2,127}$",
+            ),
         )
         _args_schema.resource_group = AAZResourceGroupNameArg(
-            help="Name of the resource group",
             required=True,
         )
         return cls._args_schema
@@ -70,7 +72,7 @@ class Show(AAZCommand):
         pass
 
     def _output(self, *args, **kwargs):
-        result = self.deserialize_output(self.ctx.vars.instance, client_flatten=False)
+        result = self.deserialize_output(self.ctx.vars.instance, client_flatten=True)
         return result
 
     class InternetGatewaysGet(AAZHttpOperation):
@@ -121,7 +123,7 @@ class Show(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-06-15",
+                    "api-version", "2026-01-15-preview",
                     required=True,
                 ),
             }
@@ -179,14 +181,23 @@ class Show(AAZCommand):
             properties.annotation = AAZStrType()
             properties.internet_gateway_rule_id = AAZStrType(
                 serialized_name="internetGatewayRuleId",
+                nullable=True,
+            )
+            properties.internet_gateway_type = AAZStrType(
+                serialized_name="internetGatewayType",
             )
             properties.ipv4_address = AAZStrType(
                 serialized_name="ipv4Address",
                 flags={"read_only": True},
             )
+            properties.last_operation = AAZObjectType(
+                serialized_name="lastOperation",
+                flags={"read_only": True},
+            )
             properties.network_fabric_controller_id = AAZStrType(
                 serialized_name="networkFabricControllerId",
                 flags={"required": True},
+                nullable=True,
             )
             properties.port = AAZIntType(
                 flags={"read_only": True},
@@ -195,8 +206,11 @@ class Show(AAZCommand):
                 serialized_name="provisioningState",
                 flags={"read_only": True},
             )
-            properties.type = AAZStrType(
-                flags={"required": True},
+            properties.type = AAZStrType()
+
+            last_operation = cls._schema_on_200.properties.last_operation
+            last_operation.details = AAZStrType(
+                flags={"read_only": True},
             )
 
             system_data = cls._schema_on_200.system_data

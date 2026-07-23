@@ -2,6 +2,139 @@
 
 Release History
 ===============
+
+1.11.3
+++++++++++++++++
+* [Breaking] `az dataprotection backup-policy retention-rule set` validates against duplicate retention-rule names. AzureBlob: OperationalStore retention lifecycles must now use the retention rule name `--name Default_OperationalStore`. Using `--name Default` with an OperationalStore lifecycle for AzureBlobis no longer accepted. 
+1.11.2
+++++++
+* `az dataprotection enable-backup trigger`: Auto-install the `k8s-extension` CLI extension when enabling AKS backup if it is not already installed.
+
+1.11.1
+++++++
+* Fixed `az dataprotection backup-instance update-msi-permissions --datasource-type AzureCosmosDB --operation Restore` erroring with "Set permissions for restore is currently not supported for given DataSourceType". The command now correctly assigns `Cosmos DB Operator` on the target Cosmos DB account to the backup vault's managed identity. Added live regression test `test_dataprotection_update_msi_permissions_cosmosdb_restore`.
+
+1.11.0
+++++++
+* Added dataprotection support for AzureCosmosDB workload: new manifest (Microsoft.DocumentDB/databaseAccounts), registration in supported datasource types, datasource map, and permission help text. Added end-to-end backup/restore scenario test, unit tests for default policy template, backup-instance initialize, and restore initialize, and an update-msi-permissions live test that grants Reader/Cosmos DB Operator on the data source RG / account.
+
+1.10.0
++++++
+* Bumped API version to 2026-03-01 for backup-instance create, update, validate-for-backup, and validate-for-update commands.
+* `az dataprotection backup-instance initialize-backupconfig`: New parameters `--auto-protection` and `--exclusion-prefixes` to enable automatic protection of new blob containers for AzureBlob and AzureDataLakeStorage datasource types, with optional exclusion rules by container name prefix.
+
+1.9.0
++++++
+* `az dataprotection enable-backup trigger`: New command to enable backup for AKS clusters with a single command. Supports preset backup strategies (Week, Month, DisasterRecovery) and Custom strategy with user-provided configuration.
+* Added vendored SDKs: `azure-mgmt-containerservice` (40.2.0), `azure-mgmt-kubernetesconfiguration` (3.1.0), `azure-mgmt-resourcegraph` (8.0.0).
+
+1.8.1
++++++
+* Documentation update for `initialize-backupconfig` and `initialize-restoreconfig` commands to clarify that the generated JSON is meant for use with other CLI commands, and may not work as an input for non-CLI scenarios without modification.
+
+1.8.0
++++++
+* `az dataprotection backup-instance update`: New parameter: `--backup-configuration` to update AKS datasource parameters.
+* Fix in `helpers.py` to correctly prepare/normalize AKS backup-configuration payloads passed via the CLI.
+
+1.7.1
++++++
+* `az dataprotection backup-instance restore initialize-for-item-recovery`: Fixed a bug where the command would fail for AKS Scenarios.
+
+1.7.0
++++++
+* Added support for Azure Data Lake Storage as a backup datasource.
+* `az dataprotection backup-instance restore initialize-for-item-recovery`: Exisiting parameter `--vaulted-blob-prefix-pattern` now allows users to rename blob containers during restore.
+
+1.6.0
++++++
+* Added support for User-Assigned Managed Identities for Backup Instances.
+* Fixed a bug with Backup Vault update where a vault with UserAssigned or SystemAssigned,UserAssigned could not be switched to SystemAssigned or None.
+* `az dataprotection backup-instance validate-for-update`: New command, can be used to verify if a backup instance update will be successful or not. Supports all the parameters `az dataprotection backup-instance update` does.
+* `az dataprotection backup-instance initialize`: New parameters: `--use-system-identity` and `--uami`, which allow users to set a backup instance's Identity details for backup instance creation and validation.
+* `az dataprotection backup-instance update`: New parameters: `--use-system-identity` and `--uami`, which allow users to update a backup instance's Identity details.
+* `az dataprotection backup-instance restore initialize-for-data-recovery`: New parameters: `--use-system-identity` and `--uami`, which allow users to set a backup instance's Identity details for a restore operation.
+* `az dataprotection backup-instance restore initialize-for-data-recovery-as-files`: New parameters: `--use-system-identity` and `--uami`, which allow users to set a backup instance's Identity details for a restore operation.
+* `az dataprotection backup-instance restore initialize-for-item-recovery`: New parameters: `--use-system-identity` and `--uami`, which allow users to set a backup instance's Identity details for a restore operation.
+* `az dataprotection backup-instance update-msi-permissions`: New parameter `--uami` allows us to set permissions on a user-managed identity associated with a Backup Vault.
+
+1.5.6
++++++
+* Updated the packaged AKS-preview SDK.
+
+1.5.5
++++++
+* `az dataprotection backup-vault initialize-restoreconfig:` Fixed a bug when initializing a restore object for Vaulted AKS Backups.
+* Added CRR support for southeastus, westus3 region.
+
+1.5.4
++++++
+* Removed dependency on `msrestazure.tools`
+
+1.5.3
++++++
+* `az dataprotection backup-instance initialize-for-data-recovery`: Fixed a bug when trying to initialize AKS restore.
+
+1.5.2
++++++
+* Added support for multi-user authentication for dataprotection policy updates
+* `az dataprotection backup-instance update-policy`: New parameters - `--operation-requests` and `--tenant-id` for allowing operations on MUA-protected resources.
+
+1.5.1
++++++
+* Added support for multi-user authentication for CMK encryption changes
+
+1.5.0
++++++
+* Support for vaulted backup for AKS
+* `az dataprotection backup-policy get-default-policy-template`: For AzureKubernetesService, default policy now adds vaulted backup rules.
+* `az dataprotection backup-vault initialize-restoreconfig:` Three new parameters - `--staging-resource-group-id`, `--staging-storage-account-id`, `--resource-modifier-reference`.
+
+
+1.4.0
++++++
+* Added support for cmk encryption on backup vault
+* `az dataprotection backup-vault create ` Added parameters `--user-assigned-identities` to provide list of user assigned managed identities to backup-vault
+* `az dataprotection backup-vault create ` Added parameters `--cmk-encryption-state`, `cmk-infrastructure-encryption`, `--cmk-encryption-key-uri`, `--cmk-identity-type`, `--cmk-user-assigned-identity-id` to enable cmk encryption on backup-vault
+* `az dataprotection backup-vault update ` Added parameters `--user-assigned-identities` to update list of user assigned managed identities to backup-vault
+* `az dataprotection backup-vault update ` Added parameters `--cmk-encryption-state`, `--cmk-encryption-key-uri`, `--cmk-identity-type`, `--cmk-user-assigned-identity-id` to update cmk encryption settings on backup-vault
+
+
+1.3.0
++++++
+* Added support for vaulted blob backup and restore
+* `az dataprotection backup-instance initialize-backupconfig`: Added parameters `--vaulted-backup-containers` to provide list of containers to backup
+* `az dataprotection backup-instance initialize-backupconfig`: Added parameters `--include-all-containers`, `--storage-account-name`, `storage-account-resource-group` to backup all containers in a storage storage-account-resource-group
+* `az dataprotection backup-instance update`: New command, which takes `--vaulted-blob-container-list` to which we pass the output of `initialize-backupconfig`
+* `az dataprotection backup-instance update-policy`: Had a bug where policy update for a vaulted blob container would remove the backed up containers entirely. This was rewritten to fix that
+* `az dataprotection backup-instance restore initialize-for-item-recovery`: now takes `--vaulted-blob-prefix-pattern`, a new prefix pattern for vaulted blobs restore
+
+1.2.0
++++++
+* The following commands and scenarios now have resourceguard-based MUA protection
+* `az dataprotection backup-vault update` - Modify Soft Delete and Immutability State
+* `az dataprotection backup-instance stop-protection` - Stop Protection
+* `az dataprotection backup-instance suspend-backups` - Suspend Backups
+* `az dataprotection backup-instance restore trigger` - Trigger Restore
+* `az dataprotection resource-guard` - Also now supporting shorthands for new RecoveryServices critical operations.
+
+1.1.0
++++++
+* Added dataprotection support for PostgreSQLFlexibleServer and MySQL workloads: new manifests, code cleanup.
+* `az dataprotection backup-instance update-msi-permissions`: New parameter `--target-storage-account-id` for Restore, support Restore for new workloads, code cleanup.
+
+1.0.0
+++++++
+* Added support for Cross Region Restore for Backup Vaults.
+* `az dataprotection backup-vault create`: New parameter `--cross-region-restore-state/--crr-state` that can be set to Enabled/Disabled.
+* `az dataprotection backup-vault update`: New parameter `--cross-region-restore-state/--crr-state` that can be set to Enabled/Disabled.
+* `az dataprotection backup-vault list-from-resourcegraph`: New command to fetch Backup Vault details from Azure Resource Graph.
+* `az dataprotection recovery-point list`: New parameter `--use-secondary-region` to be used when listing from the secondary region.
+* `az dataprotection backup-instance validate-for-restore`: New parameter `--use-secondary-region` to be used when restoring to the secondary region.
+* `az dataprotection backup-instance restore trigger`: New parameter `--use-secondary-region` to be used when restoring to the secondary region.
+* `az dataprotection backup-job list`: New parameter `--use-secondary-region` which can be used in disaster scenario when primary region is down.
+* `az dataprotection backup-job show`: New parameter `--use-secondary-region` which can be used in disaster scenario when primary region is down.
+
 0.11.2
 ++++++
 * `az dataprotection backup-instance update-msi-permissions`: Added UAMI support for AKS backup/restore.

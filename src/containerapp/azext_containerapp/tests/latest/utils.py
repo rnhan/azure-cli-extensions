@@ -2,14 +2,14 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
-
+import sys
 import time
 import requests
 from azure.cli.command_modules.containerapp._utils import format_location
 
 from .common import TEST_LOCATION, STAGE_LOCATION
 from azure.cli.core.azclierror import MutuallyExclusiveArgumentError, RequiredArgumentMissingError, InvalidArgumentValueError
-from msrestazure.tools import parse_resource_id
+from azure.mgmt.core.tools import parse_resource_id
 
 from azure.cli.testsdk import (JMESPathCheck)
 
@@ -27,8 +27,30 @@ def prepare_containerapp_env_for_app_e2e_tests(test_cls, location=TEST_LOCATION)
             rg_location = location
             if format_location(rg_location) == format_location(STAGE_LOCATION):
                 rg_location = "eastus"
-            test_cls.cmd(f'group create -n {rg_name} -l {location}')
-            test_cls.cmd(f'containerapp env create -g {rg_name} -n {env_name} --logs-destination none')
+            test_cls.cmd(f'group create -n {rg_name} -l {rg_location}')
+            test_cls.cmd(f'containerapp env create -g {rg_name} -n {env_name} --logs-destination none', expect_failure=False)
+            managed_env = test_cls.cmd('containerapp env show -g {} -n {}'.format(rg_name, env_name)).get_output_in_json()
+
+            while managed_env["properties"]["provisioningState"].lower() == "waiting":
+                time.sleep(5)
+                managed_env = test_cls.cmd('containerapp env show -g {} -n {}'.format(rg_name, env_name)).get_output_in_json()
+    return managed_env["id"]
+
+def prepare_containerapp_env_v1_for_app_e2e_tests(test_cls, location=TEST_LOCATION):
+    from azure.cli.core.azclierror import CLIInternalError
+    rg_name = f'client.env_v1_rg_{location}'.lower().replace(" ", "").replace("(", "").replace(")", "")
+    env_name = f'env-v1-{location}'.lower().replace(" ", "").replace("(", "").replace(")", "")
+    managed_env = None
+    try:
+        managed_env = test_cls.cmd('containerapp env show -g {} -n {}'.format(rg_name, env_name)).get_output_in_json()
+    except CLIInternalError as e:
+        if e.error_msg.__contains__('ResourceGroupNotFound') or e.error_msg.__contains__('ResourceNotFound'):
+            # resource group is not available in North Central US (Stage), if the TEST_LOCATION is "northcentralusstage", use eastus as location
+            rg_location = location
+            if format_location(rg_location) == format_location(STAGE_LOCATION):
+                rg_location = "eastus"
+            test_cls.cmd(f'group create -n {rg_name} -l {rg_location}')
+            test_cls.cmd(f'containerapp env create -g {rg_name} -n {env_name} --logs-destination none --enable-workload-profiles false', expect_failure=False)
             managed_env = test_cls.cmd('containerapp env show -g {} -n {}'.format(rg_name, env_name)).get_output_in_json()
 
             while managed_env["properties"]["provisioningState"].lower() == "waiting":
@@ -37,18 +59,39 @@ def prepare_containerapp_env_for_app_e2e_tests(test_cls, location=TEST_LOCATION)
     return managed_env["id"]
 
 
-def create_containerapp_env(test_cls, env_name, resource_group, location=None):
-    logs_workspace_name = test_cls.create_random_name(prefix='containerapp-env', length=24)
-    logs_workspace_location = location
-    if format_location(logs_workspace_location) == format_location(STAGE_LOCATION):
-        logs_workspace_location = "eastus"
-    logs_workspace_id = test_cls.cmd('monitor log-analytics workspace create -g {} -n {} -l {}'.format(resource_group, logs_workspace_name, logs_workspace_location)).get_output_in_json()["customerId"]
-    logs_workspace_key = test_cls.cmd('monitor log-analytics workspace get-shared-keys -g {} -n {}'.format(resource_group, logs_workspace_name)).get_output_in_json()["primarySharedKey"]
+def create_vnet_subnet(self, resource_group, vnet, delegations='Microsoft.App/environments', location="centralus"):
+    self.cmd(f"az network vnet create --address-prefixes '14.0.0.0/23' -g {resource_group} -n {vnet} --location {location}")
+    subnet_command = f"az network vnet subnet create --address-prefixes '14.0.0.0/23' -n sub -g {resource_group} --vnet-name {vnet}"
+    if delegations is not None:
+        subnet_command += f' --delegations {delegations}'
+    sub_id = self.cmd(subnet_command).get_output_in_json()["id"]
+    return sub_id
 
-    if location:
-        test_cls.cmd(f'containerapp env create -g {resource_group} -n {env_name} --logs-workspace-id {logs_workspace_id} --logs-workspace-key {logs_workspace_key} -l {location}')
+
+def create_containerapp_env(test_cls, env_name, resource_group, location=None, subnetId=None, needLogsDestination=False):
+    if needLogsDestination:
+        logs_workspace_name = test_cls.create_random_name(prefix='containerapp-env', length=24)
+        logs_workspace_location = location
+        if logs_workspace_location is None or format_location(logs_workspace_location) == format_location(STAGE_LOCATION):
+            logs_workspace_location = "eastus"
+
+        logs_workspace_id = test_cls.cmd('monitor log-analytics workspace create -g {} -n {} -l {}'.format(resource_group, logs_workspace_name, logs_workspace_location), expect_failure=False).get_output_in_json()["customerId"]
+        logs_workspace_key = test_cls.cmd('monitor log-analytics workspace get-shared-keys -g {} -n {}'.format(resource_group, logs_workspace_name)).get_output_in_json()["primarySharedKey"]
+        env_command = f'containerapp env create -g {resource_group} -n {env_name} --logs-workspace-id {logs_workspace_id} --logs-workspace-key {logs_workspace_key}'
     else:
-        test_cls.cmd(f'containerapp env create -g {resource_group} -n {env_name} --logs-workspace-id {logs_workspace_id} --logs-workspace-key {logs_workspace_key}')
+        env_command = f'containerapp env create -g {resource_group} -n {env_name} --logs-destination none'
+    if location:
+        env_command = f'{env_command} -l {location}'
+
+    if subnetId is None:
+        if location is not None:
+            subnetId = create_vnet_subnet(test_cls, resource_group, test_cls.create_random_name(prefix='name', length=24), location=location)
+        else:
+            subnetId = create_vnet_subnet(test_cls, resource_group, test_cls.create_random_name(prefix='name', length=24))
+
+    if subnetId:
+        env_command = f'{env_command} --infrastructure-subnet-resource-id {subnetId}'
+    test_cls.cmd(env_command)
 
     containerapp_env = test_cls.cmd('containerapp env show -g {} -n {}'.format(resource_group, env_name)).get_output_in_json()
 
@@ -56,24 +99,43 @@ def create_containerapp_env(test_cls, env_name, resource_group, location=None):
         time.sleep(5)
         containerapp_env = test_cls.cmd('containerapp env show -g {} -n {}'.format(resource_group, env_name)).get_output_in_json()
 
-
 def create_and_verify_containerapp_up(
             test_cls,
             resource_group,
-            env_name = None,
-            source_path = None,
-            artifact_path = None,
-            image = None,
-            location = None,
-            ingress = None,
-            target_port = None,
-            app_name = None,
-            requires_acr_prerequisite = False):
+            env_name=None,
+            source_path=None,
+            artifact_path=None,
+            build_env_vars=None,
+            image=None,
+            location=None,
+            ingress=None,
+            target_port=None,
+            app_name=None,
+            requires_acr_prerequisite=False,
+            no_log_destination=False,
+            registry_server=None,
+            registry_identity=None,
+            check_registry_identity=None,
+            model_name=None,
+            model_version=None,
+            model_registry=None
+            ):
+        # Check if the app being tested is a azure ai foundry app
+        is_azml_app = True if model_name and model_version and model_registry else False
         # Ensure that the Container App environment is created
         if env_name is None:
            env_name = test_cls.create_random_name(prefix='env', length=24)
-           test_cls.cmd(f'containerapp env create -g {resource_group} -n {env_name}')
+           env_create_cmd = f'containerapp env create -g {resource_group} -n {env_name}'
+           if is_azml_app:
+               # will attempt to run in westus3 and add t4 wps
+               env_create_cmd += f' --location=westus3'
+           if no_log_destination:
+               env_create_cmd += f" --logs-destination none"
+           test_cls.cmd(env_create_cmd)
 
+        if is_azml_app:
+            create_t4_wps_cmd = f'containerapp env workload-profile add -g {resource_group} -n {env_name} --workload-profile-name serverless-t4 --workload-profile-type Consumption-GPU-NC8as-T4'
+            test_cls.cmd(create_t4_wps_cmd)
         if app_name is None:
             # Generate a name for the Container App
             app_name = test_cls.create_random_name(prefix='containerapp', length=24)
@@ -84,12 +146,26 @@ def create_and_verify_containerapp_up(
             up_cmd += f" --source \"{source_path}\""
         if artifact_path:
             up_cmd += f" --artifact \"{artifact_path}\""
+        if build_env_vars:
+            up_cmd += f" --build-env-vars {build_env_vars}"
         if image:
             up_cmd += f" --image {image}"
         if ingress:
             up_cmd += f" --ingress {ingress}"
         if target_port:
             up_cmd += f" --target-port {target_port}"
+        if registry_server:
+            up_cmd += f" --registry-server {registry_server}"
+        if registry_identity:
+            up_cmd += f" --registry-identity {registry_identity}"
+        if location:
+            up_cmd += f" -l {location.upper()}"
+        if model_name:
+            up_cmd += f" --model-name {model_name}"
+        if model_version:
+            up_cmd += f" --model-version {model_version}"
+        if model_registry:
+            up_cmd += f" --model-registry {model_registry}"
 
         if requires_acr_prerequisite:
             # Create ACR
@@ -105,16 +181,17 @@ def create_and_verify_containerapp_up(
         test_cls.cmd(up_cmd)
 
         # Verify that the Container App is running
+        # For foundry model app, the app cold start time is relatively long, so url request should have high timeout setting
         app = test_cls.cmd(f"containerapp show -g {resource_group} -n {app_name}").get_output_in_json()
         url = app["properties"]["configuration"]["ingress"]["fqdn"]
         url = url if url.startswith("http") else f"http://{url}"
-        resp = requests.get(url)
+        if model_name and model_version and model_registry:
+            resp = requests.get(url, timeout=400)
+        else:
+            resp = requests.get(url)
         test_cls.assertTrue(resp.ok)
-
-        # Re-run the 'az containerapp up' command with the location parameter if provided
-        if location:
-            up_cmd += f" -l {location.upper()}"
-            test_cls.cmd(up_cmd)
+        if check_registry_identity:
+            test_cls.assertTrue(app["properties"]["configuration"]["registries"][0]["identity"] == check_registry_identity)
 
 
 def create_and_verify_containerapp_up_with_multiple_environments(
@@ -174,6 +251,74 @@ def create_and_verify_containerapp_up_with_multiple_environments(
         test_cls.cmd('containerapp delete -g {} -n {} --yes --no-wait'.format(resource_group, app_name))
         test_cls.cmd('containerapp env delete -g {} -n {} --yes --no-wait'.format(resource_group, first_env_name))
 
+def create_and_verify_containerapp_up_for_default_registry_image(
+            test_cls,
+            resource_group,
+            source_path = None,
+            location = None,
+            ingress = None,
+            image = None,
+            target_port = None,
+            app_name = None,
+            env_name = None,
+            container_name = None,
+            cpu = None,
+            memory = None):
+         # Ensure that the Container App environment is created
+        if env_name is None:
+           env_name = test_cls.create_random_name(prefix='env', length=24)
+        if app_name is None:
+            # Generate a name for the Container App
+            app_name = test_cls.create_random_name(prefix='containerapp', length=24)
+        if image is None:
+            image = "mcr.microsoft.com/k8se/quickstart:latest"
+        if location is None:
+            location = TEST_LOCATION
+
+        # Create the environment
+        create_containerapp_env(test_cls=test_cls,resource_group=resource_group, env_name=env_name, location=location)
+
+        # Construct the 'az containerapp create' command
+        create_cmd = f"containerapp create -g {resource_group} -n {app_name} --environment {env_name} --image {image} --container-name {container_name} --cpu {cpu} --memory {memory} --target-port {target_port} --ingress {ingress}"
+        test_cls.cmd(create_cmd)
+
+        # Assert that the Container App only has one container and the quickstart image is used
+        app = test_cls.cmd(f"containerapp show -g {resource_group} -n {app_name}").get_output_in_json()
+        test_cls.assertEqual(app["properties"]["template"]["containers"][0]["name"], container_name)
+        test_cls.assertEqual(app["properties"]["template"]["containers"][0]["image"], image)
+        test_cls.assertEqual(len(app["properties"]["template"]["containers"]), 1)
+
+        up_cmd = f"containerapp up -g {resource_group} -n {app_name}"
+        if source_path:
+            up_cmd += f" --source \"{source_path}\""
+        if ingress:
+            up_cmd += f" --ingress {ingress}"
+        if target_port:
+            up_cmd += f" --target-port {target_port}"
+        if location:
+            up_cmd += f" -l {location}"
+
+        # Execute the 'az containerapp up' command to run source to cloud and update the Container App
+        test_cls.cmd(up_cmd)
+
+        # Assert that the Containre App only has one container and the source to cloud image is used
+        app = test_cls.cmd(f"containerapp show -g {resource_group} -n {app_name}").get_output_in_json()
+        test_cls.assertEqual(app["properties"]["template"]["containers"][0]["name"], app_name)
+        test_cls.assertEqual(app["properties"]["template"]["containers"][0]["image"].split("/")[0], "default")
+        test_cls.assertEqual(len(app["properties"]["template"]["containers"]), 1)
+
+        # Verify that the Container App is running
+        app = test_cls.cmd(f"containerapp show -g {resource_group} -n {app_name}").get_output_in_json()
+        url = app["properties"]["configuration"]["ingress"]["fqdn"]
+        url = url if url.startswith("http") else f"http://{url}"
+        resp = requests.get(url)
+        test_cls.assertTrue(resp.ok)
+
+        test_cls.cmd('containerapp delete -g {} -n {} --yes'.format(resource_group, app_name))
+        test_cls.cmd('containerapp list -g {}'.format(resource_group), checks=[
+            JMESPathCheck('length(@)', 0),
+        ])
+
 
 def create_extension_and_custom_location(test_cls, resource_group, connected_cluster_name, custom_location_name):
     try:
@@ -185,7 +330,7 @@ def create_extension_and_custom_location(test_cls, resource_group, connected_clu
         connected_cluster_id = connected_cluster.get('id')
         location = TEST_LOCATION
         if format_location(location) == format_location(STAGE_LOCATION):
-            location = "eastus2euap"
+            location = "eastasia"
         extension = test_cls.cmd(f'az k8s-extension create'
                                  f' --resource-group {resource_group}'
                                  f' --name containerapp-ext'
@@ -282,6 +427,7 @@ def create_and_verify_containerapp_create_and_update(
             env_name = None,
             source_path = None,
             artifact_path = None,
+            build_env_vars = None,
             image = None,
             ingress = None,
             target_port = None,
@@ -299,7 +445,7 @@ def create_and_verify_containerapp_create_and_update(
         # Ensure that the Container App environment is created
         env_id = None
         if env_name is None:
-            env_id = prepare_containerapp_env_for_app_e2e_tests(test_cls)
+            env_id = prepare_containerapp_env_for_app_e2e_tests(test_cls, location=location)
             env_name = parse_resource_id(env_id).get('name')
 
         if app_name is None:
@@ -327,6 +473,8 @@ def create_and_verify_containerapp_create_and_update(
             create_cmd += f" --source \"{source_path}\""
         if artifact_path:
             create_cmd += f" --artifact \"{artifact_path}\""
+        if build_env_vars:
+            create_cmd += f" --build-env-vars {build_env_vars}"
         if image:
             create_cmd += f" --image {image}"
             image_name = registry_server + "/" + _reformat_image(image)
@@ -405,6 +553,26 @@ def create_and_verify_containerapp_create_and_update(
             JMESPathCheck('length(@)', 0),
         ])
 
+def create_and_verify_containerapp_create_and_update_env_vars(test_cls, resource_group, name, source_path):
+    # Ensure that the Container App environment is created
+    env_name = test_cls.create_random_name(prefix='env', length=24)
+    create_containerapp_env(test_cls=test_cls, resource_group=resource_group, env_name=env_name)
+
+    # Create and verify Container App using cloud build
+    test_cls.cmd(f'containerapp create -g {resource_group} -n {name} --environment {env_name} --source \"{source_path}\" --env-vars "testkey1=value1" "testkey2=value2"')
+    test_cls.cmd(f'containerapp show -g {resource_group} -n {name}', checks=[
+        JMESPathCheck('properties.template.containers[0].env', [{'name': 'testkey1', 'value': 'value1'}, {'name': 'testkey2', 'value': 'value2'}])
+    ])
+
+    # Update and verify Container App using cloud build
+    test_cls.cmd(f'containerapp update -g {resource_group} -n {name} --source \"{source_path}\"')
+    test_cls.cmd(f'containerapp show -g {resource_group} -n {name}', checks=[
+        JMESPathCheck('properties.template.containers[0].name', name),
+        JMESPathCheck('properties.template.containers[0].env', [{'name': 'testkey1', 'value': 'value1'}, {'name': 'testkey2', 'value': 'value2'}])
+    ])
+
+    # Delete the Container App
+    test_cls.cmd('containerapp delete -g {} -n {} --yes'.format(resource_group, name))
 
 def _reformat_image(image):
     image = image.split("/")[-1]

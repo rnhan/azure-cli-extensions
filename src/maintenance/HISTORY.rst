@@ -2,6 +2,26 @@
 
 Release History
 ===============
+2.0.0b1
+++++++
+* Added support for approving list of scheduled events
+
+1.7.0b3
+++++++
+* Changed live tests to recorded tests for maintenance extension
+
+1.7.0b2
+++++++
+* Added list of allowed classifications in description for Maintenance Configuration
+
+1.7.0b1
+++++++
+* Changed incorrect parameter name
+
+1.6.0
+++++++
+* Added support for approving scheduled events
+
 1.5.0
 ++++++
 * Added support for maintenance configuration canncellation.

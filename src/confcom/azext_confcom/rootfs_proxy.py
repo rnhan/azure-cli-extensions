@@ -4,21 +4,39 @@
 # --------------------------------------------------------------------------------------------
 
 
-import subprocess
-from typing import List
+import hashlib
+import json
 import os
-import sys
-import stat
-from pathlib import Path
 import platform
+import stat
+import subprocess
+import sys
+from typing import List, Dict
+
 import requests
-from knack.log import get_logger
 from azext_confcom.errors import eprint
+from azext_confcom.lib.paths import get_binaries_dir
+from knack.log import get_logger
 
 
 host_os = platform.system()
 machine = platform.machine()
 logger = get_logger(__name__)
+
+
+_binaries_dir = get_binaries_dir()
+_dmverity_vhd_binaries = {
+    "Linux": {
+        "path": _binaries_dir / "dmverity-vhd",
+        "url": "https://github.com/microsoft/integrity-vhd/releases/download/v2.1/dmverity-vhd",
+        "sha256": "a75eb11f3ad3058bfdef0b5cf0bf64c1bef714a2afa054f3e242932d25d9e57d",
+    },
+    "Windows": {
+        "path": _binaries_dir / "dmverity-vhd.exe",
+        "url": "https://github.com/microsoft/integrity-vhd/releases/download/v2.1/dmverity-vhd.exe",
+        "sha256": "5e371f86a2b552e5e69759421a81a26a07450dc404c1c88a08a4f983322598a2",
+    },
+}
 
 
 class SecurityPolicyProxy:  # pylint: disable=too-few-public-methods
@@ -27,35 +45,15 @@ class SecurityPolicyProxy:  # pylint: disable=too-few-public-methods
 
     @staticmethod
     def download_binaries():
-        dir_path = os.path.dirname(os.path.realpath(__file__))
 
-        bin_folder = os.path.join(dir_path, "bin")
-        if not os.path.exists(bin_folder):
-            os.makedirs(bin_folder)
+        for binary_info in _dmverity_vhd_binaries.values():
+            dmverity_vhd_fetch_resp = requests.get(binary_info["url"], verify=True)
+            dmverity_vhd_fetch_resp.raise_for_status()
 
-        # get the most recent release artifacts from github
-        r = requests.get("https://api.github.com/repos/microsoft/hcsshim/releases")
-        bin_flag = False
-        exe_flag = False
-        # search for dmverity-vhd in the assets from hcsshim releases
-        for release in r.json():
-            # these should be newest to oldest
-            for asset in release["assets"]:
-                # download the file if it contains dmverity-vhd
-                if "dmverity-vhd" in asset["name"]:
-                    if "exe" in asset["name"]:
-                        exe_flag = True
-                    else:
-                        bin_flag = True
-                    # get the download url for the dmverity-vhd file
-                    exe_url = asset["browser_download_url"]
-                    # download the file
-                    r = requests.get(exe_url)
-                    # save the file to the bin folder
-                    with open(os.path.join(bin_folder, asset["name"]), "wb") as f:
-                        f.write(r.content)
-            if bin_flag and exe_flag:
-                break
+            assert hashlib.sha256(dmverity_vhd_fetch_resp.content).hexdigest() == binary_info["sha256"]
+
+            with open(binary_info["path"], "wb") as f:
+                f.write(dmverity_vhd_fetch_resp.content)
 
     def __init__(self):
         script_directory = os.path.dirname(os.path.realpath(__file__))
@@ -74,10 +72,10 @@ class SecurityPolicyProxy:  # pylint: disable=too-few-public-methods
             eprint("The extension for MacOS has not been implemented.")
         else:
             eprint(
-                "Unknown target platform. The extension only works with Windows, Linux and MacOS"
+                "Unknown target platform. The extension only works with Windows and Linux"
             )
 
-        self.policy_bin = Path(os.path.join(f"{script_directory}", f"{DEFAULT_LIB}"))
+        self.policy_bin = os.path.join(f"{script_directory}", f"{DEFAULT_LIB}")
 
         # check if the extension binary exists
         if not os.path.exists(self.policy_bin):
@@ -87,9 +85,14 @@ class SecurityPolicyProxy:  # pylint: disable=too-few-public-methods
             st = os.stat(self.policy_bin)
             os.chmod(self.policy_bin, st.st_mode | stat.S_IXUSR)
 
-    def get_policy_image_layers(
-        self, image: str, tag: str, tar_location: str = ""
-    ) -> List[str]:
+    def get_policy_image_layers(  # pylint: disable=redefined-outer-name
+        self,
+        image: str,
+        tag: str,
+        platform: str = "linux/amd64",
+        tar_location: str = "",
+        faster_hashing=False
+    ) -> Dict[str, List[str]]:
         image_name = f"{image}:{tag}"
         # populate layer info
         if self.layer_cache.get(image_name):
@@ -103,12 +106,19 @@ class SecurityPolicyProxy:  # pylint: disable=too-few-public-methods
 
         # decide if we're reading from a tarball or not
         if tar_location:
+            logger.info("Calculating layer hashes from tarball")
             arg_list += ["--tarball", tar_location]
         else:
             arg_list += ["-d"]
 
+        if not tar_location and faster_hashing:
+            arg_list += ["-b"]
+
         # add the image to the end of the parameter list
         arg_list += ["roothash", "-i", f"{image_name}"]
+
+        if platform.startswith("windows"):
+            arg_list += ["--platform", platform]
 
         item = subprocess.run(
             arg_list,
@@ -116,7 +126,7 @@ class SecurityPolicyProxy:  # pylint: disable=too-few-public-methods
             check=False,
         )
 
-        output = []
+        result = {}
         if item.returncode != 0:
             if item.stderr.decode("utf-8") != "" and item.stderr.decode("utf-8") is not None:
                 logger.warning(item.stderr.decode("utf-8"))
@@ -128,13 +138,29 @@ class SecurityPolicyProxy:  # pylint: disable=too-few-public-methods
                 )
             sys.exit(item.returncode)
         elif len(item.stdout) > 0:
-            output = item.stdout.decode("utf8").strip("\n").split("\n")
-            output = [i.split(": ", 1)[1] for i in output if len(i.split(": ", 1)) > 1]
+            stdout_str = item.stdout.decode("utf8").strip()
+
+            # Try parsing as JSON (both Linux and Windows now output JSON)
+            if stdout_str.startswith("{"):
+                try:
+                    json_output = json.loads(stdout_str)
+                    result["layers"] = json_output.get("layers", [])
+                    # mounted_cim is only present for Windows
+                    if "mounted_cim" in json_output:
+                        result["mounted_cim"] = json_output["mounted_cim"]
+                except json.JSONDecodeError as e:
+                    logger.error("Failed to parse JSON output: %s", e)
+                    sys.exit(1)
+            else:
+                # Fallback: line-by-line parsing for older dmverity-vhd versions
+                lines = stdout_str.split("\n")
+                layers = [i.split(": ", 1)[1] for i in lines if len(i.split(": ", 1)) > 1]
+                result["layers"] = layers
         else:
             eprint(
                 "Could not get layer hashes"
             )
 
-        # cache output layers
-        self.layer_cache[image_name] = output
-        return output
+        # cache output
+        self.layer_cache[image_name] = result
+        return result

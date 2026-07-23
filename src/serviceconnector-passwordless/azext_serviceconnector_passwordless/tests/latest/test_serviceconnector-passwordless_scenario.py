@@ -17,6 +17,7 @@ from azure.cli.command_modules.serviceconnector._resource_config import (
 TEST_DIR = os.path.abspath(os.path.join(os.path.abspath(__file__), '..'))
 resource_group = 'servicelinker-cli-test-group'
 
+
 @unittest.skip('Need environment prepared')
 class Serviceconnector_passwordlessScenarioTest(ScenarioTest):
 
@@ -52,7 +53,6 @@ class Serviceconnector_passwordlessScenarioTest(ScenarioTest):
         self.cmd('webapp connection delete --id {} --yes'.format(connection_id))
         self.cmd('sql db delete -y -g {target_resource_group} -s {server} -n {database}')
 
-
     def test_aad_spring_mysqlflexible(self):
         self.kwargs.update({
             'subscription': get_subscription_id(self.cli_ctx),
@@ -84,14 +84,12 @@ class Serviceconnector_passwordlessScenarioTest(ScenarioTest):
         # delete connection
         self.cmd('spring connection delete --id {} --yes'.format(connection_id))
 
-
         # create connection
         self.cmd('spring connection create mysql-flexible --connection {} --source-id {} --target-id {} '
                  '--client-type springboot --system-identity mysql-identity-id={}'.format(name, source_id, target_id, mysql_identity_id))
         # delete connection
         self.cmd('spring connection delete --id {} --yes'.format(connection_id))
         self.cmd('mysql flexible-server db delete -y -g {target_resource_group} --server-name {server} --database-name {database}')
-
 
     def test_aad_containerapp_postgresflexible(self):
         default_container_name = 'simple-hello-world-container'
@@ -121,7 +119,7 @@ class Serviceconnector_passwordlessScenarioTest(ScenarioTest):
         # create
         self.cmd('containerapp connection create postgres-flexible --connection {} --source-id {} --target-id {} '
                  '--system-identity --client-type springboot -c {}'.format(name, source_id, target_id, default_container_name))
-        configs = self.cmd('containerapp connection list-configuration --id {}'.format(connection_id)).get_output_in_json();
+        self.cmd('containerapp connection list-configuration --id {}'.format(connection_id)).get_output_in_json()
         # clean
         self.cmd('containerapp connection delete --id {} --yes'.format(connection_id))
         #
@@ -131,7 +129,6 @@ class Serviceconnector_passwordlessScenarioTest(ScenarioTest):
         # clean
         # self.cmd('containerapp connection delete --id {} --yes'.format(connection_id))
         # self.cmd('postgres flexible-server delete -y -g {target_resource_group} -n {server}')
-
 
     def test_aad_webapp_postgressingle(self):
         self.kwargs.update({
@@ -159,8 +156,7 @@ class Serviceconnector_passwordlessScenarioTest(ScenarioTest):
         # create
         self.cmd('webapp connection create postgres-flexible --connection {} --source-id {} --target-id {} '
                  '--system-identity --client-type springboot'.format(name, source_id, target_id))
-        configs = self.cmd('webapp connection list-configuration --id {}'.format(connection_id)).get_output_in_json();
-
+        self.cmd('webapp connection list-configuration --id {}'.format(connection_id)).get_output_in_json()
 
     def test_local_postgresflexible_passwordless(self):
         self.kwargs.update({
@@ -214,7 +210,6 @@ class Serviceconnector_passwordlessScenarioTest(ScenarioTest):
         # delete connection
         self.cmd('connection delete --id {} --yes'.format(connection_id))
 
-
     def test_local_mysqlflexible_passwordless(self):
         self.kwargs.update({
             'subscription': get_subscription_id(self.cli_ctx),
@@ -263,7 +258,6 @@ class Serviceconnector_passwordlessScenarioTest(ScenarioTest):
 
         # delete connection
         self.cmd('connection delete --id {} --yes'.format(connection_id))
-
 
     def test_local_postgres_passwordless(self):
         self.kwargs.update({
@@ -314,7 +308,6 @@ class Serviceconnector_passwordlessScenarioTest(ScenarioTest):
         # delete connection
         self.cmd('connection delete --id {} --yes'.format(connection_id))
 
-
     def test_local_sql_passwordless(self):
         self.kwargs.update({
             'subscription': get_subscription_id(self.cli_ctx),
@@ -329,7 +322,7 @@ class Serviceconnector_passwordlessScenarioTest(ScenarioTest):
 
         # create connection
         self.cmd('connection create sql -g {} --connection {} --target-id {} '
-                 '--user-account --client-type springboot'.format(resource_group, name, target_id, user, password))
+                 '--user-account --client-type springboot'.format(resource_group, name, target_id))
 
         # list connection
         self.cmd('connection list -g {}'.format(resource_group))
@@ -362,3 +355,38 @@ class Serviceconnector_passwordlessScenarioTest(ScenarioTest):
 
         # delete connection
         self.cmd('connection delete --id {} --yes'.format(connection_id))
+
+    def test_aad_webapp_fabric_sql(self):
+        self.kwargs.update({
+            'subscription': get_subscription_id(self.cli_ctx),
+            'source_resource_group': 'azure-service-connector',
+            'site': 'DotNetAppSqlDb20240704',
+            'database': 'clitest'
+        })
+        name = 'testfabricconn'
+        source_id = SOURCE_RESOURCES.get(RESOURCE.WebApp).format(**self.kwargs)
+        connection_id = source_id + "/providers/Microsoft.ServiceLinker/linkers/" + name
+        target_id = 'https://api.fabric.microsoft.com/v1/workspaces/13c65326-ecab-43f6-8a05-60927aaa4cec/SqlDatabases/4fdf6efe-23a9-4d74-8c4a-4ecc70c4d323'
+        server = 'renzo-srv-6ae35870-c362-44b9-8389-ada214a46bb5-51240650dd56.database.windows.net,1433'
+        database = 'AzureServiceConnectorTestSqlDb-4fdf6efe-23a9-4d74-8c4a-4ecc70c4d323'
+
+        # prepare
+        self.cmd('webapp identity remove --ids {}'.format(source_id))
+
+        # create
+        self.cmd('webapp connection create fabric-sql --connection {} --source-id {} --target-id {} \
+                 --system-identity --client-type dotnet --opt-out publicnetwork \
+                 --connstr-props "Server={}" "Database={}" '.format(name, source_id, target_id, server, database)
+                )
+        # clean
+        self.cmd('webapp connection delete --id {} --yes'.format(connection_id))
+
+        # recreate and test
+        self.cmd('webapp connection create fabric-sql --connection {} --source-id {} --target-id {} \
+                 --system-identity --client-type dotnet --opt-out publicnetwork \
+                 --connstr-props "Server={}" \
+                 "Database={}" '.format(name, source_id, target_id, server, database)
+                )
+
+        # clean
+        self.cmd('webapp connection delete --id {} --yes'.format(connection_id))

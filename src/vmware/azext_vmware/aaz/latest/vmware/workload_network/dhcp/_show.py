@@ -18,13 +18,13 @@ class Show(AAZCommand):
     """Get dhcp by id in a private cloud workload network.
 
     :example: Get DHCP by ID in a workload network.
-        az vmware workload-network dhcp show --resource-group group1 --private-cloud cloud1 --dhcp dhcp1
+        az vmware workload-network dhcp show --resource-group group1 --dhcp dhcp1 --private-cloud cloud1
     """
 
     _aaz_info = {
-        "version": "2023-03-01",
+        "version": "2025-09-01",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.avs/privateclouds/{}/workloadnetworks/default/dhcpconfigurations/{}", "2023-03-01"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.avs/privateclouds/{}/workloadnetworks/default/dhcpconfigurations/{}", "2025-09-01"],
         ]
     }
 
@@ -49,6 +49,9 @@ class Show(AAZCommand):
             help="NSX DHCP identifier. Generally the same as the DHCP display name",
             required=True,
             id_part="child_name_2",
+            fmt=AAZStrArgFormat(
+                pattern="^[-\\w\\._]+$",
+            ),
         )
         _args_schema.private_cloud = AAZStrArg(
             options=["-c", "--private-cloud"],
@@ -56,7 +59,7 @@ class Show(AAZCommand):
             required=True,
             id_part="name",
             fmt=AAZStrArgFormat(
-                pattern="^[-\w\._]+$",
+                pattern="^[-\\w\\._]+$",
             ),
         )
         _args_schema.resource_group = AAZResourceGroupNameArg(
@@ -133,7 +136,7 @@ class Show(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-03-01",
+                    "api-version", "2025-09-01",
                     required=True,
                 ),
             }
@@ -172,7 +175,13 @@ class Show(AAZCommand):
             _schema_on_200.name = AAZStrType(
                 flags={"read_only": True},
             )
-            _schema_on_200.properties = AAZObjectType()
+            _schema_on_200.properties = AAZObjectType(
+                flags={"client_flatten": True},
+            )
+            _schema_on_200.system_data = AAZObjectType(
+                serialized_name="systemData",
+                flags={"read_only": True},
+            )
             _schema_on_200.type = AAZStrType(
                 flags={"read_only": True},
             )
@@ -211,6 +220,26 @@ class Show(AAZCommand):
             )
             disc_server.server_address = AAZStrType(
                 serialized_name="serverAddress",
+            )
+
+            system_data = cls._schema_on_200.system_data
+            system_data.created_at = AAZStrType(
+                serialized_name="createdAt",
+            )
+            system_data.created_by = AAZStrType(
+                serialized_name="createdBy",
+            )
+            system_data.created_by_type = AAZStrType(
+                serialized_name="createdByType",
+            )
+            system_data.last_modified_at = AAZStrType(
+                serialized_name="lastModifiedAt",
+            )
+            system_data.last_modified_by = AAZStrType(
+                serialized_name="lastModifiedBy",
+            )
+            system_data.last_modified_by_type = AAZStrType(
+                serialized_name="lastModifiedByType",
             )
 
             return cls._schema_on_200

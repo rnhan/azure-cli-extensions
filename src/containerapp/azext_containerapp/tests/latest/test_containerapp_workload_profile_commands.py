@@ -6,11 +6,14 @@
 import os
 import time
 
+from azure.cli.core.azclierror import ValidationError
 from azure.cli.testsdk.scenario_tests import AllowLargeResponse
 from azure.cli.testsdk import (ScenarioTest, ResourceGroupPreparer, JMESPathCheck, live_only)
 
 from azext_containerapp.tests.latest.common import (write_test_file, clean_up_test_file)
 from .common import TEST_LOCATION
+from .custom_preparers import SubnetPreparer
+from .utils import create_vnet_subnet
 
 TEST_DIR = os.path.abspath(os.path.join(os.path.abspath(__file__), '..'))
 
@@ -146,7 +149,9 @@ class ContainerAppWorkloadProfilesTest(ScenarioTest):
     def test_containerapp_create_enable_workload_profiles_three_state_flag(self, resource_group):
         self.cmd('configure --defaults location={}'.format(TEST_LOCATION))
         env = self.create_random_name(prefix='env', length=24)
-        self.cmd('containerapp env create -g {} -n {} --logs-destination none --enable-workload-profiles false'.format(resource_group, env), expect_failure=False, checks=[
+        subnet_id = create_vnet_subnet(self, resource_group, self.create_random_name(prefix='name', length=24), delegations=None)
+
+        self.cmd('containerapp env create -g {} -n {} --logs-destination none --enable-workload-profiles false -s {}'.format(resource_group, env, subnet_id), expect_failure=False, checks=[
             JMESPathCheck("name", env),
             JMESPathCheck("properties.provisioningState", "Succeeded"),
             JMESPathCheck("properties.workloadProfiles", None),
@@ -154,8 +159,10 @@ class ContainerAppWorkloadProfilesTest(ScenarioTest):
         self.cmd('containerapp env delete -g {} -n {} --yes --no-wait'.format(resource_group, env), expect_failure=False)
 
         env1 = self.create_random_name(prefix='env1', length=24)
-        self.cmd('containerapp env create -g {} -n {} --logs-destination none'.format(
-            resource_group, env1), expect_failure=False, checks=[
+        subnet_id1 = create_vnet_subnet(self, resource_group, self.create_random_name(prefix='name', length=24))
+
+        self.cmd('containerapp env create -g {} -n {} --logs-destination none -s {}'.format(
+            resource_group, env1, subnet_id1), expect_failure=False, checks=[
             JMESPathCheck("name", env1),
             JMESPathCheck("properties.provisioningState", "Succeeded"),
             JMESPathCheck("length(properties.workloadProfiles)", 1),
@@ -165,8 +172,10 @@ class ContainerAppWorkloadProfilesTest(ScenarioTest):
         self.cmd('containerapp env delete -g {} -n {} --yes --no-wait'.format(resource_group, env1), expect_failure=False)
 
         env2 = self.create_random_name(prefix='env2', length=24)
-        self.cmd('containerapp env create -g {} -n {} --logs-destination none --enable-workload-profiles'.format(
-            resource_group, env2), expect_failure=False, checks=[
+        subnet_id2 = create_vnet_subnet(self, resource_group, self.create_random_name(prefix='name', length=24))
+
+        self.cmd('containerapp env create -g {} -n {} --logs-destination none --enable-workload-profiles -s {}'.format(
+            resource_group, env2, subnet_id2), expect_failure=False, checks=[
             JMESPathCheck("name", env2),
             JMESPathCheck("length(properties.workloadProfiles)", 1),
             JMESPathCheck('properties.workloadProfiles[0].name', "Consumption", case_sensitive=False),
@@ -174,8 +183,10 @@ class ContainerAppWorkloadProfilesTest(ScenarioTest):
         ])
 
         env3 = self.create_random_name(prefix='env3', length=24)
-        self.cmd('containerapp env create -g {} -n {} --logs-destination none --enable-workload-profiles true'.format(
-            resource_group, env3), expect_failure=False, checks=[
+        subnet_id3 = create_vnet_subnet(self, resource_group, self.create_random_name(prefix='name', length=24))
+
+        self.cmd('containerapp env create -g {} -n {} --logs-destination none --enable-workload-profiles true -s {}'.format(
+            resource_group, env3, subnet_id3), expect_failure=False, checks=[
             JMESPathCheck("name", env3),
             JMESPathCheck("properties.provisioningState", "Succeeded"),
             JMESPathCheck("length(properties.workloadProfiles)", 1),
@@ -192,9 +203,18 @@ class ContainerAppWorkloadProfilesTest(ScenarioTest):
 
         location = "eastus"
 
-        self.cmd('containerapp env create -g {} -n {} --location {}  --logs-destination none --enable-workload-profiles'.format(resource_group, env, location))
+        containerapp_env = self.cmd('containerapp env create -g {} -n {} --location {}  --logs-destination none --enable-workload-profiles'.format(resource_group, env, location)).get_output_in_json()
+        while containerapp_env["properties"]["provisioningState"].lower() in ["waiting", "inprogress"]:
+            time.sleep(5)
+            containerapp_env = self.cmd('containerapp env show -g {} -n {}'.format(resource_group, env)).get_output_in_json()
+        time.sleep(60)
 
-        containerapp_env = self.cmd('containerapp env show -g {} -n {}'.format(resource_group, env)).get_output_in_json()
+        self.cmd('containerapp env show -g {} -n {}'.format(resource_group, env), checks=[
+            JMESPathCheck('name', env),
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck('properties.workloadProfiles[0].name', "Consumption", case_sensitive=False),
+            JMESPathCheck('properties.workloadProfiles[0].workloadProfileType', "Consumption", case_sensitive=False),
+        ]).get_output_in_json()
 
         workload_profile_name = "my-e16"
 
@@ -206,6 +226,13 @@ class ContainerAppWorkloadProfilesTest(ScenarioTest):
             time.sleep(5)
             containerapp_env = self.cmd('containerapp env show -g {} -n {}'.format(resource_group, env)).get_output_in_json()
         time.sleep(30)
+
+        self.cmd('containerapp env show -g {} -n {}'.format(resource_group, env), checks=[
+            JMESPathCheck('name', env),
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck('properties.workloadProfiles[0].name', "Consumption", case_sensitive=False),
+            JMESPathCheck('properties.workloadProfiles[0].workloadProfileType', "Consumption", case_sensitive=False),
+        ]).get_output_in_json()
 
         self.cmd("az containerapp env workload-profile show -g {} -n {} --workload-profile-name my-e16 ".format(resource_group, env), checks=[
             JMESPathCheck("properties.name", workload_profile_name),
@@ -303,10 +330,11 @@ class ContainerAppWorkloadProfilesTest(ScenarioTest):
         while containerapp_env["properties"]["provisioningState"].lower() in ["waiting", "inprogress"]:
             time.sleep(5)
             containerapp_env = self.cmd('containerapp env show -g {} -n {}'.format(resource_group, env)).get_output_in_json()
-        time.sleep(30)
+        time.sleep(60)
 
         self.cmd('containerapp env show -n {} -g {}'.format(env, resource_group), checks=[
             JMESPathCheck('name', env),
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
             JMESPathCheck('properties.workloadProfiles[0].name', "Consumption", case_sensitive=False),
             JMESPathCheck('properties.workloadProfiles[0].workloadProfileType', "Consumption", case_sensitive=False),
         ])
@@ -319,6 +347,21 @@ class ContainerAppWorkloadProfilesTest(ScenarioTest):
         self.assertEqual(profiles[0]["properties"]["workloadProfileType"].lower(), "consumption")
 
         self.cmd("az containerapp env workload-profile add -g {} -n {} --workload-profile-name my-d4 --workload-profile-type D4 --min-nodes 2 --max-nodes 3".format(resource_group, env))
+        containerapp_env = self.cmd(
+            'containerapp env show -g {} -n {}'.format(resource_group, env)).get_output_in_json()
+
+        while containerapp_env["properties"]["provisioningState"].lower() in ["waiting", "inprogress"]:
+            time.sleep(5)
+            containerapp_env = self.cmd(
+                'containerapp env show -g {} -n {}'.format(resource_group, env)).get_output_in_json()
+        time.sleep(30)
+
+        self.cmd('containerapp env show -g {} -n {}'.format(resource_group, env), checks=[
+            JMESPathCheck('name', env),
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck('properties.workloadProfiles[0].name', "Consumption", case_sensitive=False),
+            JMESPathCheck('properties.workloadProfiles[0].workloadProfileType', "Consumption", case_sensitive=False),
+        ]).get_output_in_json()
 
         self.cmd("az containerapp create -g {} --target-port 80 --ingress external --image mcr.microsoft.com/k8se/quickstart:latest --revision-suffix suf1 --environment {} -n {} --workload-profile-name my-d4 --cpu 0.5 --memory 1Gi".format(resource_group, env, app1))
 
@@ -358,18 +401,19 @@ class ContainerAppWorkloadProfilesTest(ScenarioTest):
 
     @AllowLargeResponse(8192)
     @ResourceGroupPreparer(location="eastus")
-    def test_containerapp_env_enable_workload_profiles_infer_env_type(self, resource_group):
+    @SubnetPreparer(location="centralus", service_endpoints="Microsoft.Storage.Global")
+    def test_containerapp_env_enable_workload_profiles_infer_env_type(self, resource_group, subnet_id):
         self.cmd('configure --defaults location={}'.format(TEST_LOCATION))
         env = self.create_random_name(prefix='env', length=24)
-        self.cmd('containerapp env create -g {} -n {} --logs-destination none --enable-workload-profiles false'.format(
-            resource_group, env), expect_failure=False, checks=[
+        self.cmd('containerapp env create -g {} -n {} --logs-destination none --enable-workload-profiles false -s {}'.format(
+            resource_group, env, subnet_id), expect_failure=False, checks=[
             JMESPathCheck("name", env),
             JMESPathCheck("properties.provisioningState", "Succeeded"),
             JMESPathCheck("properties.workloadProfiles", None),
         ])
 
-        self.cmd('containerapp env create -g {} -n {} --enable-workload-profiles --logs-destination none'.format(resource_group, env), expect_failure=True)
-        self.cmd('containerapp env create -g {} -n {} -w --logs-destination none'.format(resource_group, env), expect_failure=True)
+        with self.assertRaisesRegex(ValidationError, "Existing environment {} cannot enable workload profiles. If you want to use Consumption and Dedicated environment, please create a new one.".format(env)):
+            self.cmd('containerapp env create -g {} -n {} -w --logs-destination none -s {}'.format(resource_group, env, subnet_id))
 
         self.cmd('containerapp env create -g {} -n {} -w false --logs-destination none'.format(resource_group, env), expect_failure=False, checks=[
             JMESPathCheck("name", env),
@@ -377,13 +421,13 @@ class ContainerAppWorkloadProfilesTest(ScenarioTest):
             JMESPathCheck("properties.workloadProfiles", None),
         ])
 
-        self.cmd('containerapp env create -g {} -n {} --enable-workload-profiles false --logs-destination none'.format(resource_group, env), expect_failure=False, checks=[
+        self.cmd('containerapp env create -g {} -n {} --enable-workload-profiles false --logs-destination none -s {}'.format(resource_group, env, subnet_id), expect_failure=False, checks=[
             JMESPathCheck("name", env),
             JMESPathCheck("properties.provisioningState", "Succeeded"),
             JMESPathCheck("properties.workloadProfiles", None),
         ])
 
-        self.cmd('containerapp env create -g {} -n {} --logs-destination none'.format(resource_group, env), expect_failure=False, checks=[
+        self.cmd('containerapp env create -g {} -n {} --logs-destination none -s {}'.format(resource_group, env, subnet_id), expect_failure=False, checks=[
             JMESPathCheck("name", env),
             JMESPathCheck("properties.provisioningState", "Succeeded"),
             JMESPathCheck("properties.workloadProfiles", None),
@@ -412,9 +456,9 @@ class ContainerAppWorkloadProfilesGPUTest(ScenarioTest):
         super().__init__(*arg, random_config_dir=True, **kwargs)
 
     @AllowLargeResponse(8192)
-    @ResourceGroupPreparer(location="northeurope")
+    @ResourceGroupPreparer(location="westus3")
     def test_containerapp_create_enable_dedicated_gpu(self, resource_group):
-        self.cmd('configure --defaults location={}'.format("northeurope"))
+        self.cmd('configure --defaults location={}'.format("westus3"))
         env = self.create_random_name(prefix='gpu-env', length=24)
         gpu_default_name = "gpu"
         gpu_default_type = "NC24-A100"
@@ -428,7 +472,7 @@ class ContainerAppWorkloadProfilesGPUTest(ScenarioTest):
             JMESPathCheck('properties.workloadProfiles[1].name', gpu_default_name, case_sensitive=False),
             JMESPathCheck('properties.workloadProfiles[1].workloadProfileType', gpu_default_type, case_sensitive=False),
             JMESPathCheck('properties.workloadProfiles[1].maximumCount', 1),
-            JMESPathCheck('properties.workloadProfiles[1].minimumCount', 0),
+            JMESPathCheck('properties.workloadProfiles[1].minimumCount', 1),
         ])
         containerapp_env = self.cmd('containerapp env show -g {} -n {}'.format(resource_group, env)).get_output_in_json()
 

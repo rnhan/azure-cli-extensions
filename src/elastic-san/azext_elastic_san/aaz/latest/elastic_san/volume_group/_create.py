@@ -13,7 +13,6 @@ from azure.cli.core.aaz import *
 
 @register_command(
     "elastic-san volume-group create",
-    is_preview=True,
 )
 class Create(AAZCommand):
     """Create a Volume Group.
@@ -23,12 +22,15 @@ class Create(AAZCommand):
 
     :example: Create a volume group with CustomerManagedKey and UserAssignedIdentity
         az elastic-san volume-group create -e "san_name" -n "vg_name" -g "rg" --encryption EncryptionAtRestWithCustomerManagedKey --protocol-type Iscsi --identity '{type:UserAssigned,user-assigned-identity:"uai_id"}' --encryption-properties '{key-vault-properties:{key-name:"key_name",key-vault-uri:"vault_uri"},identity:{user-assigned-identity:"uai_id"}}'
+
+    :example: Create a volume group with delete retention policy params
+        az elastic-san volume-group create -e san_name -n volume_group_name -g rg_name --encryption EncryptionAtRestWithPlatformKey --protocol-type Iscsi --network-acls '{virtual-network-rules:[{id:{subnet_id},action:Allow}]}' --delete-retention-policy-state Enabled --delete-retention-period-days 7
     """
 
     _aaz_info = {
-        "version": "2023-01-01",
+        "version": "2025-09-01",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.elasticsan/elasticsans/{}/volumegroups/{}", "2023-01-01"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.elasticsan/elasticsans/{}/volumegroups/{}", "2025-09-01"],
         ]
     }
 
@@ -112,6 +114,11 @@ class Create(AAZCommand):
             options=["--encryption-properties"],
             arg_group="Properties",
             help="Encryption Properties describing Key Vault and Identity information",
+        )
+        _args_schema.enforce_data_integrity_check_for_iscsi = AAZBoolArg(
+            options=["--data-integrity-check", "--enforce-data-integrity-check-for-iscsi"],
+            arg_group="Properties",
+            help="A boolean indicating whether or not Data Integrity Check is enabled",
         )
         _args_schema.network_acls = AAZObjectArg(
             options=["--network-acls"],
@@ -263,7 +270,7 @@ class Create(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-01-01",
+                    "api-version", "2025-09-01",
                     required=True,
                 ),
             }
@@ -288,7 +295,7 @@ class Create(AAZCommand):
                 typ=AAZObjectType,
                 typ_kwargs={"flags": {"required": True, "client_flatten": True}}
             )
-            _builder.set_prop("identity", AAZObjectType, ".identity")
+            _builder.set_prop("identity", AAZIdentityObjectType, ".identity")
             _builder.set_prop("properties", AAZObjectType, typ_kwargs={"flags": {"client_flatten": True}})
 
             identity = _builder.get(".identity")
@@ -304,6 +311,7 @@ class Create(AAZCommand):
             if properties is not None:
                 properties.set_prop("encryption", AAZStrType, ".encryption")
                 properties.set_prop("encryptionProperties", AAZObjectType, ".encryption_properties")
+                properties.set_prop("enforceDataIntegrityCheckForIscsi", AAZBoolType, ".enforce_data_integrity_check_for_iscsi")
                 properties.set_prop("networkAcls", AAZObjectType, ".network_acls")
                 properties.set_prop("protocolType", AAZStrType, ".protocol_type")
 
@@ -358,7 +366,7 @@ class Create(AAZCommand):
             _schema_on_200_201.id = AAZStrType(
                 flags={"read_only": True},
             )
-            _schema_on_200_201.identity = AAZObjectType()
+            _schema_on_200_201.identity = AAZIdentityObjectType()
             _schema_on_200_201.name = AAZStrType(
                 flags={"read_only": True},
             )
@@ -407,6 +415,9 @@ class Create(AAZCommand):
             properties.encryption = AAZStrType()
             properties.encryption_properties = AAZObjectType(
                 serialized_name="encryptionProperties",
+            )
+            properties.enforce_data_integrity_check_for_iscsi = AAZBoolType(
+                serialized_name="enforceDataIntegrityCheckForIscsi",
             )
             properties.network_acls = AAZObjectType(
                 serialized_name="networkAcls",

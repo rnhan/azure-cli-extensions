@@ -17,14 +17,14 @@ from azure.cli.core.aaz import *
 class ValidateConfiguration(AAZCommand):
     """Validates the configuration of the underlying resources in the given Network Fabric instance.
 
-    :example: Validate the configuration
+    :example: Validate the configuration on the Network Fabric
         az networkfabric fabric validate-configuration -g "example-rg" --resource-name "example-nf" --validate-action "Cabling"
     """
 
     _aaz_info = {
-        "version": "2023-06-15",
+        "version": "2026-01-15-preview",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.managednetworkfabric/networkfabrics/{}/validateconfiguration", "2023-06-15"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.managednetworkfabric/networkfabrics/{}/validateconfiguration", "2026-01-15-preview"],
         ]
     }
 
@@ -50,9 +50,11 @@ class ValidateConfiguration(AAZCommand):
             help="Name of the Network Fabric.",
             required=True,
             id_part="name",
+            fmt=AAZStrArgFormat(
+                pattern="^[a-zA-Z]{1}[a-zA-Z0-9-_]{2,127}$",
+            ),
         )
         _args_schema.resource_group = AAZResourceGroupNameArg(
-            help="Name of the resource group",
             required=True,
         )
 
@@ -64,9 +66,6 @@ class ValidateConfiguration(AAZCommand):
             arg_group="Body",
             help="Validate action that to be performed",
             enum={"Cabling": "Cabling", "Configuration": "Configuration", "Connectivity": "Connectivity"},
-            fmt=AAZStrArgFormat(
-                min_length=1,
-            ),
         )
         return cls._args_schema
 
@@ -151,7 +150,7 @@ class ValidateConfiguration(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-06-15",
+                    "api-version", "2026-01-15-preview",
                     required=True,
                 ),
             }
@@ -196,7 +195,44 @@ class ValidateConfiguration(AAZCommand):
                 return cls._schema_on_200
 
             cls._schema_on_200 = AAZObjectType()
-            _ValidateConfigurationHelper._build_schema_validate_configuration_response_read(cls._schema_on_200)
+
+            _schema_on_200 = cls._schema_on_200
+            _schema_on_200.end_time = AAZStrType(
+                serialized_name="endTime",
+            )
+            _schema_on_200.error = AAZObjectType()
+            _ValidateConfigurationHelper._build_schema_error_detail_read(_schema_on_200.error)
+            _schema_on_200.id = AAZStrType(
+                nullable=True,
+            )
+            _schema_on_200.name = AAZStrType()
+            _schema_on_200.operations = AAZListType()
+            _schema_on_200.percent_complete = AAZFloatType(
+                serialized_name="percentComplete",
+            )
+            _schema_on_200.properties = AAZObjectType()
+            _schema_on_200.resource_id = AAZStrType(
+                serialized_name="resourceId",
+                nullable=True,
+                flags={"read_only": True},
+            )
+            _schema_on_200.start_time = AAZStrType(
+                serialized_name="startTime",
+            )
+            _schema_on_200.status = AAZStrType(
+                flags={"required": True},
+            )
+
+            operations = cls._schema_on_200.operations
+            operations.Element = AAZObjectType()
+            _ValidateConfigurationHelper._build_schema_operation_status_result_read(operations.Element)
+
+            properties = cls._schema_on_200.properties
+            properties.configuration_state = AAZStrType(
+                serialized_name="configurationState",
+                flags={"read_only": True},
+            )
+            properties.url = AAZStrType()
 
             return cls._schema_on_200
 
@@ -240,9 +276,15 @@ class _ValidateConfigurationHelper:
         additional_info.Element = AAZObjectType()
 
         _element = _schema_error_detail_read.additional_info.Element
+        _element.info = AAZDictType(
+            flags={"read_only": True},
+        )
         _element.type = AAZStrType(
             flags={"read_only": True},
         )
+
+        info = _schema_error_detail_read.additional_info.Element.info
+        info.Element = AAZAnyType()
 
         details = _schema_error_detail_read.details
         details.Element = AAZObjectType()
@@ -254,30 +296,60 @@ class _ValidateConfigurationHelper:
         _schema.message = cls._schema_error_detail_read.message
         _schema.target = cls._schema_error_detail_read.target
 
-    _schema_validate_configuration_response_read = None
+    _schema_operation_status_result_read = None
 
     @classmethod
-    def _build_schema_validate_configuration_response_read(cls, _schema):
-        if cls._schema_validate_configuration_response_read is not None:
-            _schema.configuration_state = cls._schema_validate_configuration_response_read.configuration_state
-            _schema.error = cls._schema_validate_configuration_response_read.error
-            _schema.url = cls._schema_validate_configuration_response_read.url
+    def _build_schema_operation_status_result_read(cls, _schema):
+        if cls._schema_operation_status_result_read is not None:
+            _schema.end_time = cls._schema_operation_status_result_read.end_time
+            _schema.error = cls._schema_operation_status_result_read.error
+            _schema.id = cls._schema_operation_status_result_read.id
+            _schema.name = cls._schema_operation_status_result_read.name
+            _schema.operations = cls._schema_operation_status_result_read.operations
+            _schema.percent_complete = cls._schema_operation_status_result_read.percent_complete
+            _schema.resource_id = cls._schema_operation_status_result_read.resource_id
+            _schema.start_time = cls._schema_operation_status_result_read.start_time
+            _schema.status = cls._schema_operation_status_result_read.status
             return
 
-        cls._schema_validate_configuration_response_read = _schema_validate_configuration_response_read = AAZObjectType()
+        cls._schema_operation_status_result_read = _schema_operation_status_result_read = AAZObjectType()
 
-        validate_configuration_response_read = _schema_validate_configuration_response_read
-        validate_configuration_response_read.configuration_state = AAZStrType(
-            serialized_name="configurationState",
+        operation_status_result_read = _schema_operation_status_result_read
+        operation_status_result_read.end_time = AAZStrType(
+            serialized_name="endTime",
+        )
+        operation_status_result_read.error = AAZObjectType()
+        cls._build_schema_error_detail_read(operation_status_result_read.error)
+        operation_status_result_read.id = AAZStrType()
+        operation_status_result_read.name = AAZStrType()
+        operation_status_result_read.operations = AAZListType()
+        operation_status_result_read.percent_complete = AAZFloatType(
+            serialized_name="percentComplete",
+        )
+        operation_status_result_read.resource_id = AAZStrType(
+            serialized_name="resourceId",
             flags={"read_only": True},
         )
-        validate_configuration_response_read.error = AAZObjectType()
-        cls._build_schema_error_detail_read(validate_configuration_response_read.error)
-        validate_configuration_response_read.url = AAZStrType()
+        operation_status_result_read.start_time = AAZStrType(
+            serialized_name="startTime",
+        )
+        operation_status_result_read.status = AAZStrType(
+            flags={"required": True},
+        )
 
-        _schema.configuration_state = cls._schema_validate_configuration_response_read.configuration_state
-        _schema.error = cls._schema_validate_configuration_response_read.error
-        _schema.url = cls._schema_validate_configuration_response_read.url
+        operations = _schema_operation_status_result_read.operations
+        operations.Element = AAZObjectType()
+        cls._build_schema_operation_status_result_read(operations.Element)
+
+        _schema.end_time = cls._schema_operation_status_result_read.end_time
+        _schema.error = cls._schema_operation_status_result_read.error
+        _schema.id = cls._schema_operation_status_result_read.id
+        _schema.name = cls._schema_operation_status_result_read.name
+        _schema.operations = cls._schema_operation_status_result_read.operations
+        _schema.percent_complete = cls._schema_operation_status_result_read.percent_complete
+        _schema.resource_id = cls._schema_operation_status_result_read.resource_id
+        _schema.start_time = cls._schema_operation_status_result_read.start_time
+        _schema.status = cls._schema_operation_status_result_read.status
 
 
 __all__ = ["ValidateConfiguration"]

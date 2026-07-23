@@ -1,3 +1,4 @@
+# pylint: disable=line-too-long,useless-suppression,too-many-lines
 # coding=utf-8
 # --------------------------------------------------------------------------
 # Copyright (c) Microsoft Corporation. All rights reserved.
@@ -6,79 +7,135 @@
 # Changes may cause incorrect behavior and will be lost if the code is regenerated.
 # --------------------------------------------------------------------------
 
-from azure.core.exceptions import HttpResponseError
-import msrest.serialization
+from collections.abc import MutableMapping
+import datetime
+from typing import Any, Optional, TYPE_CHECKING, Union
+
+from .._utils import serialization as _serialization
+
+if TYPE_CHECKING:
+    from .. import models as _models
+JSON = MutableMapping[str, Any]
 
 
-class CheckNameAvailabilityParameters(msrest.serialization.Model):
-    """Details of check name availability request body.
+class ApiKey(_serialization.Model):
+    """Azure quantum workspace Api key details.
 
-    :ivar name: Name for checking availability.
+    Variables are only populated by the server, and will be ignored when sending a request.
+
+    :ivar created_at: The creation time of the api key.
+    :vartype created_at: ~datetime.datetime
+    :ivar key: The Api key.
+    :vartype key: str
+    """
+
+    _validation = {
+        "key": {"readonly": True},
+    }
+
+    _attribute_map = {
+        "created_at": {"key": "createdAt", "type": "iso-8601"},
+        "key": {"key": "key", "type": "str"},
+    }
+
+    def __init__(self, *, created_at: Optional[datetime.datetime] = None, **kwargs: Any) -> None:
+        """
+        :keyword created_at: The creation time of the api key.
+        :paramtype created_at: ~datetime.datetime
+        """
+        super().__init__(**kwargs)
+        self.created_at = created_at
+        self.key: Optional[str] = None
+
+
+class ApiKeys(_serialization.Model):
+    """List of api keys to be generated.
+
+    :ivar keys: A list of api key names.
+    :vartype keys: list[str or ~azure.mgmt.quantum.models.KeyType]
+    """
+
+    _attribute_map = {
+        "keys": {"key": "keys", "type": "[str]"},
+    }
+
+    def __init__(self, *, keys: Optional[list[Union[str, "_models.KeyType"]]] = None, **kwargs: Any) -> None:
+        """
+        :keyword keys: A list of api key names.
+        :paramtype keys: list[str or ~azure.mgmt.quantum.models.KeyType]
+        """
+        super().__init__(**kwargs)
+        self.keys = keys
+
+
+class CheckNameAvailabilityRequest(_serialization.Model):
+    """The check availability request body.
+
+    :ivar name: The name of the resource for which availability needs to be checked.
     :vartype name: str
-    :ivar type: The resource type of Quantum Workspace.
+    :ivar type: The resource type.
     :vartype type: str
     """
 
     _attribute_map = {
-        'name': {'key': 'name', 'type': 'str'},
-        'type': {'key': 'type', 'type': 'str'},
+        "name": {"key": "name", "type": "str"},
+        "type": {"key": "type", "type": "str"},
     }
 
-    def __init__(
-        self,
-        **kwargs
-    ):
+    def __init__(self, *, name: Optional[str] = None, type: Optional[str] = None, **kwargs: Any) -> None:
         """
-        :keyword name: Name for checking availability.
+        :keyword name: The name of the resource for which availability needs to be checked.
         :paramtype name: str
-        :keyword type: The resource type of Quantum Workspace.
+        :keyword type: The resource type.
         :paramtype type: str
         """
-        super(CheckNameAvailabilityParameters, self).__init__(**kwargs)
-        self.name = kwargs.get('name', None)
-        self.type = kwargs.get('type', "Microsoft.Quantum/Workspaces")
+        super().__init__(**kwargs)
+        self.name = name
+        self.type = type
 
 
-class CheckNameAvailabilityResult(msrest.serialization.Model):
-    """Result of check name availability.
+class CheckNameAvailabilityResponse(_serialization.Model):
+    """The check availability result.
 
-    Variables are only populated by the server, and will be ignored when sending a request.
-
-    :ivar name_available: Indicator of availability of the Quantum Workspace resource name.
+    :ivar name_available: Indicates if the resource name is available.
     :vartype name_available: bool
-    :ivar reason: The reason of unavailability.
-    :vartype reason: str
-    :ivar message: The detailed info regarding the reason associated with the Namespace.
+    :ivar reason: The reason why the given name is not available. Known values are: "Invalid" and
+     "AlreadyExists".
+    :vartype reason: str or ~azure.mgmt.quantum.models.CheckNameAvailabilityReason
+    :ivar message: Detailed reason why the given name is available.
     :vartype message: str
     """
 
-    _validation = {
-        'message': {'readonly': True},
-    }
-
     _attribute_map = {
-        'name_available': {'key': 'nameAvailable', 'type': 'bool'},
-        'reason': {'key': 'reason', 'type': 'str'},
-        'message': {'key': 'message', 'type': 'str'},
+        "name_available": {"key": "nameAvailable", "type": "bool"},
+        "reason": {"key": "reason", "type": "str"},
+        "message": {"key": "message", "type": "str"},
     }
 
     def __init__(
         self,
-        **kwargs
-    ):
+        *,
+        name_available: Optional[bool] = None,
+        reason: Optional[Union[str, "_models.CheckNameAvailabilityReason"]] = None,
+        message: Optional[str] = None,
+        **kwargs: Any
+    ) -> None:
         """
-        :keyword name_available: Indicator of availability of the Quantum Workspace resource name.
+        :keyword name_available: Indicates if the resource name is available.
         :paramtype name_available: bool
-        :keyword reason: The reason of unavailability.
-        :paramtype reason: str
+        :keyword reason: The reason why the given name is not available. Known values are: "Invalid"
+         and "AlreadyExists".
+        :paramtype reason: str or ~azure.mgmt.quantum.models.CheckNameAvailabilityReason
+        :keyword message: Detailed reason why the given name is available.
+        :paramtype message: str
         """
-        super(CheckNameAvailabilityResult, self).__init__(**kwargs)
-        self.name_available = kwargs.get('name_available', None)
-        self.reason = kwargs.get('reason', None)
-        self.message = None
+        super().__init__(**kwargs)
+        self.name_available = name_available
+        self.reason = reason
+        self.message = message
 
 
-class ErrorAdditionalInfo(msrest.serialization.Model):
+class ErrorAdditionalInfo(_serialization.Model):
     """The resource management error additional info.
 
     Variables are only populated by the server, and will be ignored when sending a request.
@@ -86,31 +143,27 @@ class ErrorAdditionalInfo(msrest.serialization.Model):
     :ivar type: The additional info type.
     :vartype type: str
     :ivar info: The additional info.
-    :vartype info: any
+    :vartype info: JSON
     """
 
     _validation = {
-        'type': {'readonly': True},
-        'info': {'readonly': True},
+        "type": {"readonly": True},
+        "info": {"readonly": True},
     }
 
     _attribute_map = {
-        'type': {'key': 'type', 'type': 'str'},
-        'info': {'key': 'info', 'type': 'object'},
+        "type": {"key": "type", "type": "str"},
+        "info": {"key": "info", "type": "object"},
     }
 
-    def __init__(
-        self,
-        **kwargs
-    ):
-        """
-        """
-        super(ErrorAdditionalInfo, self).__init__(**kwargs)
-        self.type = None
-        self.info = None
+    def __init__(self, **kwargs: Any) -> None:
+        """ """
+        super().__init__(**kwargs)
+        self.type: Optional[str] = None
+        self.info: Optional[JSON] = None
 
 
-class ErrorDetail(msrest.serialization.Model):
+class ErrorDetail(_serialization.Model):
     """The error detail.
 
     Variables are only populated by the server, and will be ignored when sending a request.
@@ -128,201 +181,368 @@ class ErrorDetail(msrest.serialization.Model):
     """
 
     _validation = {
-        'code': {'readonly': True},
-        'message': {'readonly': True},
-        'target': {'readonly': True},
-        'details': {'readonly': True},
-        'additional_info': {'readonly': True},
+        "code": {"readonly": True},
+        "message": {"readonly": True},
+        "target": {"readonly": True},
+        "details": {"readonly": True},
+        "additional_info": {"readonly": True},
     }
 
     _attribute_map = {
-        'code': {'key': 'code', 'type': 'str'},
-        'message': {'key': 'message', 'type': 'str'},
-        'target': {'key': 'target', 'type': 'str'},
-        'details': {'key': 'details', 'type': '[ErrorDetail]'},
-        'additional_info': {'key': 'additionalInfo', 'type': '[ErrorAdditionalInfo]'},
+        "code": {"key": "code", "type": "str"},
+        "message": {"key": "message", "type": "str"},
+        "target": {"key": "target", "type": "str"},
+        "details": {"key": "details", "type": "[ErrorDetail]"},
+        "additional_info": {"key": "additionalInfo", "type": "[ErrorAdditionalInfo]"},
     }
 
-    def __init__(
-        self,
-        **kwargs
-    ):
-        """
-        """
-        super(ErrorDetail, self).__init__(**kwargs)
-        self.code = None
-        self.message = None
-        self.target = None
-        self.details = None
-        self.additional_info = None
+    def __init__(self, **kwargs: Any) -> None:
+        """ """
+        super().__init__(**kwargs)
+        self.code: Optional[str] = None
+        self.message: Optional[str] = None
+        self.target: Optional[str] = None
+        self.details: Optional[list["_models.ErrorDetail"]] = None
+        self.additional_info: Optional[list["_models.ErrorAdditionalInfo"]] = None
 
 
-class ErrorResponse(msrest.serialization.Model):
-    """Common error response for all Azure Resource Manager APIs to return error details for failed operations. (This also follows the OData error response format.).
+class ErrorResponse(_serialization.Model):
+    """Common error response for all Azure Resource Manager APIs to return error details for failed
+    operations. (This also follows the OData error response format.).
 
     :ivar error: The error object.
     :vartype error: ~azure.mgmt.quantum.models.ErrorDetail
     """
 
     _attribute_map = {
-        'error': {'key': 'error', 'type': 'ErrorDetail'},
+        "error": {"key": "error", "type": "ErrorDetail"},
     }
 
-    def __init__(
-        self,
-        **kwargs
-    ):
+    def __init__(self, *, error: Optional["_models.ErrorDetail"] = None, **kwargs: Any) -> None:
         """
         :keyword error: The error object.
         :paramtype error: ~azure.mgmt.quantum.models.ErrorDetail
         """
-        super(ErrorResponse, self).__init__(**kwargs)
-        self.error = kwargs.get('error', None)
+        super().__init__(**kwargs)
+        self.error = error
 
 
-class OfferingsListResult(msrest.serialization.Model):
-    """The response of a list Providers operation.
+class ListKeysResult(_serialization.Model):
+    """Result of list Api keys and connection strings.
 
-    :ivar value: Result of a list Providers operation.
-    :vartype value: list[~azure.mgmt.quantum.models.ProviderDescription]
-    :ivar next_link: Link to the next set of results. Not empty if Value contains incomplete list
-     of Providers.
-    :vartype next_link: str
-    """
+    Variables are only populated by the server, and will be ignored when sending a request.
 
-    _attribute_map = {
-        'value': {'key': 'value', 'type': '[ProviderDescription]'},
-        'next_link': {'key': 'nextLink', 'type': 'str'},
-    }
-
-    def __init__(
-        self,
-        **kwargs
-    ):
-        """
-        :keyword value: Result of a list Providers operation.
-        :paramtype value: list[~azure.mgmt.quantum.models.ProviderDescription]
-        :keyword next_link: Link to the next set of results. Not empty if Value contains incomplete
-         list of Providers.
-        :paramtype next_link: str
-        """
-        super(OfferingsListResult, self).__init__(**kwargs)
-        self.value = kwargs.get('value', None)
-        self.next_link = kwargs.get('next_link', None)
-
-
-class Operation(msrest.serialization.Model):
-    """Operation provided by provider.
-
-    :ivar name: Name of the operation.
-    :vartype name: str
-    :ivar is_data_action: Indicates whether the operation is a data action.
-    :vartype is_data_action: bool
-    :ivar display: Properties of the operation.
-    :vartype display: ~azure.mgmt.quantum.models.OperationDisplay
-    """
-
-    _attribute_map = {
-        'name': {'key': 'name', 'type': 'str'},
-        'is_data_action': {'key': 'isDataAction', 'type': 'bool'},
-        'display': {'key': 'display', 'type': 'OperationDisplay'},
-    }
-
-    def __init__(
-        self,
-        **kwargs
-    ):
-        """
-        :keyword name: Name of the operation.
-        :paramtype name: str
-        :keyword is_data_action: Indicates whether the operation is a data action.
-        :paramtype is_data_action: bool
-        :keyword display: Properties of the operation.
-        :paramtype display: ~azure.mgmt.quantum.models.OperationDisplay
-        """
-        super(Operation, self).__init__(**kwargs)
-        self.name = kwargs.get('name', None)
-        self.is_data_action = kwargs.get('is_data_action', None)
-        self.display = kwargs.get('display', None)
-
-
-class OperationDisplay(msrest.serialization.Model):
-    """Properties of the operation.
-
-    :ivar provider: Provider name.
-    :vartype provider: str
-    :ivar resource: Resource name.
-    :vartype resource: str
-    :ivar operation: Operation name.
-    :vartype operation: str
-    :ivar description: Description of the operation.
-    :vartype description: str
-    """
-
-    _attribute_map = {
-        'provider': {'key': 'provider', 'type': 'str'},
-        'resource': {'key': 'resource', 'type': 'str'},
-        'operation': {'key': 'operation', 'type': 'str'},
-        'description': {'key': 'description', 'type': 'str'},
-    }
-
-    def __init__(
-        self,
-        **kwargs
-    ):
-        """
-        :keyword provider: Provider name.
-        :paramtype provider: str
-        :keyword resource: Resource name.
-        :paramtype resource: str
-        :keyword operation: Operation name.
-        :paramtype operation: str
-        :keyword description: Description of the operation.
-        :paramtype description: str
-        """
-        super(OperationDisplay, self).__init__(**kwargs)
-        self.provider = kwargs.get('provider', None)
-        self.resource = kwargs.get('resource', None)
-        self.operation = kwargs.get('operation', None)
-        self.description = kwargs.get('description', None)
-
-
-class OperationsList(msrest.serialization.Model):
-    """Lists the operations available.
-
-    All required parameters must be populated in order to send to Azure.
-
-    :ivar next_link: Url to follow for getting next page of operations.
-    :vartype next_link: str
-    :ivar value: Required. Array of operations.
-    :vartype value: list[~azure.mgmt.quantum.models.Operation]
+    :ivar api_key_enabled: Indicator of enablement of the Quantum workspace Api keys.
+    :vartype api_key_enabled: bool
+    :ivar primary_key: The quantum workspace primary api key.
+    :vartype primary_key: ~azure.mgmt.quantum.models.ApiKey
+    :ivar secondary_key: The quantum workspace secondary api key.
+    :vartype secondary_key: ~azure.mgmt.quantum.models.ApiKey
+    :ivar primary_connection_string: The connection string of the primary api key.
+    :vartype primary_connection_string: str
+    :ivar secondary_connection_string: The connection string of the secondary api key.
+    :vartype secondary_connection_string: str
     """
 
     _validation = {
-        'value': {'required': True},
+        "primary_connection_string": {"readonly": True},
+        "secondary_connection_string": {"readonly": True},
     }
 
     _attribute_map = {
-        'next_link': {'key': 'nextLink', 'type': 'str'},
-        'value': {'key': 'value', 'type': '[Operation]'},
+        "api_key_enabled": {"key": "apiKeyEnabled", "type": "bool"},
+        "primary_key": {"key": "primaryKey", "type": "ApiKey"},
+        "secondary_key": {"key": "secondaryKey", "type": "ApiKey"},
+        "primary_connection_string": {"key": "primaryConnectionString", "type": "str"},
+        "secondary_connection_string": {"key": "secondaryConnectionString", "type": "str"},
     }
 
     def __init__(
         self,
-        **kwargs
-    ):
+        *,
+        api_key_enabled: Optional[bool] = None,
+        primary_key: Optional["_models.ApiKey"] = None,
+        secondary_key: Optional["_models.ApiKey"] = None,
+        **kwargs: Any
+    ) -> None:
         """
-        :keyword next_link: Url to follow for getting next page of operations.
+        :keyword api_key_enabled: Indicator of enablement of the Quantum workspace Api keys.
+        :paramtype api_key_enabled: bool
+        :keyword primary_key: The quantum workspace primary api key.
+        :paramtype primary_key: ~azure.mgmt.quantum.models.ApiKey
+        :keyword secondary_key: The quantum workspace secondary api key.
+        :paramtype secondary_key: ~azure.mgmt.quantum.models.ApiKey
+        """
+        super().__init__(**kwargs)
+        self.api_key_enabled = api_key_enabled
+        self.primary_key = primary_key
+        self.secondary_key = secondary_key
+        self.primary_connection_string: Optional[str] = None
+        self.secondary_connection_string: Optional[str] = None
+
+
+class ManagedOnBehalfOfConfiguration(_serialization.Model):
+    """Managed-On-Behalf-Of configuration properties. This configuration exists for the resources
+    where a resource provider manages those resources on behalf of the resource owner.
+
+    :ivar mobo_broker_resources: Managed-On-Behalf-Of broker resources.
+    :vartype mobo_broker_resources: list[~azure.mgmt.quantum.models.MoboBrokerResource]
+    """
+
+    _attribute_map = {
+        "mobo_broker_resources": {"key": "moboBrokerResources", "type": "[MoboBrokerResource]"},
+    }
+
+    def __init__(
+        self, *, mobo_broker_resources: Optional[list["_models.MoboBrokerResource"]] = None, **kwargs: Any
+    ) -> None:
+        """
+        :keyword mobo_broker_resources: Managed-On-Behalf-Of broker resources.
+        :paramtype mobo_broker_resources: list[~azure.mgmt.quantum.models.MoboBrokerResource]
+        """
+        super().__init__(**kwargs)
+        self.mobo_broker_resources = mobo_broker_resources
+
+
+class ManagedServiceIdentity(_serialization.Model):
+    """Managed service identity (system assigned and/or user assigned identities).
+
+    Variables are only populated by the server, and will be ignored when sending a request.
+
+    All required parameters must be populated in order to send to server.
+
+    :ivar principal_id: The service principal ID of the system assigned identity. This property
+     will only be provided for a system assigned identity.
+    :vartype principal_id: str
+    :ivar tenant_id: The tenant ID of the system assigned identity. This property will only be
+     provided for a system assigned identity.
+    :vartype tenant_id: str
+    :ivar type: Type of managed service identity (where both SystemAssigned and UserAssigned types
+     are allowed). Required. Known values are: "None", "SystemAssigned", "UserAssigned", and
+     "SystemAssigned,UserAssigned".
+    :vartype type: str or ~azure.mgmt.quantum.models.ManagedServiceIdentityType
+    :ivar user_assigned_identities: The set of user assigned identities associated with the
+     resource. The userAssignedIdentities dictionary keys will be ARM resource ids in the form:
+     '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}.
+     The dictionary values can be empty objects ({}) in requests.
+    :vartype user_assigned_identities: dict[str, ~azure.mgmt.quantum.models.UserAssignedIdentity]
+    """
+
+    _validation = {
+        "principal_id": {"readonly": True},
+        "tenant_id": {"readonly": True},
+        "type": {"required": True},
+    }
+
+    _attribute_map = {
+        "principal_id": {"key": "principalId", "type": "str"},
+        "tenant_id": {"key": "tenantId", "type": "str"},
+        "type": {"key": "type", "type": "str"},
+        "user_assigned_identities": {"key": "userAssignedIdentities", "type": "{UserAssignedIdentity}"},
+    }
+
+    def __init__(
+        self,
+        *,
+        type: Union[str, "_models.ManagedServiceIdentityType"],
+        user_assigned_identities: Optional[dict[str, "_models.UserAssignedIdentity"]] = None,
+        **kwargs: Any
+    ) -> None:
+        """
+        :keyword type: Type of managed service identity (where both SystemAssigned and UserAssigned
+         types are allowed). Required. Known values are: "None", "SystemAssigned", "UserAssigned", and
+         "SystemAssigned,UserAssigned".
+        :paramtype type: str or ~azure.mgmt.quantum.models.ManagedServiceIdentityType
+        :keyword user_assigned_identities: The set of user assigned identities associated with the
+         resource. The userAssignedIdentities dictionary keys will be ARM resource ids in the form:
+         '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}.
+         The dictionary values can be empty objects ({}) in requests.
+        :paramtype user_assigned_identities: dict[str, ~azure.mgmt.quantum.models.UserAssignedIdentity]
+        """
+        super().__init__(**kwargs)
+        self.principal_id: Optional[str] = None
+        self.tenant_id: Optional[str] = None
+        self.type = type
+        self.user_assigned_identities = user_assigned_identities
+
+
+class MoboBrokerResource(_serialization.Model):
+    """Managed-On-Behalf-Of broker resource. This resource is created by the Resource Provider to
+    manage some resources on behalf of the user.
+
+    :ivar id: Resource identifier of a Managed-On-Behalf-Of broker resource.
+    :vartype id: str
+    """
+
+    _attribute_map = {
+        "id": {"key": "id", "type": "str"},
+    }
+
+    def __init__(self, *, id: Optional[str] = None, **kwargs: Any) -> None:  # pylint: disable=redefined-builtin
+        """
+        :keyword id: Resource identifier of a Managed-On-Behalf-Of broker resource.
+        :paramtype id: str
+        """
+        super().__init__(**kwargs)
+        self.id = id
+
+
+class OfferingsListResult(_serialization.Model):
+    """The response of a list Providers operation.
+
+    All required parameters must be populated in order to send to server.
+
+    :ivar value: The ProviderDescription items on this page. Required.
+    :vartype value: list[~azure.mgmt.quantum.models.ProviderDescription]
+    :ivar next_link: The link to the next page of items.
+    :vartype next_link: str
+    """
+
+    _validation = {
+        "value": {"required": True},
+    }
+
+    _attribute_map = {
+        "value": {"key": "value", "type": "[ProviderDescription]"},
+        "next_link": {"key": "nextLink", "type": "str"},
+    }
+
+    def __init__(
+        self, *, value: list["_models.ProviderDescription"], next_link: Optional[str] = None, **kwargs: Any
+    ) -> None:
+        """
+        :keyword value: The ProviderDescription items on this page. Required.
+        :paramtype value: list[~azure.mgmt.quantum.models.ProviderDescription]
+        :keyword next_link: The link to the next page of items.
         :paramtype next_link: str
-        :keyword value: Required. Array of operations.
-        :paramtype value: list[~azure.mgmt.quantum.models.Operation]
         """
-        super(OperationsList, self).__init__(**kwargs)
-        self.next_link = kwargs.get('next_link', None)
-        self.value = kwargs['value']
+        super().__init__(**kwargs)
+        self.value = value
+        self.next_link = next_link
 
 
-class PricingDetail(msrest.serialization.Model):
+class Operation(_serialization.Model):
+    """Details of a REST API operation, returned from the Resource Provider Operations API.
+
+    Variables are only populated by the server, and will be ignored when sending a request.
+
+    :ivar name: The name of the operation, as per Resource-Based Access Control (RBAC). Examples:
+     "Microsoft.Compute/virtualMachines/write", "Microsoft.Compute/virtualMachines/capture/action".
+    :vartype name: str
+    :ivar is_data_action: Whether the operation applies to data-plane. This is "true" for
+     data-plane operations and "false" for ARM/control-plane operations.
+    :vartype is_data_action: bool
+    :ivar display: Localized display information for this particular operation.
+    :vartype display: ~azure.mgmt.quantum.models.OperationDisplay
+    :ivar origin: The intended executor of the operation; as in Resource Based Access Control
+     (RBAC) and audit logs UX. Default value is "user,system". Known values are: "user", "system",
+     and "user,system".
+    :vartype origin: str or ~azure.mgmt.quantum.models.Origin
+    :ivar action_type: Enum. Indicates the action type. "Internal" refers to actions that are for
+     internal only APIs. "Internal"
+    :vartype action_type: str or ~azure.mgmt.quantum.models.ActionType
+    """
+
+    _validation = {
+        "name": {"readonly": True},
+        "is_data_action": {"readonly": True},
+        "origin": {"readonly": True},
+        "action_type": {"readonly": True},
+    }
+
+    _attribute_map = {
+        "name": {"key": "name", "type": "str"},
+        "is_data_action": {"key": "isDataAction", "type": "bool"},
+        "display": {"key": "display", "type": "OperationDisplay"},
+        "origin": {"key": "origin", "type": "str"},
+        "action_type": {"key": "actionType", "type": "str"},
+    }
+
+    def __init__(self, *, display: Optional["_models.OperationDisplay"] = None, **kwargs: Any) -> None:
+        """
+        :keyword display: Localized display information for this particular operation.
+        :paramtype display: ~azure.mgmt.quantum.models.OperationDisplay
+        """
+        super().__init__(**kwargs)
+        self.name: Optional[str] = None
+        self.is_data_action: Optional[bool] = None
+        self.display = display
+        self.origin: Optional[Union[str, "_models.Origin"]] = None
+        self.action_type: Optional[Union[str, "_models.ActionType"]] = None
+
+
+class OperationDisplay(_serialization.Model):
+    """Localized display information for this particular operation.
+
+    Variables are only populated by the server, and will be ignored when sending a request.
+
+    :ivar provider: The localized friendly form of the resource provider name, e.g. "Microsoft
+     Monitoring Insights" or "Microsoft Compute".
+    :vartype provider: str
+    :ivar resource: The localized friendly name of the resource type related to this operation.
+     E.g. "Virtual Machines" or "Job Schedule Collections".
+    :vartype resource: str
+    :ivar operation: The concise, localized friendly name for the operation; suitable for
+     dropdowns. E.g. "Create or Update Virtual Machine", "Restart Virtual Machine".
+    :vartype operation: str
+    :ivar description: The short, localized friendly description of the operation; suitable for
+     tool tips and detailed views.
+    :vartype description: str
+    """
+
+    _validation = {
+        "provider": {"readonly": True},
+        "resource": {"readonly": True},
+        "operation": {"readonly": True},
+        "description": {"readonly": True},
+    }
+
+    _attribute_map = {
+        "provider": {"key": "provider", "type": "str"},
+        "resource": {"key": "resource", "type": "str"},
+        "operation": {"key": "operation", "type": "str"},
+        "description": {"key": "description", "type": "str"},
+    }
+
+    def __init__(self, **kwargs: Any) -> None:
+        """ """
+        super().__init__(**kwargs)
+        self.provider: Optional[str] = None
+        self.resource: Optional[str] = None
+        self.operation: Optional[str] = None
+        self.description: Optional[str] = None
+
+
+class OperationListResult(_serialization.Model):
+    """A list of REST API operations supported by an Azure Resource Provider. It contains an URL link
+    to get the next set of results.
+
+    Variables are only populated by the server, and will be ignored when sending a request.
+
+    :ivar value: List of operations supported by the resource provider.
+    :vartype value: list[~azure.mgmt.quantum.models.Operation]
+    :ivar next_link: URL to get the next set of operation list results (if there are any).
+    :vartype next_link: str
+    """
+
+    _validation = {
+        "value": {"readonly": True},
+        "next_link": {"readonly": True},
+    }
+
+    _attribute_map = {
+        "value": {"key": "value", "type": "[Operation]"},
+        "next_link": {"key": "nextLink", "type": "str"},
+    }
+
+    def __init__(self, **kwargs: Any) -> None:
+        """ """
+        super().__init__(**kwargs)
+        self.value: Optional[list["_models.Operation"]] = None
+        self.next_link: Optional[str] = None
+
+
+class PricingDetail(_serialization.Model):
     """Detailed pricing information for an sku.
 
     :ivar id: Unique id for this pricing information.
@@ -332,26 +552,29 @@ class PricingDetail(msrest.serialization.Model):
     """
 
     _attribute_map = {
-        'id': {'key': 'id', 'type': 'str'},
-        'value': {'key': 'value', 'type': 'str'},
+        "id": {"key": "id", "type": "str"},
+        "value": {"key": "value", "type": "str"},
     }
 
     def __init__(
         self,
-        **kwargs
-    ):
+        *,
+        id: Optional[str] = None,  # pylint: disable=redefined-builtin
+        value: Optional[str] = None,
+        **kwargs: Any
+    ) -> None:
         """
         :keyword id: Unique id for this pricing information.
         :paramtype id: str
         :keyword value: The unit cost of this sku.
         :paramtype value: str
         """
-        super(PricingDetail, self).__init__(**kwargs)
-        self.id = kwargs.get('id', None)
-        self.value = kwargs.get('value', None)
+        super().__init__(**kwargs)
+        self.id = id
+        self.value = value
 
 
-class PricingDimension(msrest.serialization.Model):
+class PricingDimension(_serialization.Model):
     """Information about pricing dimension.
 
     :ivar id: Unique id of this pricing dimension.
@@ -361,27 +584,31 @@ class PricingDimension(msrest.serialization.Model):
     """
 
     _attribute_map = {
-        'id': {'key': 'id', 'type': 'str'},
-        'name': {'key': 'name', 'type': 'str'},
+        "id": {"key": "id", "type": "str"},
+        "name": {"key": "name", "type": "str"},
     }
 
     def __init__(
         self,
-        **kwargs
-    ):
+        *,
+        id: Optional[str] = None,  # pylint: disable=redefined-builtin
+        name: Optional[str] = None,
+        **kwargs: Any
+    ) -> None:
         """
         :keyword id: Unique id of this pricing dimension.
         :paramtype id: str
         :keyword name: The display name of this pricing dimension.
         :paramtype name: str
         """
-        super(PricingDimension, self).__init__(**kwargs)
-        self.id = kwargs.get('id', None)
-        self.name = kwargs.get('name', None)
+        super().__init__(**kwargs)
+        self.id = id
+        self.name = name
 
 
-class Provider(msrest.serialization.Model):
-    """Information about a Provider. A Provider is an entity that offers Targets to run Azure Quantum Jobs.
+class Provider(_serialization.Model):
+    """Information about a Provider. A Provider is an entity that offers Targets to run Azure Quantum
+    Jobs.
 
     :ivar provider_id: Unique id of this provider.
     :vartype provider_id: str
@@ -392,25 +619,37 @@ class Provider(msrest.serialization.Model):
     :ivar application_name: The provider's marketplace application display name.
     :vartype application_name: str
     :ivar provisioning_state: Provisioning status field. Known values are: "Succeeded",
-     "Launching", "Updating", "Deleting", "Deleted", "Failed".
-    :vartype provisioning_state: str or ~azure.mgmt.quantum.models.Status
+     "Launching", "Updating", "Deleting", "Deleted", and "Failed".
+    :vartype provisioning_state: str or ~azure.mgmt.quantum.models.ProviderStatus
     :ivar resource_usage_id: Id to track resource usage for the provider.
     :vartype resource_usage_id: str
+    :ivar quotas: Quota allocations associated with this provider. Available only for special
+     providers.
+    :vartype quotas: ~azure.mgmt.quantum.models.QuotaAllocations
     """
 
     _attribute_map = {
-        'provider_id': {'key': 'providerId', 'type': 'str'},
-        'provider_sku': {'key': 'providerSku', 'type': 'str'},
-        'instance_uri': {'key': 'instanceUri', 'type': 'str'},
-        'application_name': {'key': 'applicationName', 'type': 'str'},
-        'provisioning_state': {'key': 'provisioningState', 'type': 'str'},
-        'resource_usage_id': {'key': 'resourceUsageId', 'type': 'str'},
+        "provider_id": {"key": "providerId", "type": "str"},
+        "provider_sku": {"key": "providerSku", "type": "str"},
+        "instance_uri": {"key": "instanceUri", "type": "str"},
+        "application_name": {"key": "applicationName", "type": "str"},
+        "provisioning_state": {"key": "provisioningState", "type": "str"},
+        "resource_usage_id": {"key": "resourceUsageId", "type": "str"},
+        "quotas": {"key": "quotas", "type": "QuotaAllocations"},
     }
 
     def __init__(
         self,
-        **kwargs
-    ):
+        *,
+        provider_id: Optional[str] = None,
+        provider_sku: Optional[str] = None,
+        instance_uri: Optional[str] = None,
+        application_name: Optional[str] = None,
+        provisioning_state: Optional[Union[str, "_models.ProviderStatus"]] = None,
+        resource_usage_id: Optional[str] = None,
+        quotas: Optional["_models.QuotaAllocations"] = None,
+        **kwargs: Any
+    ) -> None:
         """
         :keyword provider_id: Unique id of this provider.
         :paramtype provider_id: str
@@ -421,22 +660,27 @@ class Provider(msrest.serialization.Model):
         :keyword application_name: The provider's marketplace application display name.
         :paramtype application_name: str
         :keyword provisioning_state: Provisioning status field. Known values are: "Succeeded",
-         "Launching", "Updating", "Deleting", "Deleted", "Failed".
-        :paramtype provisioning_state: str or ~azure.mgmt.quantum.models.Status
+         "Launching", "Updating", "Deleting", "Deleted", and "Failed".
+        :paramtype provisioning_state: str or ~azure.mgmt.quantum.models.ProviderStatus
         :keyword resource_usage_id: Id to track resource usage for the provider.
         :paramtype resource_usage_id: str
+        :keyword quotas: Quota allocations associated with this provider. Available only for special
+         providers.
+        :paramtype quotas: ~azure.mgmt.quantum.models.QuotaAllocations
         """
-        super(Provider, self).__init__(**kwargs)
-        self.provider_id = kwargs.get('provider_id', None)
-        self.provider_sku = kwargs.get('provider_sku', None)
-        self.instance_uri = kwargs.get('instance_uri', None)
-        self.application_name = kwargs.get('application_name', None)
-        self.provisioning_state = kwargs.get('provisioning_state', None)
-        self.resource_usage_id = kwargs.get('resource_usage_id', None)
+        super().__init__(**kwargs)
+        self.provider_id = provider_id
+        self.provider_sku = provider_sku
+        self.instance_uri = instance_uri
+        self.application_name = application_name
+        self.provisioning_state = provisioning_state
+        self.resource_usage_id = resource_usage_id
+        self.quotas = quotas
 
 
-class ProviderDescription(msrest.serialization.Model):
-    """Information about an offering. A provider offering is an entity that offers Targets to run Azure Quantum Jobs.
+class ProviderDescription(_serialization.Model):
+    """Information about an offering. A provider offering is an entity that offers Targets to run
+    Azure Quantum Jobs.
 
     Variables are only populated by the server, and will be ignored when sending a request.
 
@@ -444,37 +688,40 @@ class ProviderDescription(msrest.serialization.Model):
     :vartype id: str
     :ivar name: Provider's display name.
     :vartype name: str
-    :ivar properties: A list of provider-specific properties.
+    :ivar properties: Provider properties.
     :vartype properties: ~azure.mgmt.quantum.models.ProviderProperties
     """
 
     _validation = {
-        'name': {'readonly': True},
+        "name": {"readonly": True},
     }
 
     _attribute_map = {
-        'id': {'key': 'id', 'type': 'str'},
-        'name': {'key': 'name', 'type': 'str'},
-        'properties': {'key': 'properties', 'type': 'ProviderProperties'},
+        "id": {"key": "id", "type": "str"},
+        "name": {"key": "name", "type": "str"},
+        "properties": {"key": "properties", "type": "ProviderProperties"},
     }
 
     def __init__(
         self,
-        **kwargs
-    ):
+        *,
+        id: Optional[str] = None,  # pylint: disable=redefined-builtin
+        properties: Optional["_models.ProviderProperties"] = None,
+        **kwargs: Any
+    ) -> None:
         """
         :keyword id: Unique provider's id.
         :paramtype id: str
-        :keyword properties: A list of provider-specific properties.
+        :keyword properties: Provider properties.
         :paramtype properties: ~azure.mgmt.quantum.models.ProviderProperties
         """
-        super(ProviderDescription, self).__init__(**kwargs)
-        self.id = kwargs.get('id', None)
-        self.name = None
-        self.properties = kwargs.get('properties', None)
+        super().__init__(**kwargs)
+        self.id = id
+        self.name: Optional[str] = None
+        self.properties = properties
 
 
-class ProviderProperties(msrest.serialization.Model):
+class ProviderProperties(_serialization.Model):
     """Provider properties.
 
     Variables are only populated by the server, and will be ignored when sending a request.
@@ -502,29 +749,36 @@ class ProviderProperties(msrest.serialization.Model):
     """
 
     _validation = {
-        'description': {'readonly': True},
-        'provider_type': {'readonly': True},
-        'company': {'readonly': True},
-        'default_endpoint': {'readonly': True},
+        "description": {"readonly": True},
+        "provider_type": {"readonly": True},
+        "company": {"readonly": True},
+        "default_endpoint": {"readonly": True},
     }
 
     _attribute_map = {
-        'description': {'key': 'description', 'type': 'str'},
-        'provider_type': {'key': 'providerType', 'type': 'str'},
-        'company': {'key': 'company', 'type': 'str'},
-        'default_endpoint': {'key': 'defaultEndpoint', 'type': 'str'},
-        'aad': {'key': 'aad', 'type': 'ProviderPropertiesAad'},
-        'managed_application': {'key': 'managedApplication', 'type': 'ProviderPropertiesManagedApplication'},
-        'targets': {'key': 'targets', 'type': '[TargetDescription]'},
-        'skus': {'key': 'skus', 'type': '[SkuDescription]'},
-        'quota_dimensions': {'key': 'quotaDimensions', 'type': '[QuotaDimension]'},
-        'pricing_dimensions': {'key': 'pricingDimensions', 'type': '[PricingDimension]'},
+        "description": {"key": "description", "type": "str"},
+        "provider_type": {"key": "providerType", "type": "str"},
+        "company": {"key": "company", "type": "str"},
+        "default_endpoint": {"key": "defaultEndpoint", "type": "str"},
+        "aad": {"key": "aad", "type": "ProviderPropertiesAad"},
+        "managed_application": {"key": "managedApplication", "type": "ProviderPropertiesManagedApplication"},
+        "targets": {"key": "targets", "type": "[TargetDescription]"},
+        "skus": {"key": "skus", "type": "[SkuDescription]"},
+        "quota_dimensions": {"key": "quotaDimensions", "type": "[QuotaDimension]"},
+        "pricing_dimensions": {"key": "pricingDimensions", "type": "[PricingDimension]"},
     }
 
     def __init__(
         self,
-        **kwargs
-    ):
+        *,
+        aad: Optional["_models.ProviderPropertiesAad"] = None,
+        managed_application: Optional["_models.ProviderPropertiesManagedApplication"] = None,
+        targets: Optional[list["_models.TargetDescription"]] = None,
+        skus: Optional[list["_models.SkuDescription"]] = None,
+        quota_dimensions: Optional[list["_models.QuotaDimension"]] = None,
+        pricing_dimensions: Optional[list["_models.PricingDimension"]] = None,
+        **kwargs: Any
+    ) -> None:
         """
         :keyword aad: Azure Active Directory info.
         :paramtype aad: ~azure.mgmt.quantum.models.ProviderPropertiesAad
@@ -539,20 +793,20 @@ class ProviderProperties(msrest.serialization.Model):
         :keyword pricing_dimensions: The list of pricing dimensions from the provider.
         :paramtype pricing_dimensions: list[~azure.mgmt.quantum.models.PricingDimension]
         """
-        super(ProviderProperties, self).__init__(**kwargs)
-        self.description = None
-        self.provider_type = None
-        self.company = None
-        self.default_endpoint = None
-        self.aad = kwargs.get('aad', None)
-        self.managed_application = kwargs.get('managed_application', None)
-        self.targets = kwargs.get('targets', None)
-        self.skus = kwargs.get('skus', None)
-        self.quota_dimensions = kwargs.get('quota_dimensions', None)
-        self.pricing_dimensions = kwargs.get('pricing_dimensions', None)
+        super().__init__(**kwargs)
+        self.description: Optional[str] = None
+        self.provider_type: Optional[str] = None
+        self.company: Optional[str] = None
+        self.default_endpoint: Optional[str] = None
+        self.aad = aad
+        self.managed_application = managed_application
+        self.targets = targets
+        self.skus = skus
+        self.quota_dimensions = quota_dimensions
+        self.pricing_dimensions = pricing_dimensions
 
 
-class ProviderPropertiesAad(msrest.serialization.Model):
+class ProviderPropertiesAad(_serialization.Model):
     """Azure Active Directory info.
 
     Variables are only populated by the server, and will be ignored when sending a request.
@@ -564,27 +818,23 @@ class ProviderPropertiesAad(msrest.serialization.Model):
     """
 
     _validation = {
-        'application_id': {'readonly': True},
-        'tenant_id': {'readonly': True},
+        "application_id": {"readonly": True},
+        "tenant_id": {"readonly": True},
     }
 
     _attribute_map = {
-        'application_id': {'key': 'applicationId', 'type': 'str'},
-        'tenant_id': {'key': 'tenantId', 'type': 'str'},
+        "application_id": {"key": "applicationId", "type": "str"},
+        "tenant_id": {"key": "tenantId", "type": "str"},
     }
 
-    def __init__(
-        self,
-        **kwargs
-    ):
-        """
-        """
-        super(ProviderPropertiesAad, self).__init__(**kwargs)
-        self.application_id = None
-        self.tenant_id = None
+    def __init__(self, **kwargs: Any) -> None:
+        """ """
+        super().__init__(**kwargs)
+        self.application_id: Optional[str] = None
+        self.tenant_id: Optional[str] = None
 
 
-class ProviderPropertiesManagedApplication(msrest.serialization.Model):
+class ProviderPropertiesManagedApplication(_serialization.Model):
     """Provider's Managed-Application info.
 
     Variables are only populated by the server, and will be ignored when sending a request.
@@ -596,245 +846,449 @@ class ProviderPropertiesManagedApplication(msrest.serialization.Model):
     """
 
     _validation = {
-        'publisher_id': {'readonly': True},
-        'offer_id': {'readonly': True},
+        "publisher_id": {"readonly": True},
+        "offer_id": {"readonly": True},
     }
 
     _attribute_map = {
-        'publisher_id': {'key': 'publisherId', 'type': 'str'},
-        'offer_id': {'key': 'offerId', 'type': 'str'},
+        "publisher_id": {"key": "publisherId", "type": "str"},
+        "offer_id": {"key": "offerId", "type": "str"},
     }
 
-    def __init__(
-        self,
-        **kwargs
-    ):
-        """
-        """
-        super(ProviderPropertiesManagedApplication, self).__init__(**kwargs)
-        self.publisher_id = None
-        self.offer_id = None
+    def __init__(self, **kwargs: Any) -> None:
+        """ """
+        super().__init__(**kwargs)
+        self.publisher_id: Optional[str] = None
+        self.offer_id: Optional[str] = None
 
 
-class Resource(msrest.serialization.Model):
+class Resource(_serialization.Model):
     """Common fields that are returned in the response for all Azure Resource Manager resources.
 
     Variables are only populated by the server, and will be ignored when sending a request.
 
-    :ivar id: Fully qualified resource ID for the resource. Ex -
-     /subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/{resourceProviderNamespace}/{resourceType}/{resourceName}.
+    :ivar id: Fully qualified resource ID for the resource. E.g.
+     "/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/{resourceProviderNamespace}/{resourceType}/{resourceName}".
     :vartype id: str
     :ivar name: The name of the resource.
     :vartype name: str
     :ivar type: The type of the resource. E.g. "Microsoft.Compute/virtualMachines" or
      "Microsoft.Storage/storageAccounts".
     :vartype type: str
+    :ivar system_data: Azure Resource Manager metadata containing createdBy and modifiedBy
+     information.
+    :vartype system_data: ~azure.mgmt.quantum.models.SystemData
     """
 
     _validation = {
-        'id': {'readonly': True},
-        'name': {'readonly': True},
-        'type': {'readonly': True},
+        "id": {"readonly": True},
+        "name": {"readonly": True},
+        "type": {"readonly": True},
+        "system_data": {"readonly": True},
     }
 
     _attribute_map = {
-        'id': {'key': 'id', 'type': 'str'},
-        'name': {'key': 'name', 'type': 'str'},
-        'type': {'key': 'type', 'type': 'str'},
+        "id": {"key": "id", "type": "str"},
+        "name": {"key": "name", "type": "str"},
+        "type": {"key": "type", "type": "str"},
+        "system_data": {"key": "systemData", "type": "SystemData"},
+    }
+
+    def __init__(self, **kwargs: Any) -> None:
+        """ """
+        super().__init__(**kwargs)
+        self.id: Optional[str] = None
+        self.name: Optional[str] = None
+        self.type: Optional[str] = None
+        self.system_data: Optional["_models.SystemData"] = None
+
+
+class ProxyResource(Resource):
+    """The resource model definition for a Azure Resource Manager proxy resource. It will not have
+    tags and a location.
+
+    Variables are only populated by the server, and will be ignored when sending a request.
+
+    :ivar id: Fully qualified resource ID for the resource. E.g.
+     "/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/{resourceProviderNamespace}/{resourceType}/{resourceName}".
+    :vartype id: str
+    :ivar name: The name of the resource.
+    :vartype name: str
+    :ivar type: The type of the resource. E.g. "Microsoft.Compute/virtualMachines" or
+     "Microsoft.Storage/storageAccounts".
+    :vartype type: str
+    :ivar system_data: Azure Resource Manager metadata containing createdBy and modifiedBy
+     information.
+    :vartype system_data: ~azure.mgmt.quantum.models.SystemData
+    """
+
+
+class QuantumSuiteOffer(ProxyResource):
+    """A Quantum Suite Offer that is available to a subscription.
+
+    Variables are only populated by the server, and will be ignored when sending a request.
+
+    :ivar id: Fully qualified resource ID for the resource. E.g.
+     "/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/{resourceProviderNamespace}/{resourceType}/{resourceName}".
+    :vartype id: str
+    :ivar name: The name of the resource.
+    :vartype name: str
+    :ivar type: The type of the resource. E.g. "Microsoft.Compute/virtualMachines" or
+     "Microsoft.Storage/storageAccounts".
+    :vartype type: str
+    :ivar system_data: Azure Resource Manager metadata containing createdBy and modifiedBy
+     information.
+    :vartype system_data: ~azure.mgmt.quantum.models.SystemData
+    :ivar properties: The resource-specific properties for this resource.
+    :vartype properties: ~azure.mgmt.quantum.models.QuantumSuiteOfferProperties
+    """
+
+    _validation = {
+        "id": {"readonly": True},
+        "name": {"readonly": True},
+        "type": {"readonly": True},
+        "system_data": {"readonly": True},
+    }
+
+    _attribute_map = {
+        "id": {"key": "id", "type": "str"},
+        "name": {"key": "name", "type": "str"},
+        "type": {"key": "type", "type": "str"},
+        "system_data": {"key": "systemData", "type": "SystemData"},
+        "properties": {"key": "properties", "type": "QuantumSuiteOfferProperties"},
+    }
+
+    def __init__(self, *, properties: Optional["_models.QuantumSuiteOfferProperties"] = None, **kwargs: Any) -> None:
+        """
+        :keyword properties: The resource-specific properties for this resource.
+        :paramtype properties: ~azure.mgmt.quantum.models.QuantumSuiteOfferProperties
+        """
+        super().__init__(**kwargs)
+        self.properties = properties
+
+
+class QuantumSuiteOfferListResult(_serialization.Model):
+    """The response of a QuantumSuiteOffer list operation.
+
+    All required parameters must be populated in order to send to server.
+
+    :ivar value: The QuantumSuiteOffer items on this page. Required.
+    :vartype value: list[~azure.mgmt.quantum.models.QuantumSuiteOffer]
+    :ivar next_link: The link to the next page of items.
+    :vartype next_link: str
+    """
+
+    _validation = {
+        "value": {"required": True},
+    }
+
+    _attribute_map = {
+        "value": {"key": "value", "type": "[QuantumSuiteOffer]"},
+        "next_link": {"key": "nextLink", "type": "str"},
+    }
+
+    def __init__(
+        self, *, value: list["_models.QuantumSuiteOffer"], next_link: Optional[str] = None, **kwargs: Any
+    ) -> None:
+        """
+        :keyword value: The QuantumSuiteOffer items on this page. Required.
+        :paramtype value: list[~azure.mgmt.quantum.models.QuantumSuiteOffer]
+        :keyword next_link: The link to the next page of items.
+        :paramtype next_link: str
+        """
+        super().__init__(**kwargs)
+        self.value = value
+        self.next_link = next_link
+
+
+class QuantumSuiteOfferProperties(_serialization.Model):
+    """Properties of a Quantum Suite Offer.
+
+    All required parameters must be populated in order to send to server.
+
+    :ivar provider_id: The provider ID of the offer. Required.
+    :vartype provider_id: str
+    :ivar provider_name: The provider name of the offer. Required.
+    :vartype provider_name: str
+    :ivar company_name: The name of the company that is providing this offer. Required.
+    :vartype company_name: str
+    :ivar location: The location where this offer is available. Required.
+    :vartype location: str
+    :ivar description: Description of the offer. Required.
+    :vartype description: str
+    :ivar quotas: Quota allocations associated with this offer.
+    :vartype quotas: ~azure.mgmt.quantum.models.QuotaAllocations
+    """
+
+    _validation = {
+        "provider_id": {"required": True},
+        "provider_name": {"required": True},
+        "company_name": {"required": True},
+        "location": {"required": True},
+        "description": {"required": True},
+    }
+
+    _attribute_map = {
+        "provider_id": {"key": "providerId", "type": "str"},
+        "provider_name": {"key": "providerName", "type": "str"},
+        "company_name": {"key": "companyName", "type": "str"},
+        "location": {"key": "location", "type": "str"},
+        "description": {"key": "description", "type": "str"},
+        "quotas": {"key": "quotas", "type": "QuotaAllocations"},
     }
 
     def __init__(
         self,
-        **kwargs
-    ):
+        *,
+        provider_id: str,
+        provider_name: str,
+        company_name: str,
+        location: str,
+        description: str,
+        quotas: Optional["_models.QuotaAllocations"] = None,
+        **kwargs: Any
+    ) -> None:
         """
+        :keyword provider_id: The provider ID of the offer. Required.
+        :paramtype provider_id: str
+        :keyword provider_name: The provider name of the offer. Required.
+        :paramtype provider_name: str
+        :keyword company_name: The name of the company that is providing this offer. Required.
+        :paramtype company_name: str
+        :keyword location: The location where this offer is available. Required.
+        :paramtype location: str
+        :keyword description: Description of the offer. Required.
+        :paramtype description: str
+        :keyword quotas: Quota allocations associated with this offer.
+        :paramtype quotas: ~azure.mgmt.quantum.models.QuotaAllocations
         """
-        super(Resource, self).__init__(**kwargs)
-        self.id = None
-        self.name = None
-        self.type = None
+        super().__init__(**kwargs)
+        self.provider_id = provider_id
+        self.provider_name = provider_name
+        self.company_name = company_name
+        self.location = location
+        self.description = description
+        self.quotas = quotas
 
 
 class TrackedResource(Resource):
-    """The resource model definition for an Azure Resource Manager tracked top level resource which has 'tags' and a 'location'.
+    """The resource model definition for an Azure Resource Manager tracked top level resource which
+    has 'tags' and a 'location'.
 
     Variables are only populated by the server, and will be ignored when sending a request.
 
-    All required parameters must be populated in order to send to Azure.
+    All required parameters must be populated in order to send to server.
 
-    :ivar id: Fully qualified resource ID for the resource. Ex -
-     /subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/{resourceProviderNamespace}/{resourceType}/{resourceName}.
+    :ivar id: Fully qualified resource ID for the resource. E.g.
+     "/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/{resourceProviderNamespace}/{resourceType}/{resourceName}".
     :vartype id: str
     :ivar name: The name of the resource.
     :vartype name: str
     :ivar type: The type of the resource. E.g. "Microsoft.Compute/virtualMachines" or
      "Microsoft.Storage/storageAccounts".
     :vartype type: str
-    :ivar tags: A set of tags. Resource tags.
+    :ivar system_data: Azure Resource Manager metadata containing createdBy and modifiedBy
+     information.
+    :vartype system_data: ~azure.mgmt.quantum.models.SystemData
+    :ivar tags: Resource tags.
     :vartype tags: dict[str, str]
-    :ivar location: Required. The geo-location where the resource lives.
+    :ivar location: The geo-location where the resource lives. Required.
     :vartype location: str
     """
 
     _validation = {
-        'id': {'readonly': True},
-        'name': {'readonly': True},
-        'type': {'readonly': True},
-        'location': {'required': True},
+        "id": {"readonly": True},
+        "name": {"readonly": True},
+        "type": {"readonly": True},
+        "system_data": {"readonly": True},
+        "location": {"required": True},
     }
 
     _attribute_map = {
-        'id': {'key': 'id', 'type': 'str'},
-        'name': {'key': 'name', 'type': 'str'},
-        'type': {'key': 'type', 'type': 'str'},
-        'tags': {'key': 'tags', 'type': '{str}'},
-        'location': {'key': 'location', 'type': 'str'},
+        "id": {"key": "id", "type": "str"},
+        "name": {"key": "name", "type": "str"},
+        "type": {"key": "type", "type": "str"},
+        "system_data": {"key": "systemData", "type": "SystemData"},
+        "tags": {"key": "tags", "type": "{str}"},
+        "location": {"key": "location", "type": "str"},
     }
 
-    def __init__(
-        self,
-        **kwargs
-    ):
+    def __init__(self, *, location: str, tags: Optional[dict[str, str]] = None, **kwargs: Any) -> None:
         """
-        :keyword tags: A set of tags. Resource tags.
+        :keyword tags: Resource tags.
         :paramtype tags: dict[str, str]
-        :keyword location: Required. The geo-location where the resource lives.
+        :keyword location: The geo-location where the resource lives. Required.
         :paramtype location: str
         """
-        super(TrackedResource, self).__init__(**kwargs)
-        self.tags = kwargs.get('tags', None)
-        self.location = kwargs['location']
+        super().__init__(**kwargs)
+        self.tags = tags
+        self.location = location
 
 
 class QuantumWorkspace(TrackedResource):
-    """The resource proxy definition object for quantum workspace.
+    """The resource proxy definition object for Quantum Workspace.
 
     Variables are only populated by the server, and will be ignored when sending a request.
 
-    All required parameters must be populated in order to send to Azure.
+    All required parameters must be populated in order to send to server.
 
-    :ivar id: Fully qualified resource ID for the resource. Ex -
-     /subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/{resourceProviderNamespace}/{resourceType}/{resourceName}.
+    :ivar id: Fully qualified resource ID for the resource. E.g.
+     "/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/{resourceProviderNamespace}/{resourceType}/{resourceName}".
     :vartype id: str
     :ivar name: The name of the resource.
     :vartype name: str
     :ivar type: The type of the resource. E.g. "Microsoft.Compute/virtualMachines" or
      "Microsoft.Storage/storageAccounts".
     :vartype type: str
-    :ivar tags: A set of tags. Resource tags.
-    :vartype tags: dict[str, str]
-    :ivar location: Required. The geo-location where the resource lives.
-    :vartype location: str
-    :ivar identity: Managed Identity information.
-    :vartype identity: ~azure.mgmt.quantum.models.QuantumWorkspaceIdentity
-    :ivar system_data: System metadata.
+    :ivar system_data: Azure Resource Manager metadata containing createdBy and modifiedBy
+     information.
     :vartype system_data: ~azure.mgmt.quantum.models.SystemData
-    :ivar providers: List of Providers selected for this Workspace.
-    :vartype providers: list[~azure.mgmt.quantum.models.Provider]
-    :ivar usable: Whether the current workspace is ready to accept Jobs. Known values are: "Yes",
-     "No", "Partial".
-    :vartype usable: str or ~azure.mgmt.quantum.models.UsableStatus
-    :ivar provisioning_state: Provisioning status field. Known values are: "Succeeded",
-     "ProviderLaunching", "ProviderUpdating", "ProviderDeleting", "ProviderProvisioning", "Failed".
-    :vartype provisioning_state: str or ~azure.mgmt.quantum.models.ProvisioningStatus
-    :ivar storage_account: ARM Resource Id of the storage account associated with this workspace.
-    :vartype storage_account: str
-    :ivar endpoint_uri: The URI of the workspace endpoint.
-    :vartype endpoint_uri: str
+    :ivar tags: Resource tags.
+    :vartype tags: dict[str, str]
+    :ivar location: The geo-location where the resource lives. Required.
+    :vartype location: str
+    :ivar properties: Gets or sets the properties. Define quantum workspace's specific properties.
+    :vartype properties: ~azure.mgmt.quantum.models.WorkspaceResourceProperties
+    :ivar identity: The managed service identities assigned to this resource.
+    :vartype identity: ~azure.mgmt.quantum.models.ManagedServiceIdentity
     """
 
     _validation = {
-        'id': {'readonly': True},
-        'name': {'readonly': True},
-        'type': {'readonly': True},
-        'location': {'required': True},
-        'system_data': {'readonly': True},
-        'usable': {'readonly': True},
-        'provisioning_state': {'readonly': True},
-        'endpoint_uri': {'readonly': True},
+        "id": {"readonly": True},
+        "name": {"readonly": True},
+        "type": {"readonly": True},
+        "system_data": {"readonly": True},
+        "location": {"required": True},
     }
 
     _attribute_map = {
-        'id': {'key': 'id', 'type': 'str'},
-        'name': {'key': 'name', 'type': 'str'},
-        'type': {'key': 'type', 'type': 'str'},
-        'tags': {'key': 'tags', 'type': '{str}'},
-        'location': {'key': 'location', 'type': 'str'},
-        'identity': {'key': 'identity', 'type': 'QuantumWorkspaceIdentity'},
-        'system_data': {'key': 'systemData', 'type': 'SystemData'},
-        'providers': {'key': 'properties.providers', 'type': '[Provider]'},
-        'usable': {'key': 'properties.usable', 'type': 'str'},
-        'provisioning_state': {'key': 'properties.provisioningState', 'type': 'str'},
-        'storage_account': {'key': 'properties.storageAccount', 'type': 'str'},
-        'endpoint_uri': {'key': 'properties.endpointUri', 'type': 'str'},
+        "id": {"key": "id", "type": "str"},
+        "name": {"key": "name", "type": "str"},
+        "type": {"key": "type", "type": "str"},
+        "system_data": {"key": "systemData", "type": "SystemData"},
+        "tags": {"key": "tags", "type": "{str}"},
+        "location": {"key": "location", "type": "str"},
+        "properties": {"key": "properties", "type": "WorkspaceResourceProperties"},
+        "identity": {"key": "identity", "type": "ManagedServiceIdentity"},
     }
 
     def __init__(
         self,
-        **kwargs
-    ):
+        *,
+        location: str,
+        tags: Optional[dict[str, str]] = None,
+        properties: Optional["_models.WorkspaceResourceProperties"] = None,
+        identity: Optional["_models.ManagedServiceIdentity"] = None,
+        **kwargs: Any
+    ) -> None:
         """
-        :keyword tags: A set of tags. Resource tags.
+        :keyword tags: Resource tags.
         :paramtype tags: dict[str, str]
-        :keyword location: Required. The geo-location where the resource lives.
+        :keyword location: The geo-location where the resource lives. Required.
         :paramtype location: str
-        :keyword identity: Managed Identity information.
-        :paramtype identity: ~azure.mgmt.quantum.models.QuantumWorkspaceIdentity
-        :keyword providers: List of Providers selected for this Workspace.
-        :paramtype providers: list[~azure.mgmt.quantum.models.Provider]
-        :keyword storage_account: ARM Resource Id of the storage account associated with this
-         workspace.
-        :paramtype storage_account: str
+        :keyword properties: Gets or sets the properties. Define quantum workspace's specific
+         properties.
+        :paramtype properties: ~azure.mgmt.quantum.models.WorkspaceResourceProperties
+        :keyword identity: The managed service identities assigned to this resource.
+        :paramtype identity: ~azure.mgmt.quantum.models.ManagedServiceIdentity
         """
-        super(QuantumWorkspace, self).__init__(**kwargs)
-        self.identity = kwargs.get('identity', None)
-        self.system_data = None
-        self.providers = kwargs.get('providers', None)
-        self.usable = None
-        self.provisioning_state = None
-        self.storage_account = kwargs.get('storage_account', None)
-        self.endpoint_uri = None
+        super().__init__(tags=tags, location=location, **kwargs)
+        self.properties = properties
+        self.identity = identity
 
 
-class QuantumWorkspaceIdentity(msrest.serialization.Model):
-    """Managed Identity information.
+class QuantumWorkspaceListResult(_serialization.Model):
+    """The response of a QuantumWorkspace list operation.
 
-    Variables are only populated by the server, and will be ignored when sending a request.
+    All required parameters must be populated in order to send to server.
 
-    :ivar principal_id: The principal ID of resource identity.
-    :vartype principal_id: str
-    :ivar tenant_id: The tenant ID of resource.
-    :vartype tenant_id: str
-    :ivar type: The identity type. Known values are: "SystemAssigned", "None".
-    :vartype type: str or ~azure.mgmt.quantum.models.ResourceIdentityType
+    :ivar value: The QuantumWorkspace items on this page. Required.
+    :vartype value: list[~azure.mgmt.quantum.models.QuantumWorkspace]
+    :ivar next_link: The link to the next page of items.
+    :vartype next_link: str
     """
 
     _validation = {
-        'principal_id': {'readonly': True},
-        'tenant_id': {'readonly': True},
+        "value": {"required": True},
     }
 
     _attribute_map = {
-        'principal_id': {'key': 'principalId', 'type': 'str'},
-        'tenant_id': {'key': 'tenantId', 'type': 'str'},
-        'type': {'key': 'type', 'type': 'str'},
+        "value": {"key": "value", "type": "[QuantumWorkspace]"},
+        "next_link": {"key": "nextLink", "type": "str"},
     }
 
     def __init__(
-        self,
-        **kwargs
-    ):
+        self, *, value: list["_models.QuantumWorkspace"], next_link: Optional[str] = None, **kwargs: Any
+    ) -> None:
         """
-        :keyword type: The identity type. Known values are: "SystemAssigned", "None".
-        :paramtype type: str or ~azure.mgmt.quantum.models.ResourceIdentityType
+        :keyword value: The QuantumWorkspace items on this page. Required.
+        :paramtype value: list[~azure.mgmt.quantum.models.QuantumWorkspace]
+        :keyword next_link: The link to the next page of items.
+        :paramtype next_link: str
         """
-        super(QuantumWorkspaceIdentity, self).__init__(**kwargs)
-        self.principal_id = None
-        self.tenant_id = None
-        self.type = kwargs.get('type', None)
+        super().__init__(**kwargs)
+        self.value = value
+        self.next_link = next_link
 
 
-class QuotaDimension(msrest.serialization.Model):
+class QuantumWorkspaceTagsUpdate(_serialization.Model):
+    """The type used for updating tags in QuantumWorkspace resources.
+
+    :ivar tags: Resource tags.
+    :vartype tags: dict[str, str]
+    """
+
+    _attribute_map = {
+        "tags": {"key": "tags", "type": "{str}"},
+    }
+
+    def __init__(self, *, tags: Optional[dict[str, str]] = None, **kwargs: Any) -> None:
+        """
+        :keyword tags: Resource tags.
+        :paramtype tags: dict[str, str]
+        """
+        super().__init__(**kwargs)
+        self.tags = tags
+
+
+class QuotaAllocations(_serialization.Model):
+    """Quota allocations with each field representing different quota type.
+
+    All required parameters must be populated in order to send to server.
+
+    :ivar standard_minutes_lifetime: Lifetime limit for standard priority jobs execution in
+     minutes. Required.
+    :vartype standard_minutes_lifetime: int
+    :ivar high_minutes_lifetime: Lifetime limit for high priority jobs execution in minutes.
+    :vartype high_minutes_lifetime: int
+    """
+
+    _validation = {
+        "standard_minutes_lifetime": {"required": True, "minimum": 0},
+        "high_minutes_lifetime": {"minimum": 0},
+    }
+
+    _attribute_map = {
+        "standard_minutes_lifetime": {"key": "standardMinutesLifetime", "type": "int"},
+        "high_minutes_lifetime": {"key": "highMinutesLifetime", "type": "int"},
+    }
+
+    def __init__(
+        self, *, standard_minutes_lifetime: int, high_minutes_lifetime: Optional[int] = None, **kwargs: Any
+    ) -> None:
+        """
+        :keyword standard_minutes_lifetime: Lifetime limit for standard priority jobs execution in
+         minutes. Required.
+        :paramtype standard_minutes_lifetime: int
+        :keyword high_minutes_lifetime: Lifetime limit for high priority jobs execution in minutes.
+        :paramtype high_minutes_lifetime: int
+        """
+        super().__init__(**kwargs)
+        self.standard_minutes_lifetime = standard_minutes_lifetime
+        self.high_minutes_lifetime = high_minutes_lifetime
+
+
+class QuotaDimension(_serialization.Model):
     """Information about a specific quota dimension.
 
     :ivar id: Unique id of this dimension.
@@ -857,20 +1311,29 @@ class QuotaDimension(msrest.serialization.Model):
     """
 
     _attribute_map = {
-        'id': {'key': 'id', 'type': 'str'},
-        'scope': {'key': 'scope', 'type': 'str'},
-        'period': {'key': 'period', 'type': 'str'},
-        'quota': {'key': 'quota', 'type': 'float'},
-        'name': {'key': 'name', 'type': 'str'},
-        'description': {'key': 'description', 'type': 'str'},
-        'unit': {'key': 'unit', 'type': 'str'},
-        'unit_plural': {'key': 'unitPlural', 'type': 'str'},
+        "id": {"key": "id", "type": "str"},
+        "scope": {"key": "scope", "type": "str"},
+        "period": {"key": "period", "type": "str"},
+        "quota": {"key": "quota", "type": "float"},
+        "name": {"key": "name", "type": "str"},
+        "description": {"key": "description", "type": "str"},
+        "unit": {"key": "unit", "type": "str"},
+        "unit_plural": {"key": "unitPlural", "type": "str"},
     }
 
     def __init__(
         self,
-        **kwargs
-    ):
+        *,
+        id: Optional[str] = None,  # pylint: disable=redefined-builtin
+        scope: Optional[str] = None,
+        period: Optional[str] = None,
+        quota: Optional[float] = None,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        unit: Optional[str] = None,
+        unit_plural: Optional[str] = None,
+        **kwargs: Any
+    ) -> None:
         """
         :keyword id: Unique id of this dimension.
         :paramtype id: str
@@ -890,18 +1353,18 @@ class QuotaDimension(msrest.serialization.Model):
          form.
         :paramtype unit_plural: str
         """
-        super(QuotaDimension, self).__init__(**kwargs)
-        self.id = kwargs.get('id', None)
-        self.scope = kwargs.get('scope', None)
-        self.period = kwargs.get('period', None)
-        self.quota = kwargs.get('quota', None)
-        self.name = kwargs.get('name', None)
-        self.description = kwargs.get('description', None)
-        self.unit = kwargs.get('unit', None)
-        self.unit_plural = kwargs.get('unit_plural', None)
+        super().__init__(**kwargs)
+        self.id = id
+        self.scope = scope
+        self.period = period
+        self.quota = quota
+        self.name = name
+        self.description = description
+        self.unit = unit
+        self.unit_plural = unit_plural
 
 
-class SkuDescription(msrest.serialization.Model):
+class SkuDescription(_serialization.Model):
     """Information about a specific sku.
 
     :ivar id: Unique sku id.
@@ -926,21 +1389,31 @@ class SkuDescription(msrest.serialization.Model):
     """
 
     _attribute_map = {
-        'id': {'key': 'id', 'type': 'str'},
-        'name': {'key': 'name', 'type': 'str'},
-        'version': {'key': 'version', 'type': 'str'},
-        'description': {'key': 'description', 'type': 'str'},
-        'restricted_access_uri': {'key': 'restrictedAccessUri', 'type': 'str'},
-        'auto_add': {'key': 'autoAdd', 'type': 'bool'},
-        'targets': {'key': 'targets', 'type': '[str]'},
-        'quota_dimensions': {'key': 'quotaDimensions', 'type': '[QuotaDimension]'},
-        'pricing_details': {'key': 'pricingDetails', 'type': '[PricingDetail]'},
+        "id": {"key": "id", "type": "str"},
+        "name": {"key": "name", "type": "str"},
+        "version": {"key": "version", "type": "str"},
+        "description": {"key": "description", "type": "str"},
+        "restricted_access_uri": {"key": "restrictedAccessUri", "type": "str"},
+        "auto_add": {"key": "autoAdd", "type": "bool"},
+        "targets": {"key": "targets", "type": "[str]"},
+        "quota_dimensions": {"key": "quotaDimensions", "type": "[QuotaDimension]"},
+        "pricing_details": {"key": "pricingDetails", "type": "[PricingDetail]"},
     }
 
     def __init__(
         self,
-        **kwargs
-    ):
+        *,
+        id: Optional[str] = None,  # pylint: disable=redefined-builtin
+        name: Optional[str] = None,
+        version: Optional[str] = None,
+        description: Optional[str] = None,
+        restricted_access_uri: Optional[str] = None,
+        auto_add: Optional[bool] = None,
+        targets: Optional[list[str]] = None,
+        quota_dimensions: Optional[list["_models.QuotaDimension"]] = None,
+        pricing_details: Optional[list["_models.PricingDetail"]] = None,
+        **kwargs: Any
+    ) -> None:
         """
         :keyword id: Unique sku id.
         :paramtype id: str
@@ -962,100 +1435,86 @@ class SkuDescription(msrest.serialization.Model):
         :keyword pricing_details: The list of pricing details for the sku.
         :paramtype pricing_details: list[~azure.mgmt.quantum.models.PricingDetail]
         """
-        super(SkuDescription, self).__init__(**kwargs)
-        self.id = kwargs.get('id', None)
-        self.name = kwargs.get('name', None)
-        self.version = kwargs.get('version', None)
-        self.description = kwargs.get('description', None)
-        self.restricted_access_uri = kwargs.get('restricted_access_uri', None)
-        self.auto_add = kwargs.get('auto_add', None)
-        self.targets = kwargs.get('targets', None)
-        self.quota_dimensions = kwargs.get('quota_dimensions', None)
-        self.pricing_details = kwargs.get('pricing_details', None)
+        super().__init__(**kwargs)
+        self.id = id
+        self.name = name
+        self.version = version
+        self.description = description
+        self.restricted_access_uri = restricted_access_uri
+        self.auto_add = auto_add
+        self.targets = targets
+        self.quota_dimensions = quota_dimensions
+        self.pricing_details = pricing_details
 
 
-class SystemData(msrest.serialization.Model):
+class SystemData(_serialization.Model):
     """Metadata pertaining to creation and last modification of the resource.
 
     :ivar created_by: The identity that created the resource.
     :vartype created_by: str
     :ivar created_by_type: The type of identity that created the resource. Known values are:
-     "User", "Application", "ManagedIdentity", "Key".
+     "User", "Application", "ManagedIdentity", and "Key".
     :vartype created_by_type: str or ~azure.mgmt.quantum.models.CreatedByType
     :ivar created_at: The timestamp of resource creation (UTC).
     :vartype created_at: ~datetime.datetime
     :ivar last_modified_by: The identity that last modified the resource.
     :vartype last_modified_by: str
     :ivar last_modified_by_type: The type of identity that last modified the resource. Known values
-     are: "User", "Application", "ManagedIdentity", "Key".
+     are: "User", "Application", "ManagedIdentity", and "Key".
     :vartype last_modified_by_type: str or ~azure.mgmt.quantum.models.CreatedByType
     :ivar last_modified_at: The timestamp of resource last modification (UTC).
     :vartype last_modified_at: ~datetime.datetime
     """
 
     _attribute_map = {
-        'created_by': {'key': 'createdBy', 'type': 'str'},
-        'created_by_type': {'key': 'createdByType', 'type': 'str'},
-        'created_at': {'key': 'createdAt', 'type': 'iso-8601'},
-        'last_modified_by': {'key': 'lastModifiedBy', 'type': 'str'},
-        'last_modified_by_type': {'key': 'lastModifiedByType', 'type': 'str'},
-        'last_modified_at': {'key': 'lastModifiedAt', 'type': 'iso-8601'},
+        "created_by": {"key": "createdBy", "type": "str"},
+        "created_by_type": {"key": "createdByType", "type": "str"},
+        "created_at": {"key": "createdAt", "type": "iso-8601"},
+        "last_modified_by": {"key": "lastModifiedBy", "type": "str"},
+        "last_modified_by_type": {"key": "lastModifiedByType", "type": "str"},
+        "last_modified_at": {"key": "lastModifiedAt", "type": "iso-8601"},
     }
 
     def __init__(
         self,
-        **kwargs
-    ):
+        *,
+        created_by: Optional[str] = None,
+        created_by_type: Optional[Union[str, "_models.CreatedByType"]] = None,
+        created_at: Optional[datetime.datetime] = None,
+        last_modified_by: Optional[str] = None,
+        last_modified_by_type: Optional[Union[str, "_models.CreatedByType"]] = None,
+        last_modified_at: Optional[datetime.datetime] = None,
+        **kwargs: Any
+    ) -> None:
         """
         :keyword created_by: The identity that created the resource.
         :paramtype created_by: str
         :keyword created_by_type: The type of identity that created the resource. Known values are:
-         "User", "Application", "ManagedIdentity", "Key".
+         "User", "Application", "ManagedIdentity", and "Key".
         :paramtype created_by_type: str or ~azure.mgmt.quantum.models.CreatedByType
         :keyword created_at: The timestamp of resource creation (UTC).
         :paramtype created_at: ~datetime.datetime
         :keyword last_modified_by: The identity that last modified the resource.
         :paramtype last_modified_by: str
         :keyword last_modified_by_type: The type of identity that last modified the resource. Known
-         values are: "User", "Application", "ManagedIdentity", "Key".
+         values are: "User", "Application", "ManagedIdentity", and "Key".
         :paramtype last_modified_by_type: str or ~azure.mgmt.quantum.models.CreatedByType
         :keyword last_modified_at: The timestamp of resource last modification (UTC).
         :paramtype last_modified_at: ~datetime.datetime
         """
-        super(SystemData, self).__init__(**kwargs)
-        self.created_by = kwargs.get('created_by', None)
-        self.created_by_type = kwargs.get('created_by_type', None)
-        self.created_at = kwargs.get('created_at', None)
-        self.last_modified_by = kwargs.get('last_modified_by', None)
-        self.last_modified_by_type = kwargs.get('last_modified_by_type', None)
-        self.last_modified_at = kwargs.get('last_modified_at', None)
+        super().__init__(**kwargs)
+        self.created_by = created_by
+        self.created_by_type = created_by_type
+        self.created_at = created_at
+        self.last_modified_by = last_modified_by
+        self.last_modified_by_type = last_modified_by_type
+        self.last_modified_at = last_modified_at
 
 
-class TagsObject(msrest.serialization.Model):
-    """Tags object for patch operations.
-
-    :ivar tags: A set of tags. Resource tags.
-    :vartype tags: dict[str, str]
-    """
-
-    _attribute_map = {
-        'tags': {'key': 'tags', 'type': '{str}'},
-    }
-
-    def __init__(
-        self,
-        **kwargs
-    ):
-        """
-        :keyword tags: A set of tags. Resource tags.
-        :paramtype tags: dict[str, str]
-        """
-        super(TagsObject, self).__init__(**kwargs)
-        self.tags = kwargs.get('tags', None)
-
-
-class TargetDescription(msrest.serialization.Model):
+class TargetDescription(_serialization.Model):
     """Information about a Target. A target is the component that can process a specific type of Job.
+
+    Variables are only populated by the server, and will be ignored when sending a request.
 
     :ivar id: Unique target id.
     :vartype id: str
@@ -1067,20 +1526,41 @@ class TargetDescription(msrest.serialization.Model):
     :vartype accepted_data_formats: list[str]
     :ivar accepted_content_encodings: List of content encodings accepted by this target.
     :vartype accepted_content_encodings: list[str]
+    :ivar num_qubits: The qubit number.
+    :vartype num_qubits: int
+    :ivar target_profile: Target QIR profile.
+    :vartype target_profile: str
+    :ivar metadata: The metadata of this target.
+    :vartype metadata: dict[str, any]
     """
 
+    _validation = {
+        "num_qubits": {"readonly": True, "maximum": 100000, "minimum": 1},
+        "target_profile": {"readonly": True},
+        "metadata": {"readonly": True},
+    }
+
     _attribute_map = {
-        'id': {'key': 'id', 'type': 'str'},
-        'name': {'key': 'name', 'type': 'str'},
-        'description': {'key': 'description', 'type': 'str'},
-        'accepted_data_formats': {'key': 'acceptedDataFormats', 'type': '[str]'},
-        'accepted_content_encodings': {'key': 'acceptedContentEncodings', 'type': '[str]'},
+        "id": {"key": "id", "type": "str"},
+        "name": {"key": "name", "type": "str"},
+        "description": {"key": "description", "type": "str"},
+        "accepted_data_formats": {"key": "acceptedDataFormats", "type": "[str]"},
+        "accepted_content_encodings": {"key": "acceptedContentEncodings", "type": "[str]"},
+        "num_qubits": {"key": "numQubits", "type": "int"},
+        "target_profile": {"key": "targetProfile", "type": "str"},
+        "metadata": {"key": "metadata", "type": "{object}"},
     }
 
     def __init__(
         self,
-        **kwargs
-    ):
+        *,
+        id: Optional[str] = None,  # pylint: disable=redefined-builtin
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        accepted_data_formats: Optional[list[str]] = None,
+        accepted_content_encodings: Optional[list[str]] = None,
+        **kwargs: Any
+    ) -> None:
         """
         :keyword id: Unique target id.
         :paramtype id: str
@@ -1093,40 +1573,125 @@ class TargetDescription(msrest.serialization.Model):
         :keyword accepted_content_encodings: List of content encodings accepted by this target.
         :paramtype accepted_content_encodings: list[str]
         """
-        super(TargetDescription, self).__init__(**kwargs)
-        self.id = kwargs.get('id', None)
-        self.name = kwargs.get('name', None)
-        self.description = kwargs.get('description', None)
-        self.accepted_data_formats = kwargs.get('accepted_data_formats', None)
-        self.accepted_content_encodings = kwargs.get('accepted_content_encodings', None)
+        super().__init__(**kwargs)
+        self.id = id
+        self.name = name
+        self.description = description
+        self.accepted_data_formats = accepted_data_formats
+        self.accepted_content_encodings = accepted_content_encodings
+        self.num_qubits: Optional[int] = None
+        self.target_profile: Optional[str] = None
+        self.metadata: Optional[dict[str, Any]] = None
 
 
-class WorkspaceListResult(msrest.serialization.Model):
-    """The response of a list Workspaces operation.
+class UserAssignedIdentity(_serialization.Model):
+    """User assigned identity properties.
 
-    :ivar value: Result of a list Workspaces operation.
-    :vartype value: list[~azure.mgmt.quantum.models.QuantumWorkspace]
-    :ivar next_link: Link to the next set of results. Not empty if Value contains incomplete list
-     of Workspaces.
-    :vartype next_link: str
+    Variables are only populated by the server, and will be ignored when sending a request.
+
+    :ivar principal_id: The principal ID of the assigned identity.
+    :vartype principal_id: str
+    :ivar client_id: The client ID of the assigned identity.
+    :vartype client_id: str
     """
 
+    _validation = {
+        "principal_id": {"readonly": True},
+        "client_id": {"readonly": True},
+    }
+
     _attribute_map = {
-        'value': {'key': 'value', 'type': '[QuantumWorkspace]'},
-        'next_link': {'key': 'nextLink', 'type': 'str'},
+        "principal_id": {"key": "principalId", "type": "str"},
+        "client_id": {"key": "clientId", "type": "str"},
+    }
+
+    def __init__(self, **kwargs: Any) -> None:
+        """ """
+        super().__init__(**kwargs)
+        self.principal_id: Optional[str] = None
+        self.client_id: Optional[str] = None
+
+
+class WorkspaceResourceProperties(_serialization.Model):
+    """Properties of a Workspace.
+
+    Variables are only populated by the server, and will be ignored when sending a request.
+
+    :ivar providers: List of Providers selected for this Workspace.
+    :vartype providers: list[~azure.mgmt.quantum.models.Provider]
+    :ivar usable: Whether the current workspace is ready to accept Jobs. Known values are: "Yes",
+     "No", and "Partial".
+    :vartype usable: str or ~azure.mgmt.quantum.models.UsableStatus
+    :ivar provisioning_state: Provisioning status field. Known values are: "Succeeded", "Failed",
+     "Canceled", "ProviderLaunching", "ProviderUpdating", "ProviderDeleting", and
+     "ProviderProvisioning".
+    :vartype provisioning_state: str or ~azure.mgmt.quantum.models.WorkspaceProvisioningStatus
+    :ivar storage_account: ARM Resource Id of the storage account associated with this workspace.
+    :vartype storage_account: str
+    :ivar workspace_kind: Whether this workspace is V1 or V2. Known values are: "V1" and "V2".
+    :vartype workspace_kind: str or ~azure.mgmt.quantum.models.WorkspaceKind
+    :ivar endpoint_uri: The URI of the workspace endpoint.
+    :vartype endpoint_uri: str
+    :ivar api_key_enabled: Indicator of enablement of the Quantum workspace Api keys.
+    :vartype api_key_enabled: bool
+    :ivar managed_on_behalf_of_configuration: Managed On Behalf Of configuration.
+    :vartype managed_on_behalf_of_configuration:
+     ~azure.mgmt.quantum.models.ManagedOnBehalfOfConfiguration
+    :ivar managed_storage_account: ARM Resource Id of the managed storage account associated with
+     this workspace.
+    :vartype managed_storage_account: str
+    """
+
+    _validation = {
+        "usable": {"readonly": True},
+        "provisioning_state": {"readonly": True},
+        "endpoint_uri": {"readonly": True},
+        "managed_on_behalf_of_configuration": {"readonly": True},
+        "managed_storage_account": {"readonly": True},
+    }
+
+    _attribute_map = {
+        "providers": {"key": "providers", "type": "[Provider]"},
+        "usable": {"key": "usable", "type": "str"},
+        "provisioning_state": {"key": "provisioningState", "type": "str"},
+        "storage_account": {"key": "storageAccount", "type": "str"},
+        "workspace_kind": {"key": "workspaceKind", "type": "str"},
+        "endpoint_uri": {"key": "endpointUri", "type": "str"},
+        "api_key_enabled": {"key": "apiKeyEnabled", "type": "bool"},
+        "managed_on_behalf_of_configuration": {
+            "key": "managedOnBehalfOfConfiguration",
+            "type": "ManagedOnBehalfOfConfiguration",
+        },
+        "managed_storage_account": {"key": "managedStorageAccount", "type": "str"},
     }
 
     def __init__(
         self,
-        **kwargs
-    ):
+        *,
+        providers: Optional[list["_models.Provider"]] = None,
+        storage_account: Optional[str] = None,
+        workspace_kind: Optional[Union[str, "_models.WorkspaceKind"]] = None,
+        api_key_enabled: Optional[bool] = None,
+        **kwargs: Any
+    ) -> None:
         """
-        :keyword value: Result of a list Workspaces operation.
-        :paramtype value: list[~azure.mgmt.quantum.models.QuantumWorkspace]
-        :keyword next_link: Link to the next set of results. Not empty if Value contains incomplete
-         list of Workspaces.
-        :paramtype next_link: str
+        :keyword providers: List of Providers selected for this Workspace.
+        :paramtype providers: list[~azure.mgmt.quantum.models.Provider]
+        :keyword storage_account: ARM Resource Id of the storage account associated with this
+         workspace.
+        :paramtype storage_account: str
+        :keyword workspace_kind: Whether this workspace is V1 or V2. Known values are: "V1" and "V2".
+        :paramtype workspace_kind: str or ~azure.mgmt.quantum.models.WorkspaceKind
+        :keyword api_key_enabled: Indicator of enablement of the Quantum workspace Api keys.
+        :paramtype api_key_enabled: bool
         """
-        super(WorkspaceListResult, self).__init__(**kwargs)
-        self.value = kwargs.get('value', None)
-        self.next_link = kwargs.get('next_link', None)
+        super().__init__(**kwargs)
+        self.providers = providers
+        self.usable: Optional[Union[str, "_models.UsableStatus"]] = None
+        self.provisioning_state: Optional[Union[str, "_models.WorkspaceProvisioningStatus"]] = None
+        self.storage_account = storage_account
+        self.workspace_kind = workspace_kind
+        self.endpoint_uri: Optional[str] = None
+        self.api_key_enabled = api_key_enabled
+        self.managed_on_behalf_of_configuration: Optional["_models.ManagedOnBehalfOfConfiguration"] = None
+        self.managed_storage_account: Optional[str] = None

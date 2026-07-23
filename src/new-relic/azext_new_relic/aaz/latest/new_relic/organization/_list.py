@@ -15,18 +15,20 @@ from azure.cli.core.aaz import *
     "new-relic organization list",
 )
 class List(AAZCommand):
-    """List all the existing organizations
+    """Lists all the New Relic organizations in your Azure subscription, helping you understand the existing organizations that have been created.
 
     :example: List all the existing organizations.
         az new-relic organization list --location eastus2euap --user-email UserEmail@123.com
     """
 
     _aaz_info = {
-        "version": "2022-07-01",
+        "version": "2024-01-01",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/providers/newrelic.observability/organizations", "2022-07-01"],
+            ["mgmt-plane", "/subscriptions/{}/providers/newrelic.observability/organizations", "2024-01-01"],
         ]
     }
+
+    AZ_SUPPORT_PAGINATION = True
 
     def _handler(self, command_args):
         super()._handler(command_args)
@@ -45,7 +47,7 @@ class List(AAZCommand):
         _args_schema = cls._args_schema
         _args_schema.location = AAZStrArg(
             options=["--location"],
-            help="Location for NewRelic.",
+            help="Location of NewRelic organization.",
             required=True,
         )
         _args_schema.user_email = AAZStrArg(
@@ -121,7 +123,7 @@ class List(AAZCommand):
                     required=True,
                 ),
                 **self.serialize_query_param(
-                    "api-version", "2022-07-01",
+                    "api-version", "2024-01-01",
                     required=True,
                 ),
             }

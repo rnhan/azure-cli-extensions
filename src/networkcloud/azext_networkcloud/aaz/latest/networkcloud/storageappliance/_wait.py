@@ -20,7 +20,7 @@ class Wait(AAZWaitCommand):
 
     _aaz_info = {
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.networkcloud/storageappliances/{}", "2023-10-01-preview"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.networkcloud/storageappliances/{}", "2026-05-01-preview"],
         ]
     }
 
@@ -119,7 +119,7 @@ class Wait(AAZWaitCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-10-01-preview",
+                    "api-version", "2026-05-01-preview",
                     required=True,
                 ),
             }
@@ -152,6 +152,9 @@ class Wait(AAZWaitCommand):
             cls._schema_on_200 = AAZObjectType()
 
             _schema_on_200 = cls._schema_on_200
+            _schema_on_200.etag = AAZStrType(
+                flags={"read_only": True},
+            )
             _schema_on_200.extended_location = AAZObjectType(
                 serialized_name="extendedLocation",
                 flags={"required": True},
@@ -190,6 +193,10 @@ class Wait(AAZWaitCommand):
                 serialized_name="administratorCredentials",
                 flags={"required": True},
             )
+            properties.ca_certificate = AAZObjectType(
+                serialized_name="caCertificate",
+                flags={"read_only": True},
+            )
             properties.capacity = AAZIntType(
                 flags={"read_only": True},
             )
@@ -209,8 +216,22 @@ class Wait(AAZWaitCommand):
                 serialized_name="detailedStatusMessage",
                 flags={"read_only": True},
             )
+            properties.expansion_shelves = AAZListType(
+                serialized_name="expansionShelves",
+                flags={"read_only": True},
+            )
             properties.management_ipv4_address = AAZStrType(
                 serialized_name="managementIpv4Address",
+                flags={"read_only": True},
+            )
+            properties.manufacturer = AAZStrType(
+                flags={"read_only": True},
+            )
+            properties.model = AAZStrType(
+                flags={"read_only": True},
+            )
+            properties.monitoring_configuration_status = AAZObjectType(
+                serialized_name="monitoringConfigurationStatus",
                 flags={"read_only": True},
             )
             properties.provisioning_state = AAZStrType(
@@ -233,6 +254,10 @@ class Wait(AAZWaitCommand):
                 serialized_name="remoteVendorManagementStatus",
                 flags={"read_only": True},
             )
+            properties.secret_rotation_status = AAZListType(
+                serialized_name="secretRotationStatus",
+                flags={"read_only": True},
+            )
             properties.serial_number = AAZStrType(
                 serialized_name="serialNumber",
                 flags={"required": True},
@@ -241,6 +266,9 @@ class Wait(AAZWaitCommand):
                 serialized_name="storageApplianceSkuId",
                 flags={"required": True},
             )
+            properties.version = AAZStrType(
+                flags={"read_only": True},
+            )
 
             administrator_credentials = cls._schema_on_200.properties.administrator_credentials
             administrator_credentials.password = AAZStrType(
@@ -248,6 +276,72 @@ class Wait(AAZWaitCommand):
             )
             administrator_credentials.username = AAZStrType(
                 flags={"required": True},
+            )
+
+            ca_certificate = cls._schema_on_200.properties.ca_certificate
+            ca_certificate.hash = AAZStrType(
+                flags={"read_only": True},
+            )
+            ca_certificate.value = AAZStrType(
+                flags={"read_only": True},
+            )
+
+            expansion_shelves = cls._schema_on_200.properties.expansion_shelves
+            expansion_shelves.Element = AAZObjectType()
+
+            _element = cls._schema_on_200.properties.expansion_shelves.Element
+            _element.model = AAZStrType()
+            _element.version = AAZStrType()
+
+            monitoring_configuration_status = cls._schema_on_200.properties.monitoring_configuration_status
+            monitoring_configuration_status.log_level = AAZStrType(
+                serialized_name="logLevel",
+            )
+            monitoring_configuration_status.metrics_level = AAZStrType(
+                serialized_name="metricsLevel",
+            )
+
+            secret_rotation_status = cls._schema_on_200.properties.secret_rotation_status
+            secret_rotation_status.Element = AAZObjectType()
+
+            _element = cls._schema_on_200.properties.secret_rotation_status.Element
+            _element.expire_period_days = AAZIntType(
+                serialized_name="expirePeriodDays",
+                flags={"read_only": True},
+            )
+            _element.last_rotation_time = AAZStrType(
+                serialized_name="lastRotationTime",
+                flags={"read_only": True},
+            )
+            _element.rotation_period_days = AAZIntType(
+                serialized_name="rotationPeriodDays",
+                flags={"read_only": True},
+            )
+            _element.secret_archive_reference = AAZObjectType(
+                serialized_name="secretArchiveReference",
+                flags={"read_only": True},
+            )
+            _element.secret_type = AAZStrType(
+                serialized_name="secretType",
+                flags={"read_only": True},
+            )
+
+            secret_archive_reference = cls._schema_on_200.properties.secret_rotation_status.Element.secret_archive_reference
+            secret_archive_reference.key_vault_id = AAZStrType(
+                serialized_name="keyVaultId",
+                flags={"read_only": True},
+            )
+            secret_archive_reference.key_vault_uri = AAZStrType(
+                serialized_name="keyVaultUri",
+                flags={"read_only": True},
+            )
+            secret_archive_reference.secret_name = AAZStrType(
+                serialized_name="secretName",
+                flags={"read_only": True},
+            )
+            secret_archive_reference.secret_version = AAZStrType(
+                serialized_name="secretVersion",
+                flags={"read_only": True},
             )
 
             system_data = cls._schema_on_200.system_data

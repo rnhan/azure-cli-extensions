@@ -3,20 +3,48 @@
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
 
-import subprocess
-from typing import List
+import hashlib
 import os
-import stat
-import sys
-from pathlib import Path
 import platform
+import stat
+import subprocess
+import sys
+
 import requests
 from azext_confcom.config import DATA_FOLDER
 from azext_confcom.errors import eprint
-
+from azext_confcom.lib.paths import get_binaries_dir, get_data_dir
 
 host_os = platform.system()
 machine = platform.machine()
+
+
+_binaries_dir = get_binaries_dir()
+_kata_binaries = {
+    "Linux": {
+        "path": _binaries_dir / "genpolicy-linux",
+        "url": "https://github.com/microsoft/kata-containers/releases/download/3.2.0.azl3.genpolicy4/genpolicy",
+        "sha256": "8ce7b6d93809c2c999845986784e75a114af5c29e880c5ac90522e856c49b546",
+    },
+    "Windows": {
+        "path": _binaries_dir / "genpolicy-windows.exe",
+        "url": "https://github.com/microsoft/kata-containers/releases/download/3.2.0.azl1.genpolicy0/genpolicy.exe",
+        "sha256": "caa9d8ee21b5819cc42b5c0967b14e166c715f6d4c87b574edabeaaeebf3573c",
+    },
+}
+_data_dir = get_data_dir()
+_kata_data = [
+    {
+        "path": _data_dir / "genpolicy-settings.json",
+        "url": "https://github.com/microsoft/kata-containers/releases/download/3.2.0.azl3.genpolicy4/genpolicy-settings.json",  # pylint: disable=line-too-long
+        "sha256": "c38be1474b133d49800a43bd30c40e7585b5f302179a307f9c6d89f195daee94",
+    },
+    {
+        "path": _data_dir / "rules.rego",
+        "url": "https://github.com/microsoft/kata-containers/releases/download/3.2.0.azl3.genpolicy4/rules.rego",
+        "sha256": "2ca6c0e9617f97a922724112bd738fd73881d35b9ae5d31d573f0871d1ecf897",
+    },
+]
 
 
 class KataPolicyGenProxy:  # pylint: disable=too-few-public-methods
@@ -25,52 +53,15 @@ class KataPolicyGenProxy:  # pylint: disable=too-few-public-methods
 
     @staticmethod
     def download_binaries():
-        dir_path = os.path.dirname(os.path.realpath(__file__))
 
-        bin_folder = os.path.join(dir_path, "bin")
-        if not os.path.exists(bin_folder):
-            os.makedirs(bin_folder)
+        for binary_info in list(_kata_binaries.values()) + _kata_data:
+            kata_fetch_resp = requests.get(binary_info["url"], verify=True)
+            kata_fetch_resp.raise_for_status()
 
-        data_folder = os.path.join(dir_path, "data")
-        if not os.path.exists(data_folder):
-            os.makedirs(data_folder)
+            assert hashlib.sha256(kata_fetch_resp.content).hexdigest() == binary_info["sha256"]
 
-        # get the most recent release artifacts from github
-        r = requests.get("https://api.github.com/repos/microsoft/kata-containers/releases")
-        bin_flag = False
-        needed_assets = ["genpolicy", "genpolicy.exe"]
-        # search for genpolicy in the assets from kata-container releases
-        for release in r.json():
-            if release.get("tag_name").startswith("genpolicy"):
-                # these should be newest to oldest
-                for asset in release["assets"]:
-                    # download the file if it contains genpolicy
-                    if asset["name"] in needed_assets:
-                        save_name = ""
-                        if ".exe" in asset["name"]:
-                            save_name = "genpolicy-windows.exe"
-                        else:
-                            save_name = "genpolicy-linux"
-                        bin_flag = True
-                        # get the download url for the genpolicy file
-                        exe_url = asset["browser_download_url"]
-                        # download the file
-                        r = requests.get(exe_url)
-                        # save the file to the bin folder
-                        with open(os.path.join(bin_folder, save_name), "wb") as f:
-                            f.write(r.content)
-
-                    # download the rules.rego and genpolicy-settings.json files
-                    if asset["name"] == "rules.rego" or asset["name"] == "genpolicy-settings.json":
-                        # download the rules.rego file
-                        exe_url = asset["browser_download_url"]
-                        # download the file
-                        r = requests.get(exe_url)
-                        # save the file to the data folder
-                        with open(os.path.join(data_folder, asset["name"]), "wb") as f:
-                            f.write(r.content)
-            if bin_flag:
-                break
+            with open(binary_info["path"], "wb") as f:
+                f.write(kata_fetch_resp.content)
 
     def __init__(self):
         script_directory = os.path.dirname(os.path.realpath(__file__))
@@ -79,40 +70,44 @@ class KataPolicyGenProxy:  # pylint: disable=too-few-public-methods
         if host_os == "Linux":
             DEFAULT_LIB += "-linux"
         elif host_os == "Windows":
-            if machine.endswith("64"):
-                DEFAULT_LIB += "-windows.exe"
-            else:
-                eprint(
-                    "32-bit Windows is not supported."
-                )
+            eprint("The katapolicygen subcommand for Windows has not been implemented.")
         elif host_os == "Darwin":
-            eprint("The extension for MacOS has not been implemented.")
+            eprint("The katapolicygen subcommand for MacOS has not been implemented.")
         else:
             eprint(
-                "Unknown target platform. The extension only works with Windows, Linux and MacOS"
+                "Unknown target platform. The katapolicygen subcommand only works with Linux"
             )
 
-        self.policy_bin = Path(os.path.join(f"{script_directory}", f"{DEFAULT_LIB}"))
+        self.policy_bin = os.path.join(f"{script_directory}", f"{DEFAULT_LIB}")
 
         # check if the extension binary exists
         if not os.path.exists(self.policy_bin):
-            eprint("The extension binary file cannot be located.")
+            eprint("The katapolicygen subcommand binary file cannot be located.")
         if not os.access(self.policy_bin, os.X_OK):
             # add executable permissions for the current user if they don't exist
             st = os.stat(self.policy_bin)
             os.chmod(self.policy_bin, st.st_mode | stat.S_IXUSR)
 
     def kata_genpolicy(
-        self, yaml_path,
+        self,
+        yaml_path,
         config_map_file=None,
         outraw=False,
         print_policy=False,
         use_cached_files=False,
         settings_file_name=None,
-    ) -> List[str]:
+        rules_file_name=None,
+        print_version=False,
+        containerd_pull=False,
+        containerd_socket_path=None
+    ) -> list[str]:
         policy_bin_str = str(self.policy_bin)
         # get path to data and rules folder
-        arg_list = [policy_bin_str, "-y", yaml_path, "-i", DATA_FOLDER]
+        arg_list = [policy_bin_str]
+
+        if yaml_path:
+            arg_list.append("-y")
+            arg_list.append(yaml_path)
 
         if config_map_file is not None:
             arg_list.append("-c")
@@ -127,16 +122,31 @@ class KataPolicyGenProxy:  # pylint: disable=too-few-public-methods
         if use_cached_files:
             arg_list.append("-u")
 
+        arg_list.append("-j")
         if settings_file_name:
-            arg_list.append("-j")
-            # only take the last part of the path for the settings file
-            settings_file_name = os.path.basename(settings_file_name)
             arg_list.append(settings_file_name)
+        else:
+            arg_list.append(os.path.join(DATA_FOLDER, "genpolicy-settings.json"))
+
+        arg_list.append("-p")
+        if rules_file_name:
+            arg_list.append(rules_file_name)
+        else:
+            arg_list.append(os.path.join(DATA_FOLDER, "rules.rego"))
+
+        if print_version:
+            arg_list.append("-v")
+
+        if containerd_pull:
+            item_to_append = "-d"
+            # -d by itself will use default path: /var/run/containerd/containerd.sock
+            # -d=my/path/my_containerd.sock will use the specified path
+            if containerd_socket_path:
+                item_to_append += f"={containerd_socket_path}"
+            arg_list.append(item_to_append)
 
         item = subprocess.run(
             arg_list,
-            # stdout=sys.stdout,
-            # stderr=sys.stderr,
             check=False,
         )
 

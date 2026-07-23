@@ -82,6 +82,7 @@ celerybeat-schedule
 
 # virtualenv
 .venv
+/.venv*/
 .env
 .python-version
 venv/
@@ -108,6 +109,9 @@ env27/
 # mypy
 .mypy_cache/
 
+# pytest
+.pytest_cache/
+
 # Sphinx
 _build/
 
@@ -124,3 +128,6 @@ _az_debug/
 
 # Ignore temporary test output files.
 /temp/
+
+# Ignore test results
+test_results.xml

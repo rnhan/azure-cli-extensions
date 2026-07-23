@@ -11,17 +11,18 @@ from azure.cli.testsdk.scenario_tests import AllowLargeResponse
 
 from .preparers import VaultPreparer
 
+
 class ResourceGuardScenarioTest(ScenarioTest):
 
     def setUp(test):
         super().setUp()
         test.kwargs.update({
             'location': 'centraluseuap',
-            'resourceGuardName':'clitest-resource-guard',
+            'resourceGuardName': 'clitest-resource-guard',
+            'rg': 'clitest-dpp-rg'
         })
 
     @AllowLargeResponse()
-    @ResourceGroupPreparer(name_prefix='clitest-dpp-resourceguard-', location='centraluseuap')
     def test_dataprotection_resource_guard_create_and_delete(test):
         test.cmd('az dataprotection resource-guard create -g "{rg}" -n "{resourceGuardName}"', checks=[
             test.check('name', "{resourceGuardName}")
@@ -35,7 +36,6 @@ class ResourceGuardScenarioTest(ScenarioTest):
         test.cmd('az dataprotection resource-guard delete -g "{rg}" -n "{resourceGuardName}" -y')
 
     @AllowLargeResponse()
-    @ResourceGroupPreparer(name_prefix='clitest-dpp-resourceguard-', location='centraluseuap')
     def test_dataprotection_resource_guard_update(test):
         test.kwargs.update({
             'resourceType': 'Microsoft.RecoveryServices/vaults'
@@ -47,7 +47,7 @@ class ResourceGuardScenarioTest(ScenarioTest):
             test.check('length(properties.vaultCriticalOperationExclusionList)', 2)
         ])
         test.cmd('az dataprotection resource-guard list-protected-operations -g "{rg}" -n "{resourceGuardName}" --resource-type "Microsoft.RecoveryServices/vaults"', checks=[
-            test.check('length(@)', 4)
+            test.check('length(@)', 8)
         ])
         test.cmd('az dataprotection resource-guard update -g "{rg}" -n "{resourceGuardName}" --critical-operation-exclusion-list deleteProtection', checks=[
             test.check('length(properties.vaultCriticalOperationExclusionList)', 2)
@@ -64,7 +64,6 @@ class ResourceGuardScenarioTest(ScenarioTest):
         ])
 
     @AllowLargeResponse()
-    @ResourceGroupPreparer(name_prefix='clitest-dpp-resourceguard-', location='centraluseuap')
     def test_dataprotection_resource_guard_mapping(test):
         test.kwargs.update({
             'vaultName': 'clitest-dpp-muavault-deletable',
@@ -73,7 +72,7 @@ class ResourceGuardScenarioTest(ScenarioTest):
         test.cmd('az dataprotection backup-vault create -g {rg} -v {vaultName} --type SystemAssigned '
                  '--storage-settings datastore-type="VaultStore" type="LocallyRedundant" '
                  '--soft-delete-state "Off"')
-        
+
         resource_guard = test.cmd('az dataprotection resource-guard create -g "{rg}" -n "{resourceGuardName}"').get_output_in_json()
         test.kwargs.update({
             'resourceGuardId': resource_guard['id']
@@ -83,7 +82,7 @@ class ResourceGuardScenarioTest(ScenarioTest):
                  '-n "DppResourceGuardProxy" --resource-guard-resource-id "{resourceGuardId}"', checks=[
                      test.check('name', 'DppResourceGuardProxy'),
                      test.check('properties.resourceGuardResourceId', '{resourceGuardId}')
-                ])
+                 ])
 
         test.cmd('az dataprotection backup-vault resource-guard-mapping show -g "{rg}" -v "{vaultName}" -n "DppResourceGuardProxy"')
 

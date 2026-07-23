@@ -21,14 +21,16 @@ ManagedEnvironment = {
         "appLogsConfiguration": None,
         "customDomainConfiguration": None,  # CustomDomainConfiguration,
         "workloadProfiles": None,
-        "InfrastructureResourceGroup": None
+        "infrastructureResourceGroup": None,
+        "openTelemetryConfiguration": None
     }
 }
 
 CustomDomainConfiguration = {
     "dnsSuffix": None,
     "certificateValue": None,
-    "certificatePassword": None
+    "certificatePassword": None,
+    "certificateKeyVaultProperties": None
 }
 
 AppLogsConfiguration = {
@@ -88,7 +90,7 @@ SecretVolumeItem = {
 
 Volume = {
     "name": None,
-    "storageType": "EmptyDir",  # AzureFile, EmptyDir or Secret
+    "storageType": "EmptyDir",  # AzureFile, EmptyDir, Secret or NfsAzureFile
     "storageName": None,   # None for EmptyDir or Secret, otherwise name of storage resource
     "secrets": None,  # [SecretVolumeItem]
     "mountOptions": None,
@@ -276,7 +278,8 @@ ContainerApp = {
         "template": None,  # Template
         "workloadProfileName": None
     },
-    "tags": None
+    "tags": None,
+    "kind": None
 }
 
 ContainerAppsJob = {
@@ -289,6 +292,40 @@ ContainerAppsJob = {
         "workloadProfileName": None
     },
     "tags": None
+}
+
+MaintenanceConfiguration = {
+    "name": "default",
+    "properties": {
+        "scheduledEntries": [
+            {
+                "weekDay": None,
+                "startHourUtc": None,
+                "durationHours": None
+            }
+        ]
+    }
+}
+
+SessionPool = {
+    "location": None,
+    "properties": {
+        "environmentId": None,
+        "poolManagementType": None,
+        "containerType": None,
+        "customContainerTemplate": None,
+        "secrets": None,
+        "dynamicPoolConfiguration": None,
+        "scaleConfiguration": None,
+        "sessionNetworkConfiguration": None
+    }
+}
+
+SessionCodeInterpreterExecution = {
+    "codeInputType": None,
+    "executionType": None,
+    "code": None,
+    "timeoutInSeconds": None
 }
 
 DaprComponentResiliency = {
@@ -304,6 +341,11 @@ DaprComponentResiliency = {
                     "maxIntervalInMilliseconds": None,
                 }
             },
+            "circuitBreakerPolicy": {
+                "consecutiveErrors": None,
+                "timeoutInSeconds": None,
+                "intervalInSeconds": None
+            }
         },
         "outboundPolicy": {
             "timeoutPolicy": {
@@ -316,6 +358,11 @@ DaprComponentResiliency = {
                     "maxIntervalInMilliseconds": None,
                 }
             },
+            "circuitBreakerPolicy": {
+                "consecutiveErrors": None,
+                "timeoutInSeconds": None,
+                "intervalInSeconds": None
+            }
         }
     }
 }
@@ -372,7 +419,8 @@ ContainerAppCertificateEnvelope = {
     "location": None,
     "properties": {
         "password": None,
-        "value": None
+        "value": None,
+        "certificateKeyVaultProperties": None
     }
 }
 
@@ -419,7 +467,8 @@ GitHubActionConfiguration = {
     "publishType": None,  # str
     "os": None,  # str
     "runtimeStack": None,  # str
-    "runtimeVersion": None  # str
+    "runtimeVersion": None,  # str
+    "buildEnvironmentVariables": None  # [EnvironmentVar]
 }
 
 RegistryInfo = {
@@ -451,9 +500,23 @@ ContainerAppCustomDomain = {
     "certificateId": None
 }
 
+ManagedEnvironmentStorageProperties = {
+    "location": None,
+    "properties": {
+        "azureFile": None,
+        "nfsAzureFile": None,
+    }
+}
+
 AzureFileProperties = {
     "accountName": None,
     "accountKey": None,
+    "accessMode": None,
+    "shareName": None
+}
+
+NfsAzureFileProperties = {
+    "server": None,
     "accessMode": None,
     "shareName": None
 }
@@ -509,4 +572,62 @@ ConnectedEnvironment = {
 ExtendedLocation = {
     "name": None,
     "type": None
+}
+
+AppInsightsConfiguration = {
+    "connectionString": None
+}
+
+OpenTelemetryConfiguration = {
+    "destinationsConfiguration": None,
+    "tracesConfiguration": None,
+    "logsConfiguration": None,
+    "metricsConfiguration": None
+}
+
+DestinationsConfiguration = {
+    "dataDogConfiguration": None
+}
+
+DataDogConfiguration = {
+    "site": None,
+    "key": None
+}
+
+TracesConfiguration = {
+    "destinations": []
+}
+
+LogsConfiguration = {
+    "destinations": []
+}
+
+MetricsConfiguration = {
+    "destinations": []
+}
+
+JavaComponent = {
+    "properties": {
+        "componentType": None,
+        "serviceBinds": None
+    }
+}
+
+RuntimeJava = {
+    "enableMetrics": True,
+    "javaAgent": {
+        "enabled": False,
+        "logging": {}
+    }
+}
+
+DotNetComponent = {
+    "properties": {
+        "componentType": "AspireDashboard"
+    }
+}
+
+JavaLoggerSetting = {
+    "logger": None,
+    "level": None
 }

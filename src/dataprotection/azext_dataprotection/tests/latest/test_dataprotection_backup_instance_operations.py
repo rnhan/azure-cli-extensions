@@ -6,8 +6,11 @@
 # pylint: disable=line-too-long
 # pylint: disable=unused-import
 
-from azure.cli.testsdk import ScenarioTest
+import unittest
+from azure.cli.testsdk import ScenarioTest, live_only
 from azure.cli.testsdk.scenario_tests import AllowLargeResponse
+import time
+
 
 def reset_softdelete_base_state(test):
     # Ensure backup instance is deleted from the secondary vault. If instance is already deleted, it will return instantly. As soft delete is disabled
@@ -18,10 +21,12 @@ def reset_softdelete_base_state(test):
     ])
 
     # Ensure that backup instance is protected in the primary soft delete vault
+    test.cmd('az dataprotection backup-instance deleted-backup-instance undelete -g "{rg}" --vault-name "{softDeleteVault}" --name "{backupInstanceName1}"')
     test.cmd('az dataprotection backup-instance resume-protection -g "{rg}" --vault-name "{softDeleteVault}" --name "{backupInstanceName1}"')
     test.cmd('az dataprotection backup-instance show -g "{rg}" --vault-name "{softDeleteVault}" --name "{backupInstanceName1}"', checks=[
         test.check('properties.protectionStatus.status', "ProtectionConfigured")
     ])
+
 
 # Uses a persistent vault and persistent DSes
 class BackupInstanceOperationsScenarioTest(ScenarioTest):
@@ -33,6 +38,7 @@ class BackupInstanceOperationsScenarioTest(ScenarioTest):
             'rg': 'clitest-dpp-rg',
             'vaultName': 'clitest-bkp-vault-persistent-bi-donotdelete',
             'softDeleteVault': 'clitest-bkp-vault-sd1-donotdelete',
+            'uamiVault': 'clitest-bkp-vault-uami-donotdelete',
         })
 
     @AllowLargeResponse()
@@ -47,29 +53,34 @@ class BackupInstanceOperationsScenarioTest(ScenarioTest):
 
         test.cmd('az dataprotection backup-instance stop-protection -n "{backupInstanceName}" -g "{rg}" --vault-name "{vaultName}"')
         test.cmd('az dataprotection backup-instance show -n "{backupInstanceName}" -g "{rg}" --vault-name "{vaultName}"', checks=[
-            test.check('properties.currentProtectionState','ProtectionStopped')
+            test.check('properties.currentProtectionState', 'ProtectionStopped')
         ])
 
         test.cmd('az dataprotection backup-instance resume-protection -n "{backupInstanceName}" -g "{rg}" --vault-name "{vaultName}"')
         test.cmd('az dataprotection backup-instance show -n "{backupInstanceName}" -g "{rg}" --vault-name "{vaultName}"', checks=[
-            test.check('properties.currentProtectionState','ProtectionConfigured')
+            test.check('properties.currentProtectionState', 'ProtectionConfigured')
         ])
 
         test.cmd('az dataprotection backup-instance suspend-backup -n "{backupInstanceName}" -g "{rg}" --vault-name "{vaultName}"')
         test.cmd('az dataprotection backup-instance show -n "{backupInstanceName}" -g "{rg}" --vault-name "{vaultName}"', checks=[
-            test.check('properties.currentProtectionState','BackupsSuspended')
+            test.check('properties.currentProtectionState', 'BackupsSuspended')
         ])
-
 
     @AllowLargeResponse()
     def test_dataprotection_backup_instance_update_policy(test):
         test.kwargs.update({
-            'backupInstanceName': 'clitestsabidonotdelete-clitestsabidonotdelete-887c3538-0bfc-11ee-acd3-002b670b472e',
-            'policyName': 'blobpolicy',
-            'policyId': '/subscriptions/38304e13-357e-405e-9e9a-220351dcce8c/resourceGroups/clitest-dpp-rg/providers/Microsoft.DataProtection/backupVaults/clitest-bkp-vault-persistent-bi-donotdelete/backupPolicies/blobpolicy',
-            'altPolicyName': 'altblobpolicy',
-            'altPolicyId': '/subscriptions/38304e13-357e-405e-9e9a-220351dcce8c/resourceGroups/clitest-dpp-rg/providers/Microsoft.DataProtection/backupVaults/clitest-bkp-vault-persistent-bi-donotdelete/backupPolicies/altblobpolicy'
+            'subscriptionId': '59e574f1-e278-4b66-875b-e3e4fe74ad88',
+            'originalSubscriptionId': test.cmd('az account show --query id -o tsv').output.strip(),
+            'rg': 'clitest-dpp-rg',
+            'vaultName': 'clitest-bkp-vault-donotdelete',
+            'backupInstanceName': 'clitestblobsadnd-clitestblobsadnd-92e88a05-3816-418b-8987-1285f34c2030',
+            'policyName': 'altvaultpolicy',
+            'policyId': '/subscriptions/59e574f1-e278-4b66-875b-e3e4fe74ad88/resourceGroups/clitest-dpp-rg/providers/Microsoft.DataProtection/backupVaults/clitest-bkp-vault-donotdelete/backupPolicies/altvaultpolicy',
+            'altPolicyName': 'vaultpolicy',
+            'altPolicyId': '/subscriptions/59e574f1-e278-4b66-875b-e3e4fe74ad88/resourceGroups/clitest-dpp-rg/providers/Microsoft.DataProtection/backupVaults/clitest-bkp-vault-donotdelete/backupPolicies/vaultpolicy'
         })
+        test.addCleanup(lambda: test.cmd('az account set --subscription "{originalSubscriptionId}"'))
+        test.cmd('az account set --subscription "{subscriptionId}"')
         test.cmd('az dataprotection backup-instance wait -g "{rg}" --vault-name "{vaultName}" --backup-instance-name "{backupInstanceName}" --timeout 300 '
                  '--custom "properties.currentProtectionState==\'ProtectionConfigured\'"')
 
@@ -79,12 +90,11 @@ class BackupInstanceOperationsScenarioTest(ScenarioTest):
         test.cmd('az dataprotection backup-instance wait -g "{rg}" --vault-name "{vaultName}" --backup-instance-name "{backupInstanceName}" --timeout 300 '
                  '--custom "properties.currentProtectionState==\'ProtectionConfigured\'"')
 
-        test.cmd('az dataprotection backup-instance update-policy -g "{rg}" --vault-name "{vaultName}" --backup-instance-name "{backupInstanceName}" --policy-id "{policyId}"',  checks=[
+        test.cmd('az dataprotection backup-instance update-policy -g "{rg}" --vault-name "{vaultName}" --backup-instance-name "{backupInstanceName}" --policy-id "{policyId}"', checks=[
             test.check("contains(properties.policyInfo.policyId, '/{policyName}')", True)
         ])
         test.cmd('az dataprotection backup-instance wait -g "{rg}" --vault-name "{vaultName}" --backup-instance-name "{backupInstanceName}" --timeout 300 '
                  '--custom "properties.currentProtectionState==\'ProtectionConfigured\'"')
-
 
     @AllowLargeResponse()
     def test_dataprotection_backup_instance_list_from_resource_graph(test):
@@ -98,10 +108,122 @@ class BackupInstanceOperationsScenarioTest(ScenarioTest):
             test.exists("[?name == '{backupInstanceName}']")
         ])
 
+    @AllowLargeResponse()
+    def test_dataprotection_backup_vault_list_from_resource_graph(test):
+        test.kwargs.update({
+            'vaultId': '/subscriptions/38304e13-357e-405e-9e9a-220351dcce8c/resourceGroups/clitest-dpp-rg/providers/Microsoft.DataProtection/backupVaults/clitest-bkp-vault-persistent-bi-donotdelete',
+            'vaultName': 'clitest-bkp-vault-persistent-bi-donotdelete'
+        })
+        test.cmd('az dataprotection backup-vault list-from-resourcegraph --vault-id "{vaultId}"', checks=[
+            test.greater_than('length([])', 0),
+            test.exists("[?name == '{vaultName}']")
+        ])
+
+    @unittest.skip("Temporary skip to allow ADLS PR through")
+    @AllowLargeResponse()
+    @live_only()
+    def test_dataprotection_backup_instance_uami_create_update(test):
+        test.kwargs.update({
+            'diskname': 'clitest-dpp-disk-uami-donotdelete',
+            'diskId': '/subscriptions/38304e13-357e-405e-9e9a-220351dcce8c/resourceGroups/clitest-dpp-rg/providers/Microsoft.Compute/disks/clitest-dpp-disk-uami-donotdelete',
+            'targetDiskId': '/subscriptions/38304e13-357e-405e-9e9a-220351dcce8c/resourceGroups/clitest-dpp-rg/providers/Microsoft.Compute/disks/clitest-dpp-disk-uami-target',
+            'datasourceType': 'AzureDisk',
+            'policyId': '/subscriptions/38304e13-357e-405e-9e9a-220351dcce8c/resourceGroups/clitest-dpp-rg/providers/Microsoft.DataProtection/backupVaults/clitest-bkp-vault-uami-donotdelete/backupPolicies/clitest-dpp-uami-disk-policy',
+            'backupInstanceName': 'clitest-dpp-disk-uami-donotdelete-clitest-dpp-disk-uami-donotdelete-32d2e1ea-1062-11f0-8673-cc15311bf11f',
+            'uamiUrl': '/subscriptions/38304e13-357e-405e-9e9a-220351dcce8c/resourceGroups/clitest-dpp-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/dppcliuamiccy',
+        })
+
+        test.addCleanup(test.cmd, 'az dataprotection backup-instance delete -g "{rg}" --vault-name "{uamiVault}" --backup-instance-name "{backupInstanceName}" --yes --no-wait')
+        ########## PRE-TEST-VALIDATIONS ##########
+        # Ensure backup-instance deletion from prev run, just in case. If instance is already deleted, it will return instantly.
+        test.cmd('az dataprotection backup-vault update '
+                 '-g "{rg}" -v "{uamiVault}" '
+                 '--type "SystemAssigned,UserAssigned" ')
+        test.cmd('az dataprotection backup-instance delete -g "{rg}" --vault-name "{uamiVault}" --backup-instance-name "{backupInstanceName}" --yes')
+
+        # Set Backup vault to User-Assigned only. It needs to have the same Managed Identity as we will be associating with the BI.
+        test.cmd('az dataprotection backup-vault update '
+                 '-g "{rg}" -v "{uamiVault}" '
+                 '--type "UserAssigned" '
+                 '--uami {{"{uamiUrl}":{{}}}} ',
+                 checks=[
+                    test.check('identity.type', 'UserAssigned')
+                 ])
+        
+        ########## CORE TEST ##########
+        # Backup Instance initialization
+        backup_instance_json = test.cmd('az dataprotection backup-instance initialize '
+                                        '--datasource-id "{diskId}" '
+                                        '--datasource-location "{location}" '
+                                        '--datasource-type "{datasourceType}" '
+                                        '--policy-id "{policyId}" '
+                                        '--uami "{uamiUrl}" ', checks=[
+                                            test.exists("properties.identity_details")
+                                        ]).get_output_in_json()
+        backup_instance_json["backup_instance_name"] = test.kwargs['backupInstanceName']
+        test.kwargs.update({
+            "backupInstance": backup_instance_json,
+        })
+
+        # Set permissions for Backup
+        # Only run this step in live mode, if the operation is failing due to a permissions issue. Comment otherwise.
+        # test.cmd('az dataprotection backup-instance update-msi-permissions '
+        #          '-g "{rg}" -v "{uamiVault}" --datasource-type "{datasourceType}" --operation "Backup" '
+        #          '--permissions-scope "Resource" --backup-instance "{backupInstance}" --uami "{uamiUrl}" --yes ')
+
+        # Validate the backup
+        test.cmd('az dataprotection backup-instance validate-for-backup '
+                 '-g "{rg}" -v "{uamiVault}" '
+                 '--backup-instance "{backupInstance}" ')
+
+        # Create the backup Instance
+        test.cmd('az dataprotection backup-instance create '
+                 '-g "{rg}" -v "{uamiVault}" '
+                 '--backup-instance "{backupInstance}" ')
+
+        # Update the vault to System+UserAssigned
+        backup_vault = test.cmd('az dataprotection backup-vault update '
+                                '-g "{rg}" -v "{uamiVault}" '
+                               '--type "SystemAssigned,UserAssigned" ',
+                                checks=[
+                                    test.check('identity.type', 'SystemAssigned,UserAssigned')
+                                ]).get_output_in_json()
+        # Fix for 'Cannot find user or service principal in graph database' error. Confirming sp is created for the backup vault.
+        # sp_list = []
+        # while backup_vault['identity']['principalId'] not in sp_list:
+        #     sp_list = test.cmd('az ad sp list --display-name "{vaultName}" --query [].id').get_output_in_json()
+        #     time.sleep(10)
+
+        time.sleep(30)
+
+        # Set permissions for System Assigned Identity
+        # Only run this step in live mode, if the operation is failing due to a permissions issue. Comment otherwise.
+        test.cmd('az dataprotection backup-instance update-msi-permissions '
+                 '-g "{rg}" -v "{uamiVault}" --datasource-type "{datasourceType}" --operation "Backup" '
+                 '--permissions-scope "ResourceGroup" --backup-instance "{backupInstance}" --yes ')
+
+        # Validate modify BI
+        test.cmd('az dataprotection backup-instance validate-for-update '
+                 '-g "{rg}" -v "{uamiVault}" '
+                 '--backup-instance-name "{backupInstanceName}" '
+                 '--use-system-identity ')
+
+        # Modify BI
+        test.cmd('az dataprotection backup-instance update '
+                 '-g "{rg}" -v "{uamiVault}" '
+                 '--backup-instance-name "{backupInstanceName}" '
+                 '--use-system-identity ',
+                 checks=[
+                     test.check('properties.identityDetails.useSystemAssignedIdentity', True)
+                 ])
 
     @AllowLargeResponse()
     def test_dataprotection_backup_instance_softdelete(test):
         test.kwargs.update({
+            'location': 'centraluseuap',
+            'rg': 'clitest-dpp-rg',
+            'vaultName': 'clitest-bkp-vault-persistent-bi-donotdelete',
+            'softDeleteVault': 'clitest-bkp-vault-sd1-donotdelete',
             'diskName': 'clitest-disk-sd-donotdelete',
             'diskId': '/subscriptions/38304e13-357e-405e-9e9a-220351dcce8c/resourceGroups/clitest-dpp-rg/providers/Microsoft.Compute/disks/clitest-disk-sd-donotdelete',
             'dataSourceType': "AzureDisk",
@@ -120,9 +242,10 @@ class BackupInstanceOperationsScenarioTest(ScenarioTest):
             "backupInstance2": backup_instance_json,
         })
 
-        # Validations
-            # BI is not listed in vault 2
-            # BI is listed in vault 1, with protection enabled
+        # Validations:
+        # BI is not listed in vault 2
+        # BI is listed in vault 1, with protection enabled
+        time.sleep(60)
         reset_softdelete_base_state(test)
 
         # Checks
@@ -164,4 +287,55 @@ class BackupInstanceOperationsScenarioTest(ScenarioTest):
         test.cmd('az dataprotection backup-instance resume-protection -g "{rg}" --vault-name "{softDeleteVault}" --name "{backupInstanceName1}"', expect_failure=True)
 
         # Once protection elsewhere is stopped, we can resume protection on the undeleted BI
+        time.sleep(60)
         reset_softdelete_base_state(test)
+
+    @unittest.skip("AKS test requires live cluster - skipping until AKS resources are available in a compatible subscription")
+    @AllowLargeResponse()
+    def test_dataprotection_backup_instance_update_aks_configuration(test):
+        # Update with AKS backup configuration using simple az CLI commands.
+        test.kwargs.update({
+            'location': 'eastus2euap',
+            'rg': 'clitest-dpp-rg',
+            'vaultName': 'clitest-bkp-vault-aks-donotdelete',
+            'policyId': '/subscriptions/38304e13-357e-405e-9e9a-220351dcce8c/resourceGroups/clitest-dpp-rg/providers/Microsoft.DataProtection/backupVaults/clitest-bkp-vault-aks-donotdelete/backupPolicies/akspolicy',
+            'dataSourceType': 'AzureKubernetesService',
+            'aksClusterName': 'clitest-cluster1-donotdelete',
+            'aksClusterId': '/subscriptions/38304e13-357e-405e-9e9a-220351dcce8c/resourceGroups/oss-clitest-rg/providers/Microsoft.ContainerService/managedClusters/clitest-cluster1-donotdelete',
+            'friendlyName': 'clitest-cluster1-donotdelete\\clitestsabidonotdelete',
+            'backupInstanceName': 'clitest-cluster1-donotdelete-clitest-cluster1-donotdelete-bd3ae6fd-0d5f-4f76-85b4-8d7f0fe7006c'
+        })
+
+        # Fetch original BI backupDatasourceParametersList (if any) to allow resetting later
+        original_bi = test.cmd('az dataprotection backup-instance show -g "{rg}" --vault-name "{vaultName}" --name "{backupInstanceName}"').get_output_in_json()
+        originalBackupConfig = original_bi['properties']['policyInfo']['policyParameters'].get('backupDatasourceParametersList')[0]
+        test.kwargs.update({
+            'backupConfig': originalBackupConfig
+        })
+
+        # Generate the AKS backup configuration with specific values in a single command to make the change observable
+        new_backup_config_json = test.cmd('az dataprotection backup-instance initialize-backupconfig --datasource-type AzureKubernetesService '
+                                          '--included-namespaces "nsA" "nsB" --label-selectors "app=web" --excluded-resource-types "ResourceX" '
+                                          '--include-cluster-scope-resources false --snapshot-volumes false').get_output_in_json()
+        test.kwargs.update({
+            'tempBackupConfig': new_backup_config_json
+        })
+
+        # Apply temp configuration
+        test.cmd('az dataprotection backup-instance update -g "{rg}" --vault-name "{vaultName}" --backup-instance-name "{backupInstanceName}" --aks-backup-configuration "{tempBackupConfig}"', checks=[
+            test.check('name', "{backupInstanceName}")
+        ])
+
+        # Fetch the BI and verify that the backupDatasourceParametersList was updated to reflect the AKS config
+        test.cmd('az dataprotection backup-instance show -g "{rg}" --vault-name "{vaultName}" --name "{backupInstanceName}"', checks=[
+            test.check("properties.policyInfo.policyParameters.backupDatasourceParametersList[0].includedNamespaces", ['nsA', 'nsB']),
+            test.check("properties.policyInfo.policyParameters.backupDatasourceParametersList[0].labelSelectors", ['app=web']),
+            test.check("properties.policyInfo.policyParameters.backupDatasourceParametersList[0].excludedResourceTypes", ['ResourceX']),
+            test.check("properties.policyInfo.policyParameters.backupDatasourceParametersList[0].includeClusterScopeResources", False),
+            test.check("properties.policyInfo.policyParameters.backupDatasourceParametersList[0].snapshotVolumes", False)
+        ])
+        
+        # Reset to original configuration
+        test.cmd('az dataprotection backup-instance update -g "{rg}" --vault-name "{vaultName}" --backup-instance-name "{backupInstanceName}" --aks-backup-configuration "{backupConfig}"', checks=[
+            test.check('name', "{backupInstanceName}")
+        ])

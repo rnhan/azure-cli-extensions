@@ -1,5 +1,54 @@
 # Release History
 
+## 8.1.0 (2026-01)
+
+- Bump minimum required Az CLI version to `2.75.0`
+- Upgrade default API version from `2024-09-01` to `2025-09-01`
+- Add `--vcf-license` to `az vmware private-cloud create` and `az vmware private-cloud update`
+- Add `az vmware private-cloud get-vcf-license` command
+- Add `az vmware private-cloud delete-vcf-license` command
+- Add `az vmware private-cloud maintenance` command group
+- Add `az vmware license` command group
+
+## 8.0.0 (2025-07)
+
+- Bump minimum required Az CLI version to `2.70.0`
+- Upgrade default API version from `2023-09-01` to `2024-09-01`
+- Add `--management-network` and `--uplink-network` to `az vmware addon hcx create` and `az vmware addon hcx update`
+- Add `--zones` to `az vmware private-cloud create`
+- Add `az vmware script-execution get-execution-log` command
+- Add `az vmware cluster host` command group
+- Add `az vmware datastores pure-storage-volume` command group
+- Add `az vmware provisioned-network` command group
+- Add `az vmware pure-storage-policy` command group
+- Add `az vmware skus` command group
+- [BREAKING CHANGE] Remove `--nsxt-password` and `--vcenter-password` as parameters for `az vmware private-cloud create` and `az vmware private-cloud update`
+
+## 7.2.0 (2025-02)
+
+- Bump minimum required Az CLI version to `2.67.0`
+- Fix parsing errors on response for `az vmware private-cloud rotate-vcenter-password`, `az vmware private-cloud rotate-nsxt-password`, and `az vmware vm restrict-movement`
+- [BREAKING CHANGE] Remove unused arguments from `domain` and `alias` from `az vmware private-cloud delete-identity-source` command
+
+## 7.1.0 (2024-09)
+
+- Update `--license-key` to optional for `az vmware srm create` and `az vmware srm update`
+- Update `--vcenter` to optional for `az vmware arc create` and `az vmware arc update`
+
+## 7.0.0 (2024-06)
+
+- Update to AVS 2023-09-01 API
+- Add `az vmware datastore elastic-san-volume` command group
+- Add `az vmware iscsi-path` command group
+- Add `az vmware cloud-link wait` command
+- Add `--vsan-datastore-name` argument to `az vmware cluster create`
+- Add `--vsan-datastore-name` argument to `az vmware cluster update`
+- Add `--virtual-network-id` argument to `az vmware private-cloud create`
+- Add `--hosts`, `vsan-datastore-name`, `dns-zone-type` arguments to `az vmware private-cloud update`
+- Add `az vmware private-cloud rotate-nsxt-password`
+- [BREAKING CHANGE] Remove `--sku` argument from `az vmware cluster update` as sku cannot be modified after cluster creation
+- [BREAKING CHANGE] Add confirmation prompt to `az vmware script-execution create` if `--script-cmdlet-id` contains `scriptPackages/Microsoft.AVS.VMFS`, `scriptPackages/Microsoft.AVS.NFS`, or `scriptPackages/Microsoft.AVS.VVOLS`
+
 ## 6.0.1 (2023-12)
 
 - Fix `az vmware private-cloud list-admin-credentials` not returning `nsxtPassword` and `vcenterPassword`

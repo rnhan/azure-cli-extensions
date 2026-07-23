@@ -22,9 +22,9 @@ class Update(AAZCommand):
     """
 
     _aaz_info = {
-        "version": "2023-06-15",
+        "version": "2026-01-15-preview",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.managednetworkfabric/internetgateways/{}", "2023-06-15"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.managednetworkfabric/internetgateways/{}", "2026-01-15-preview"],
         ]
     }
 
@@ -50,9 +50,11 @@ class Update(AAZCommand):
             help="Name of the Internet Gateway.",
             required=True,
             id_part="name",
+            fmt=AAZStrArgFormat(
+                pattern="^[a-zA-Z]{1}[a-zA-Z0-9-_]{2,127}$",
+            ),
         )
         _args_schema.resource_group = AAZResourceGroupNameArg(
-            help="Name of the resource group",
             required=True,
         )
 
@@ -62,7 +64,7 @@ class Update(AAZCommand):
         _args_schema.tags = AAZDictArg(
             options=["--tags"],
             arg_group="Body",
-            help="Resource tags",
+            help="Resource tags.",
         )
 
         tags = cls._args_schema.tags
@@ -72,9 +74,10 @@ class Update(AAZCommand):
 
         _args_schema = cls._args_schema
         _args_schema.internet_gateway_rule_id = AAZResourceIdArg(
-            options=["--internet-gateway-rule-id"],
+            options=["--gateway-rule-id", "--internet-gateway-rule-id"],
             arg_group="Properties",
             help="ARM Resource ID of the Internet Gateway Rule.",
+            nullable=True,
         )
         return cls._args_schema
 
@@ -92,7 +95,7 @@ class Update(AAZCommand):
         pass
 
     def _output(self, *args, **kwargs):
-        result = self.deserialize_output(self.ctx.vars.instance, client_flatten=False)
+        result = self.deserialize_output(self.ctx.vars.instance, client_flatten=True)
         return result
 
     class InternetGatewaysUpdate(AAZHttpOperation):
@@ -159,7 +162,7 @@ class Update(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-06-15",
+                    "api-version", "2026-01-15-preview",
                     required=True,
                 ),
             }
@@ -189,7 +192,7 @@ class Update(AAZCommand):
 
             properties = _builder.get(".properties")
             if properties is not None:
-                properties.set_prop("internetGatewayRuleId", AAZStrType, ".internet_gateway_rule_id")
+                properties.set_prop("internetGatewayRuleId", AAZStrType, ".internet_gateway_rule_id", typ_kwargs={"nullable": True})
 
             tags = _builder.get(".tags")
             if tags is not None:
@@ -240,14 +243,23 @@ class Update(AAZCommand):
             properties.annotation = AAZStrType()
             properties.internet_gateway_rule_id = AAZStrType(
                 serialized_name="internetGatewayRuleId",
+                nullable=True,
+            )
+            properties.internet_gateway_type = AAZStrType(
+                serialized_name="internetGatewayType",
             )
             properties.ipv4_address = AAZStrType(
                 serialized_name="ipv4Address",
                 flags={"read_only": True},
             )
+            properties.last_operation = AAZObjectType(
+                serialized_name="lastOperation",
+                flags={"read_only": True},
+            )
             properties.network_fabric_controller_id = AAZStrType(
                 serialized_name="networkFabricControllerId",
                 flags={"required": True},
+                nullable=True,
             )
             properties.port = AAZIntType(
                 flags={"read_only": True},
@@ -256,8 +268,11 @@ class Update(AAZCommand):
                 serialized_name="provisioningState",
                 flags={"read_only": True},
             )
-            properties.type = AAZStrType(
-                flags={"required": True},
+            properties.type = AAZStrType()
+
+            last_operation = cls._schema_on_200.properties.last_operation
+            last_operation.details = AAZStrType(
+                flags={"read_only": True},
             )
 
             system_data = cls._schema_on_200.system_data

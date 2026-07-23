@@ -20,7 +20,7 @@ class Wait(AAZWaitCommand):
 
     _aaz_info = {
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.managednetworkfabric/networkfabrics/{}", "2023-06-15"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.managednetworkfabric/networkfabrics/{}", "2026-01-15-preview"],
         ]
     }
 
@@ -45,9 +45,11 @@ class Wait(AAZWaitCommand):
             help="Name of the Network Fabric.",
             required=True,
             id_part="name",
+            fmt=AAZStrArgFormat(
+                pattern="^[a-zA-Z]{1}[a-zA-Z0-9-_]{2,127}$",
+            ),
         )
         _args_schema.resource_group = AAZResourceGroupNameArg(
-            help="Name of the resource group",
             required=True,
         )
         return cls._args_schema
@@ -117,7 +119,7 @@ class Wait(AAZWaitCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-06-15",
+                    "api-version", "2026-01-15-preview",
                     required=True,
                 ),
             }
@@ -153,6 +155,7 @@ class Wait(AAZWaitCommand):
             _schema_on_200.id = AAZStrType(
                 flags={"read_only": True},
             )
+            _schema_on_200.identity = AAZIdentityObjectType()
             _schema_on_200.location = AAZStrType(
                 flags={"required": True},
             )
@@ -171,22 +174,73 @@ class Wait(AAZWaitCommand):
                 flags={"read_only": True},
             )
 
+            identity = cls._schema_on_200.identity
+            identity.principal_id = AAZStrType(
+                serialized_name="principalId",
+                flags={"read_only": True},
+            )
+            identity.tenant_id = AAZStrType(
+                serialized_name="tenantId",
+                flags={"read_only": True},
+            )
+            identity.type = AAZStrType(
+                flags={"required": True},
+            )
+            identity.user_assigned_identities = AAZDictType(
+                serialized_name="userAssignedIdentities",
+            )
+
+            user_assigned_identities = cls._schema_on_200.identity.user_assigned_identities
+            user_assigned_identities.Element = AAZObjectType(
+                nullable=True,
+            )
+
+            _element = cls._schema_on_200.identity.user_assigned_identities.Element
+            _element.client_id = AAZStrType(
+                serialized_name="clientId",
+                flags={"read_only": True},
+            )
+            _element.principal_id = AAZStrType(
+                serialized_name="principalId",
+                flags={"read_only": True},
+            )
+
             properties = cls._schema_on_200.properties
+            properties.active_commit_batches = AAZListType(
+                serialized_name="activeCommitBatches",
+                flags={"read_only": True},
+            )
             properties.administrative_state = AAZStrType(
                 serialized_name="administrativeState",
                 flags={"read_only": True},
             )
             properties.annotation = AAZStrType()
+            properties.authorized_transceiver = AAZObjectType(
+                serialized_name="authorizedTransceiver",
+            )
             properties.configuration_state = AAZStrType(
                 serialized_name="configurationState",
                 flags={"read_only": True},
+            )
+            properties.control_plane_acls = AAZListType(
+                serialized_name="controlPlaneAcls",
             )
             properties.fabric_asn = AAZIntType(
                 serialized_name="fabricASN",
                 flags={"required": True},
             )
+            properties.fabric_locks = AAZListType(
+                serialized_name="fabricLocks",
+                flags={"read_only": True},
+            )
             properties.fabric_version = AAZStrType(
                 serialized_name="fabricVersion",
+            )
+            properties.feature_flags = AAZListType(
+                serialized_name="featureFlags",
+            )
+            properties.hardware_alert_threshold = AAZIntType(
+                serialized_name="hardwareAlertThreshold",
             )
             properties.ipv4_prefix = AAZStrType(
                 serialized_name="ipv4Prefix",
@@ -203,21 +257,38 @@ class Wait(AAZWaitCommand):
                 serialized_name="l3IsolationDomains",
                 flags={"read_only": True},
             )
+            properties.last_operation = AAZObjectType(
+                serialized_name="lastOperation",
+                flags={"read_only": True},
+            )
             properties.management_network_configuration = AAZObjectType(
                 serialized_name="managementNetworkConfiguration",
                 flags={"required": True},
             )
+            properties.network_bootstrap_device_id = AAZStrType(
+                serialized_name="networkBootstrapDeviceId",
+                nullable=True,
+                flags={"read_only": True},
+            )
             properties.network_fabric_controller_id = AAZStrType(
                 serialized_name="networkFabricControllerId",
                 flags={"required": True},
+                nullable=True,
             )
             properties.network_fabric_sku = AAZStrType(
                 serialized_name="networkFabricSku",
                 flags={"required": True},
             )
+            properties.operational_state = AAZStrType(
+                serialized_name="operationalState",
+                flags={"read_only": True},
+            )
             properties.provisioning_state = AAZStrType(
                 serialized_name="provisioningState",
                 flags={"read_only": True},
+            )
+            properties.qos_configuration = AAZObjectType(
+                serialized_name="qosConfiguration",
             )
             properties.rack_count = AAZIntType(
                 serialized_name="rackCount",
@@ -229,13 +300,69 @@ class Wait(AAZWaitCommand):
                 serialized_name="routerIds",
                 flags={"read_only": True},
             )
+            properties.secret_archive_settings = AAZObjectType(
+                serialized_name="secretArchiveSettings",
+            )
+            properties.secret_rotation_summary = AAZObjectType(
+                serialized_name="secretRotationSummary",
+                flags={"read_only": True},
+            )
             properties.server_count_per_rack = AAZIntType(
                 serialized_name="serverCountPerRack",
                 flags={"required": True},
             )
+            properties.storage_account_configuration = AAZObjectType(
+                serialized_name="storageAccountConfiguration",
+            )
+            properties.storage_array_count = AAZIntType(
+                serialized_name="storageArrayCount",
+            )
             properties.terminal_server_configuration = AAZObjectType(
                 serialized_name="terminalServerConfiguration",
                 flags={"required": True},
+            )
+            properties.trusted_ip_prefixes = AAZListType(
+                serialized_name="trustedIpPrefixes",
+            )
+            properties.unique_rd_configuration = AAZObjectType(
+                serialized_name="uniqueRdConfiguration",
+            )
+            properties.upgrade_profile = AAZListType(
+                serialized_name="upgradeProfile",
+            )
+
+            active_commit_batches = cls._schema_on_200.properties.active_commit_batches
+            active_commit_batches.Element = AAZStrType()
+
+            authorized_transceiver = cls._schema_on_200.properties.authorized_transceiver
+            authorized_transceiver.key = AAZStrType()
+            authorized_transceiver.vendor = AAZStrType()
+
+            control_plane_acls = cls._schema_on_200.properties.control_plane_acls
+            control_plane_acls.Element = AAZStrType(
+                nullable=True,
+            )
+
+            fabric_locks = cls._schema_on_200.properties.fabric_locks
+            fabric_locks.Element = AAZObjectType()
+
+            _element = cls._schema_on_200.properties.fabric_locks.Element
+            _element.lock_state = AAZStrType(
+                serialized_name="lockState",
+            )
+            _element.lock_type = AAZStrType(
+                serialized_name="lockType",
+            )
+
+            feature_flags = cls._schema_on_200.properties.feature_flags
+            feature_flags.Element = AAZObjectType()
+
+            _element = cls._schema_on_200.properties.feature_flags.Element
+            _element.feature_flag_name = AAZStrType(
+                serialized_name="featureFlagName",
+            )
+            _element.feature_flag_value = AAZStrType(
+                serialized_name="featureFlagValue",
             )
 
             l2_isolation_domains = cls._schema_on_200.properties.l2_isolation_domains
@@ -243,6 +370,11 @@ class Wait(AAZWaitCommand):
 
             l3_isolation_domains = cls._schema_on_200.properties.l3_isolation_domains
             l3_isolation_domains.Element = AAZStrType()
+
+            last_operation = cls._schema_on_200.properties.last_operation
+            last_operation.details = AAZStrType(
+                flags={"read_only": True},
+            )
 
             management_network_configuration = cls._schema_on_200.properties.management_network_configuration
             management_network_configuration.infrastructure_vpn_configuration = AAZObjectType(
@@ -256,11 +388,43 @@ class Wait(AAZWaitCommand):
             )
             _WaitHelper._build_schema_vpn_configuration_properties_read(management_network_configuration.workload_vpn_configuration)
 
+            qos_configuration = cls._schema_on_200.properties.qos_configuration
+            qos_configuration.qos_configuration_state = AAZStrType(
+                serialized_name="qosConfigurationState",
+            )
+
             racks = cls._schema_on_200.properties.racks
             racks.Element = AAZStrType()
 
             router_ids = cls._schema_on_200.properties.router_ids
             router_ids.Element = AAZStrType()
+
+            secret_archive_settings = cls._schema_on_200.properties.secret_archive_settings
+            secret_archive_settings.associated_identity = AAZObjectType(
+                serialized_name="associatedIdentity",
+                flags={"required": True},
+            )
+            _WaitHelper._build_schema_identity_selector_read(secret_archive_settings.associated_identity)
+            secret_archive_settings.vault_uri = AAZStrType(
+                serialized_name="vaultUri",
+                flags={"required": True},
+            )
+
+            secret_rotation_summary = cls._schema_on_200.properties.secret_rotation_summary
+            secret_rotation_summary.active_password_set_count = AAZIntType(
+                serialized_name="activePasswordSetCount",
+                flags={"read_only": True},
+            )
+
+            storage_account_configuration = cls._schema_on_200.properties.storage_account_configuration
+            storage_account_configuration.storage_account_id = AAZStrType(
+                serialized_name="storageAccountId",
+                nullable=True,
+            )
+            storage_account_configuration.storage_account_identity = AAZObjectType(
+                serialized_name="storageAccountIdentity",
+            )
+            _WaitHelper._build_schema_identity_selector_read(storage_account_configuration.storage_account_identity)
 
             terminal_server_configuration = cls._schema_on_200.properties.terminal_server_configuration
             terminal_server_configuration.network_device_id = AAZStrType(
@@ -268,7 +432,7 @@ class Wait(AAZWaitCommand):
                 flags={"read_only": True},
             )
             terminal_server_configuration.password = AAZStrType(
-                flags={"required": True, "secret": True},
+                flags={"secret": True},
             )
             terminal_server_configuration.primary_ipv4_prefix = AAZStrType(
                 serialized_name="primaryIpv4Prefix",
@@ -276,7 +440,6 @@ class Wait(AAZWaitCommand):
             )
             terminal_server_configuration.primary_ipv6_prefix = AAZStrType(
                 serialized_name="primaryIpv6Prefix",
-                nullable=True,
             )
             terminal_server_configuration.secondary_ipv4_prefix = AAZStrType(
                 serialized_name="secondaryIpv4Prefix",
@@ -284,13 +447,100 @@ class Wait(AAZWaitCommand):
             )
             terminal_server_configuration.secondary_ipv6_prefix = AAZStrType(
                 serialized_name="secondaryIpv6Prefix",
-                nullable=True,
+            )
+            terminal_server_configuration.secret_rotation_status = AAZListType(
+                serialized_name="secretRotationStatus",
+                flags={"read_only": True},
             )
             terminal_server_configuration.serial_number = AAZStrType(
                 serialized_name="serialNumber",
             )
             terminal_server_configuration.username = AAZStrType(
                 flags={"required": True},
+            )
+
+            secret_rotation_status = cls._schema_on_200.properties.terminal_server_configuration.secret_rotation_status
+            secret_rotation_status.Element = AAZObjectType()
+
+            _element = cls._schema_on_200.properties.terminal_server_configuration.secret_rotation_status.Element
+            _element.last_rotation_time = AAZStrType(
+                serialized_name="lastRotationTime",
+                flags={"read_only": True},
+            )
+            _element.secret_archive_reference = AAZObjectType(
+                serialized_name="secretArchiveReference",
+                flags={"read_only": True},
+            )
+            _element.secret_type = AAZStrType(
+                serialized_name="secretType",
+                flags={"read_only": True},
+            )
+            _element.synchronization_status = AAZStrType(
+                serialized_name="synchronizationStatus",
+                flags={"read_only": True},
+            )
+
+            secret_archive_reference = cls._schema_on_200.properties.terminal_server_configuration.secret_rotation_status.Element.secret_archive_reference
+            secret_archive_reference.key_vault_id = AAZStrType(
+                serialized_name="keyVaultId",
+                nullable=True,
+                flags={"read_only": True},
+            )
+            secret_archive_reference.key_vault_uri = AAZStrType(
+                serialized_name="keyVaultUri",
+                flags={"read_only": True},
+            )
+            secret_archive_reference.secret_name = AAZStrType(
+                serialized_name="secretName",
+                flags={"read_only": True},
+            )
+            secret_archive_reference.secret_version = AAZStrType(
+                serialized_name="secretVersion",
+                flags={"read_only": True},
+            )
+
+            trusted_ip_prefixes = cls._schema_on_200.properties.trusted_ip_prefixes
+            trusted_ip_prefixes.Element = AAZStrType(
+                nullable=True,
+            )
+
+            unique_rd_configuration = cls._schema_on_200.properties.unique_rd_configuration
+            unique_rd_configuration.nni_derived_unique_rd_configuration_state = AAZStrType(
+                serialized_name="nniDerivedUniqueRdConfigurationState",
+            )
+            unique_rd_configuration.unique_rd_configuration_state = AAZStrType(
+                serialized_name="uniqueRdConfigurationState",
+            )
+            unique_rd_configuration.unique_rds = AAZListType(
+                serialized_name="uniqueRds",
+                flags={"read_only": True},
+            )
+
+            unique_rds = cls._schema_on_200.properties.unique_rd_configuration.unique_rds
+            unique_rds.Element = AAZStrType()
+
+            upgrade_profile = cls._schema_on_200.properties.upgrade_profile
+            upgrade_profile.Element = AAZObjectType()
+
+            _element = cls._schema_on_200.properties.upgrade_profile.Element
+            _element.post_upgrade_profile = AAZObjectType(
+                serialized_name="postUpgradeProfile",
+            )
+            _element.pre_upgrade_profile = AAZObjectType(
+                serialized_name="preUpgradeProfile",
+            )
+
+            post_upgrade_profile = cls._schema_on_200.properties.upgrade_profile.Element.post_upgrade_profile
+            post_upgrade_profile.max_exiting_maintenance_timeout_in_seconds = AAZIntType(
+                serialized_name="maxExitingMaintenanceTimeoutInSeconds",
+            )
+            post_upgrade_profile.mlag_reload_delay_timeout_in_seconds = AAZIntType(
+                serialized_name="mlagReloadDelayTimeoutInSeconds",
+            )
+
+            pre_upgrade_profile = cls._schema_on_200.properties.upgrade_profile.Element.pre_upgrade_profile
+            pre_upgrade_profile.max_entering_maintenance_timeout_in_seconds = AAZIntType(
+                serialized_name="maxEnteringMaintenanceTimeoutInSeconds",
             )
 
             system_data = cls._schema_on_200.system_data
@@ -322,6 +572,30 @@ class Wait(AAZWaitCommand):
 class _WaitHelper:
     """Helper class for Wait"""
 
+    _schema_identity_selector_read = None
+
+    @classmethod
+    def _build_schema_identity_selector_read(cls, _schema):
+        if cls._schema_identity_selector_read is not None:
+            _schema.identity_type = cls._schema_identity_selector_read.identity_type
+            _schema.user_assigned_identity_resource_id = cls._schema_identity_selector_read.user_assigned_identity_resource_id
+            return
+
+        cls._schema_identity_selector_read = _schema_identity_selector_read = AAZObjectType()
+
+        identity_selector_read = _schema_identity_selector_read
+        identity_selector_read.identity_type = AAZStrType(
+            serialized_name="identityType",
+            flags={"required": True},
+        )
+        identity_selector_read.user_assigned_identity_resource_id = AAZStrType(
+            serialized_name="userAssignedIdentityResourceId",
+            nullable=True,
+        )
+
+        _schema.identity_type = cls._schema_identity_selector_read.identity_type
+        _schema.user_assigned_identity_resource_id = cls._schema_identity_selector_read.user_assigned_identity_resource_id
+
     _schema_vpn_configuration_properties_read = None
 
     @classmethod
@@ -343,6 +617,7 @@ class _WaitHelper:
         )
         vpn_configuration_properties_read.network_to_network_interconnect_id = AAZStrType(
             serialized_name="networkToNetworkInterconnectId",
+            nullable=True,
         )
         vpn_configuration_properties_read.option_a_properties = AAZObjectType(
             serialized_name="optionAProperties",
@@ -369,14 +644,12 @@ class _WaitHelper:
         )
         option_a_properties.primary_ipv6_prefix = AAZStrType(
             serialized_name="primaryIpv6Prefix",
-            nullable=True,
         )
         option_a_properties.secondary_ipv4_prefix = AAZStrType(
             serialized_name="secondaryIpv4Prefix",
         )
         option_a_properties.secondary_ipv6_prefix = AAZStrType(
             serialized_name="secondaryIpv6Prefix",
-            nullable=True,
         )
         option_a_properties.vlan_id = AAZIntType(
             serialized_name="vlanId",

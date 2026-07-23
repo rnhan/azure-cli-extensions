@@ -1,0 +1,400 @@
+# --------------------------------------------------------------------------------------------
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License. See License.txt in the project root for license information.
+# --------------------------------------------------------------------------------------------
+
+import unittest
+import json
+import tempfile
+import os
+from unittest.mock import MagicMock, patch
+from azext_fleet.custom import get_update_run_strategy, build_gate_configs
+from azext_fleet.vendored_sdks.v2026_06_02_preview.models import (
+    UpdateRunStrategy, UpdateStage, UpdateGroup, MemberSelector, GateConfiguration, ScheduledStartConfiguration,
+)
+from azure.cli.core.azclierror import (
+    InvalidArgumentValueError,
+)
+from knack.util import CLIError
+
+class TestStagesJsonHandling(unittest.TestCase):
+    """Test inline JSON support for --stages argument in fleet commands."""
+
+    def setUp(self):
+        """Set up test data and mock objects."""
+        self.test_data = {
+            "stages": [
+                {
+                    "name": "stage1",
+                    "groups": [
+                        {"name": "group1"},
+                        {"name": "group2"}
+                    ],
+                    "afterStageWaitInSeconds": 3600
+                }
+            ]
+        }
+        
+        # Mock cmd object that provides get_models method
+        self.mock_cmd = MagicMock()
+        
+        # Set up get_models to return our mock classes
+        def mock_get_models(model_name, **kwargs):
+            if model_name == "UpdateGroup":
+                return UpdateGroup
+            elif model_name == "UpdateStage":
+                return UpdateStage
+            elif model_name == "UpdateRunStrategy":
+                return UpdateRunStrategy
+            elif model_name == "MemberSelector":
+                return MemberSelector
+            elif model_name == "GateConfiguration":
+                return GateConfiguration
+            elif model_name == "ScheduledStartConfiguration":
+                return ScheduledStartConfiguration
+            else:
+                return MagicMock()
+        
+        self.mock_cmd.get_models = mock_get_models
+
+    def test_file_path_stages(self):
+        """Test that file paths for stages work correctly with get_update_run_strategy."""
+        # Create a temporary file with test data
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(self.test_data, f)
+            temp_file_path = f.name
+        
+        try:
+            # Test the actual function
+            result = get_update_run_strategy(self.mock_cmd, "fleet_update_runs", temp_file_path)
+            
+            # Verify the returned strategy
+            self.assertIsNotNone(result)
+            self.assertIsInstance(result, UpdateRunStrategy)
+            self.assertEqual(len(result.stages), 1)
+            
+            # Verify first stage
+            stage = result.stages[0]
+            self.assertIsInstance(stage, UpdateStage)
+            self.assertEqual(stage.name, "stage1")
+            self.assertEqual(stage.after_stage_wait_in_seconds, 3600)
+            self.assertEqual(len(stage.groups), 2)
+            
+            # Verify groups
+            self.assertIsInstance(stage.groups[0], UpdateGroup)
+            self.assertEqual(stage.groups[0].name, "group1")
+            self.assertEqual(stage.groups[1].name, "group2")
+            
+        finally:
+            # Clean up
+            os.unlink(temp_file_path)
+
+    def test_inline_json_stages(self):
+        """Test that inline JSON strings work correctly with get_update_run_strategy."""
+        inline_json = json.dumps(self.test_data)
+        
+        # Test the actual function
+        result = get_update_run_strategy(self.mock_cmd, "fleet_update_runs", inline_json)
+        
+        # Verify the returned strategy
+        self.assertIsNotNone(result)
+        self.assertIsInstance(result, UpdateRunStrategy)
+        self.assertEqual(len(result.stages), 1)
+        
+        # Verify first stage
+        stage = result.stages[0]
+        self.assertIsInstance(stage, UpdateStage)
+        self.assertEqual(stage.name, "stage1")
+        self.assertEqual(stage.after_stage_wait_in_seconds, 3600)
+        self.assertEqual(len(stage.groups), 2)
+        
+        # Verify groups
+        self.assertIsInstance(stage.groups[0], UpdateGroup)
+        self.assertEqual(stage.groups[0].name, "group1")
+        self.assertEqual(stage.groups[1].name, "group2")
+
+    def test_inline_json_minimal_stages(self):
+        """Test inline JSON with minimal required fields."""
+        minimal_data = {
+            "stages": [
+                {
+                    "name": "minimal-stage",
+                    "groups": [
+                        {"name": "minimal-group"}
+                    ]
+                }
+            ]
+        }
+        
+        inline_json = json.dumps(minimal_data)
+        result = get_update_run_strategy(self.mock_cmd, "fleet_update_runs", inline_json)
+        
+        # Verify minimal structure works
+        self.assertIsNotNone(result)
+        self.assertEqual(len(result.stages), 1)
+        
+        stage = result.stages[0]
+        self.assertEqual(stage.name, "minimal-stage")
+        self.assertEqual(stage.after_stage_wait_in_seconds, 0)  # Should default to 0
+        self.assertEqual(len(stage.groups), 1)
+        self.assertEqual(stage.groups[0].name, "minimal-group")
+
+    def test_complex_stages_structure(self):
+        """Test more complex stages structure with multiple stages and groups."""
+        complex_data = {
+            "stages": [
+                {
+                    "name": "stage1",
+                    "maxConcurrency": "7",
+                    "maxAllowedFailures": "1",
+                    "groups": [
+                        {
+                            "name": "group1",
+                            "maxConcurrency": "100%",
+                            "maxAllowedFailures": "0"
+                        },
+                        {
+                            "name": "group2",
+                            "maxConcurrency": "70%",
+                            "maxAllowedFailures": "1"
+                        }
+                    ],
+                    "afterStageWaitInSeconds": 1800
+                },
+                {
+                    "name": "stage2", 
+                    "maxConcurrency": "100%",
+                    "maxAllowedFailures": "2",
+                    "groups": [
+                        {
+                            "name": "group3",
+                            "maxConcurrency": "1",
+                            "maxAllowedFailures": "1"
+                        }
+                    ],
+                    "afterStageWaitInSeconds": 3600
+                }
+            ]
+        }
+        
+        inline_json = json.dumps(complex_data)
+        result = get_update_run_strategy(self.mock_cmd, "fleet_update_runs", inline_json)
+        
+        # Verify complex structure
+        self.assertIsNotNone(result)
+        self.assertEqual(len(result.stages), 2)
+        
+        # Verify first stage
+        stage1 = result.stages[0]
+        self.assertEqual(stage1.name, "stage1")
+        self.assertEqual(stage1.after_stage_wait_in_seconds, 1800)
+        self.assertEqual(stage1.max_concurrency, "7")
+        self.assertEqual(stage1.max_allowed_failures, "1")
+        self.assertEqual(len(stage1.groups), 2)
+        self.assertEqual(stage1.groups[0].name, "group1")
+        self.assertEqual(stage1.groups[0].max_concurrency, "100%")
+        self.assertEqual(stage1.groups[0].max_allowed_failures, "0")
+        self.assertEqual(stage1.groups[1].name, "group2")
+        self.assertEqual(stage1.groups[1].max_concurrency, "70%")
+        self.assertEqual(stage1.groups[1].max_allowed_failures, "1")
+        
+        # Verify second stage  
+        stage2 = result.stages[1]
+        self.assertEqual(stage2.name, "stage2")
+        self.assertEqual(stage2.after_stage_wait_in_seconds, 3600)
+        self.assertEqual(stage2.max_concurrency, "100%")
+        self.assertEqual(stage2.max_allowed_failures, "2")
+        self.assertEqual(len(stage2.groups), 1)
+        self.assertEqual(stage2.groups[0].name, "group3")
+        self.assertEqual(stage2.groups[0].max_concurrency, "1")
+        self.assertEqual(stage2.groups[0].max_allowed_failures, "1")
+
+    def test_member_selector_at_stage_and_group(self):
+        """Test memberSelector parsing at both stage and group levels."""
+        data_with_selectors = {
+            "stages": [
+                {
+                    "name": "stage1",
+                    "memberSelector": {"byLabel": "env=prod"},
+                    "groups": [
+                        {
+                            "name": "group1",
+                            "memberSelector": {"byLabel": "team=fleet"}
+                        },
+                        {
+                            "name": "group2"
+                        }
+                    ],
+                    "afterStageWaitInSeconds": 600
+                }
+            ]
+        }
+
+        inline_json = json.dumps(data_with_selectors)
+        result = get_update_run_strategy(self.mock_cmd, "fleet_update_runs", inline_json)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(len(result.stages), 1)
+
+        stage = result.stages[0]
+        # Verify stage-level memberSelector
+        self.assertIsNotNone(stage.member_selector)
+        self.assertIsInstance(stage.member_selector, MemberSelector)
+        self.assertEqual(stage.member_selector.by_label, "env=prod")
+
+        # Verify group1 has memberSelector
+        self.assertIsNotNone(stage.groups[0].member_selector)
+        self.assertIsInstance(stage.groups[0].member_selector, MemberSelector)
+        self.assertEqual(stage.groups[0].member_selector.by_label, "team=fleet")
+
+        # Verify group2 has no memberSelector
+        self.assertIsNone(stage.groups[1].member_selector)
+
+    def test_member_selector_absent(self):
+        """Test that memberSelector is None when not provided."""
+        data_without_selectors = {
+            "stages": [
+                {
+                    "name": "stage1",
+                    "groups": [
+                        {"name": "group1"}
+                    ]
+                }
+            ]
+        }
+
+        inline_json = json.dumps(data_without_selectors)
+        result = get_update_run_strategy(self.mock_cmd, "fleet_update_runs", inline_json)
+
+        stage = result.stages[0]
+        self.assertIsNone(stage.member_selector)
+        self.assertIsNone(stage.groups[0].member_selector)
+
+    def test_none_stages_returns_none(self):
+        """Test that None stages input returns None."""
+        result = get_update_run_strategy(self.mock_cmd, "fleet_update_runs", None)
+        self.assertIsNone(result)
+
+    def test_invalid_json_raises_error(self):
+        """Test that invalid JSON strings raise appropriate errors."""
+        invalid_json = '{"stages": [{"name": "test", invalid_syntax}]}'
+        
+        # Should raise an error when parsing invalid JSON
+        with self.assertRaises(InvalidArgumentValueError):
+            get_update_run_strategy(self.mock_cmd, "fleet_update_runs", invalid_json)
+
+    def test_scheduled_start_gate(self):
+        """Test that ScheduledStart gates are correctly parsed into GateConfiguration models."""
+        data = {
+            "stages": [
+                {
+                    "name": "stage1",
+                    "beforeGates": [
+                        {
+                            "displayName": "Wait until Friday evening",
+                            "type": "ScheduledStart",
+                            "scheduledStartConfiguration": {
+                                "startDay": "Friday",
+                                "startTime": "18:00",
+                                "utcOffset": "-05:00"
+                            }
+                        }
+                    ],
+                    "groups": [{"name": "group1"}]
+                }
+            ]
+        }
+        inline_json = json.dumps(data)
+        result = get_update_run_strategy(self.mock_cmd, "fleet_update_runs", inline_json)
+
+        stage = result.stages[0]
+        self.assertEqual(len(stage.before_gates), 1)
+        gate = stage.before_gates[0]
+        self.assertIsInstance(gate, GateConfiguration)
+        self.assertEqual(gate.type, "ScheduledStart")
+        self.assertEqual(gate.display_name, "Wait until Friday evening")
+        self.assertIsNotNone(gate.scheduled_start_configuration)
+        self.assertIsInstance(gate.scheduled_start_configuration, ScheduledStartConfiguration)
+        self.assertEqual(gate.scheduled_start_configuration.start_day, "Friday")
+        self.assertEqual(gate.scheduled_start_configuration.start_time, "18:00")
+        self.assertEqual(gate.scheduled_start_configuration.utc_offset, "-05:00")
+
+    def test_approval_gate_no_schedule(self):
+        """Test that Approval gates work correctly without scheduledStartConfiguration."""
+        data = {
+            "stages": [
+                {
+                    "name": "stage1",
+                    "beforeGates": [
+                        {
+                            "displayName": "Approval gate",
+                            "type": "Approval"
+                        }
+                    ],
+                    "groups": [{"name": "group1"}]
+                }
+            ]
+        }
+        inline_json = json.dumps(data)
+        result = get_update_run_strategy(self.mock_cmd, "fleet_update_runs", inline_json)
+
+        stage = result.stages[0]
+        self.assertEqual(len(stage.before_gates), 1)
+        gate = stage.before_gates[0]
+        self.assertIsInstance(gate, GateConfiguration)
+        self.assertEqual(gate.type, "Approval")
+        self.assertEqual(gate.display_name, "Approval gate")
+        self.assertIsNone(gate.scheduled_start_configuration)
+
+    def test_scheduled_start_missing_start_day(self):
+        """Test that missing startDay in scheduledStartConfiguration raises CLIError."""
+        gates_list = [
+            {
+                "type": "ScheduledStart",
+                "displayName": "Wait gate",
+                "scheduledStartConfiguration": {
+                    "startTime": "18:00",
+                    "utcOffset": "-05:00"
+                }
+            }
+        ]
+        with self.assertRaises(CLIError) as ctx:
+            build_gate_configs(self.mock_cmd, "fleet_update_runs", gates_list)
+        self.assertIn("startDay", str(ctx.exception))
+
+    def test_scheduled_start_missing_all_fields(self):
+        """Test that missing all fields in scheduledStartConfiguration raises CLIError."""
+        gates_list = [
+            {
+                "type": "ScheduledStart",
+                "displayName": "Wait gate",
+                "scheduledStartConfiguration": {}
+            }
+        ]
+        with self.assertRaises(CLIError) as ctx:
+            build_gate_configs(self.mock_cmd, "fleet_update_runs", gates_list)
+        self.assertIn("startDay", str(ctx.exception))
+        self.assertIn("startTime", str(ctx.exception))
+        self.assertIn("utcOffset", str(ctx.exception))
+
+    def test_scheduled_start_invalid_start_day(self):
+        """Test that invalid startDay value raises CLIError with user's input."""
+        gates_list = [
+            {
+                "type": "ScheduledStart",
+                "displayName": "Wait gate",
+                "scheduledStartConfiguration": {
+                    "startDay": "abc",
+                    "startTime": "18:00",
+                    "utcOffset": "-05:00"
+                }
+            }
+        ]
+        with self.assertRaises(CLIError) as ctx:
+            build_gate_configs(self.mock_cmd, "fleet_update_runs", gates_list)
+        self.assertIn("abc", str(ctx.exception))
+        self.assertIn("Monday", str(ctx.exception))
+
+
+if __name__ == "__main__":
+    unittest.main()

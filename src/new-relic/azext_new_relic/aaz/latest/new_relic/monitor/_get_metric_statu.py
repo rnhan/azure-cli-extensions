@@ -15,16 +15,16 @@ from azure.cli.core.aaz import *
     "new-relic monitor get-metric-statu",
 )
 class GetMetricStatu(AAZCommand):
-    """Get metric status
+    """Retrieves the metric status that are configured in the New Relic monitor resource.
 
     :example: Get metric status.
         az new-relic monitor get-metric-statu --resource-group MyResourceGroup --monitor-name MyNewRelicMonitor --user-email UserEmail@123.com --azure-resource-ids MyAzureResourceIds
     """
 
     _aaz_info = {
-        "version": "2022-07-01",
+        "version": "2024-01-01",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/newrelic.observability/monitors/{}/getmetricstatus", "2022-07-01"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/newrelic.observability/monitors/{}/getmetricstatus", "2024-01-01"],
         ]
     }
 
@@ -46,11 +46,12 @@ class GetMetricStatu(AAZCommand):
         _args_schema = cls._args_schema
         _args_schema.monitor_name = AAZStrArg(
             options=["-n", "--name", "--monitor-name"],
-            help="Name of the Monitors resource",
+            help="Name of the Monitoring resource",
             required=True,
             id_part="name",
         )
         _args_schema.resource_group = AAZResourceGroupNameArg(
+            help="Name of resource group. You can configure the default group using `az configure --defaults group=<name>`.",
             required=True,
         )
 
@@ -60,7 +61,7 @@ class GetMetricStatu(AAZCommand):
         _args_schema.azure_resource_ids = AAZListArg(
             options=["--azure-resource-ids"],
             arg_group="Request",
-            help="Azure resource IDs",
+            help="Azure resource IDs Support shorthand-syntax, json-file and yaml-file. Try \"??\" to show more.",
         )
         _args_schema.user_email = AAZStrArg(
             options=["--user-email"],
@@ -68,7 +69,7 @@ class GetMetricStatu(AAZCommand):
             help="User Email",
             required=True,
             fmt=AAZStrArgFormat(
-                pattern="^[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}$",
+                pattern="^[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]+\\.)+[A-Za-z]{2,}$",
             ),
         )
 
@@ -141,7 +142,7 @@ class GetMetricStatu(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2022-07-01",
+                    "api-version", "2024-01-01",
                     required=True,
                 ),
             }

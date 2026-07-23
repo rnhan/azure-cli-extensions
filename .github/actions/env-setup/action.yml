@@ -1,0 +1,53 @@
+name: GH Azdev Setup
+description: 'azdev env setup'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Check Init GH Event
+      env:
+        action: ${{ toJSON(github.event.action) }}
+        label: ${{ toJSON(github.event.label) }}
+      shell: bash
+      run: |
+        echo start azdev env setup
+    - name: Checkout CLI extension repo
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0 # checkout all branches
+        ref: ${{ github.event.pull_request.head.ref }}
+        repository: ${{ github.event.pull_request.head.repo.full_name }}  # checkout pull request branch
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.11"
+    - name: Checkout CLI main repo
+      uses: actions/checkout@v4
+      with:
+        repository: Azure/azure-cli
+        path: ./azure-cli
+    - name: Move the main repo to the same level as the extension repo
+      shell: bash
+      run: |
+        pwd
+        ls
+        mv azure-cli ../
+        cd ../
+        pwd
+        ls
+    - name: Install azdev
+      shell: bash
+      run: | 
+        python -m pip install --upgrade pip
+        set -ev
+        python -m venv env
+        chmod +x env/bin/activate
+        source ./env/bin/activate
+        # Pinned to the azdev commit that fixes `azdev extension add` losing egg-info under
+        # --no-build-isolation (Azure/azure-cli-dev-tools#554); switch to azdev==0.2.13 once released.
+        pip install --upgrade "git+https://github.com/Azure/azure-cli-dev-tools.git@bb196e370ef0c0c8fcb01ab2e73bf2db7b5821a2#egg=azdev"
+        azdev --version
+        cd ../
+        azdev setup -c azure-cli -r azure-cli-extensions --debug
+        az --version
+        pip list -v

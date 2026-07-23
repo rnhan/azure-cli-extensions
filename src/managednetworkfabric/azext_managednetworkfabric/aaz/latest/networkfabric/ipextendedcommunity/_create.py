@@ -17,7 +17,7 @@ from azure.cli.core.aaz import *
 class Create(AAZCommand):
     """Create a Ip Extended Community resource
 
-    :example: Create a Ip Extended Community
+    :example: Create an Ip Extended Community
         az networkfabric ipextendedcommunity create --resource-group "example-rg" --location "westus3" --resource-name "example-ipextendedcommunity" --ip-extended-community-rules "[{action:Permit,sequenceNumber:1234,routeTargets:['1024:219','1001:200']}]"
 
     :example: Help text for sub parameters under the specific parent can be viewed by using the shorthand syntax '??'. See https://github.com/Azure/azure-cli/tree/dev/doc/shorthand_syntax.md for more about shorthand syntax.
@@ -25,9 +25,9 @@ class Create(AAZCommand):
     """
 
     _aaz_info = {
-        "version": "2023-06-15",
+        "version": "2026-01-15-preview",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.managednetworkfabric/ipextendedcommunities/{}", "2023-06-15"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.managednetworkfabric/ipextendedcommunities/{}", "2026-01-15-preview"],
         ]
     }
 
@@ -52,9 +52,11 @@ class Create(AAZCommand):
             options=["--resource-name"],
             help="Name of the IP Extended Community.",
             required=True,
+            fmt=AAZStrArgFormat(
+                pattern="^[a-zA-Z]{1}[a-zA-Z0-9-_]{2,127}$",
+            ),
         )
         _args_schema.resource_group = AAZResourceGroupNameArg(
-            help="Name of the resource group",
             required=True,
         )
 
@@ -63,7 +65,7 @@ class Create(AAZCommand):
         _args_schema = cls._args_schema
         _args_schema.location = AAZResourceLocationArg(
             arg_group="Body",
-            help="Location of Azure region",
+            help="The geo-location where the resource lives",
             required=True,
             fmt=AAZResourceLocationArgFormat(
                 resource_group_arg="resource_group",
@@ -84,10 +86,10 @@ class Create(AAZCommand):
         _args_schema.annotation = AAZStrArg(
             options=["--annotation"],
             arg_group="Properties",
-            help="Description for underlying resource.",
+            help="Switch configuration description.",
         )
         _args_schema.ip_extended_community_rules = AAZListArg(
-            options=["--ip-extended-community-rules"],
+            options=["--ip-ext-community-rules", "--ip-extended-community-rules"],
             arg_group="Properties",
             help="List of IP Extended Community Rules.",
             required=True,
@@ -99,7 +101,7 @@ class Create(AAZCommand):
         _element = cls._args_schema.ip_extended_community_rules.Element
         _element.action = AAZStrArg(
             options=["action"],
-            help="Action to be taken on the configuration. Example: Permit.",
+            help="Action to be taken on the configuration. Example: Permit | Deny.",
             required=True,
             enum={"Deny": "Deny", "Permit": "Permit"},
         )
@@ -107,6 +109,9 @@ class Create(AAZCommand):
             options=["route-targets"],
             help="Route Target List.The expected formats are ASN(plain):NN >> example 4294967294:50, ASN.ASN:NN >> example 65533.65333:40, IP-address:NN >> example 10.10.10.10:65535. The possible values of ASN,NN are in range of 0-65535, ASN(plain) is in range of 0-4294967295.",
             required=True,
+            fmt=AAZListArgFormat(
+                min_length=1,
+            ),
         )
         _element.sequence_number = AAZIntArg(
             options=["sequence-number"],
@@ -119,11 +124,7 @@ class Create(AAZCommand):
         )
 
         route_targets = cls._args_schema.ip_extended_community_rules.Element.route_targets
-        route_targets.Element = AAZStrArg(
-            fmt=AAZStrArgFormat(
-                min_length=1,
-            ),
-        )
+        route_targets.Element = AAZStrArg()
         return cls._args_schema
 
     def _execute_operations(self):
@@ -207,7 +208,7 @@ class Create(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-06-15",
+                    "api-version", "2026-01-15-preview",
                     required=True,
                 ),
             }
@@ -314,6 +315,15 @@ class Create(AAZCommand):
                 serialized_name="ipExtendedCommunityRules",
                 flags={"required": True},
             )
+            properties.last_operation = AAZObjectType(
+                serialized_name="lastOperation",
+                flags={"read_only": True},
+            )
+            properties.network_fabric_id = AAZStrType(
+                serialized_name="networkFabricId",
+                nullable=True,
+                flags={"read_only": True},
+            )
             properties.provisioning_state = AAZStrType(
                 serialized_name="provisioningState",
                 flags={"read_only": True},
@@ -337,6 +347,11 @@ class Create(AAZCommand):
 
             route_targets = cls._schema_on_200_201.properties.ip_extended_community_rules.Element.route_targets
             route_targets.Element = AAZStrType()
+
+            last_operation = cls._schema_on_200_201.properties.last_operation
+            last_operation.details = AAZStrType(
+                flags={"read_only": True},
+            )
 
             system_data = cls._schema_on_200_201.system_data
             system_data.created_at = AAZStrType(

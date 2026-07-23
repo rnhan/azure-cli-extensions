@@ -13,7 +13,6 @@ from azure.cli.core.aaz import *
 
 @register_command(
     "elastic-san volume snapshot list",
-    is_preview=True,
 )
 class List(AAZCommand):
     """List Snapshots in a VolumeGroup or List Snapshots by Volume (name) in a VolumeGroup using filter
@@ -23,9 +22,9 @@ class List(AAZCommand):
     """
 
     _aaz_info = {
-        "version": "2023-01-01",
+        "version": "2025-09-01",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.elasticsan/elasticsans/{}/volumegroups/{}/snapshots", "2023-01-01"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.elasticsan/elasticsans/{}/volumegroups/{}/snapshots", "2025-09-01"],
         ]
     }
 
@@ -71,7 +70,7 @@ class List(AAZCommand):
         )
         _args_schema.filter = AAZStrArg(
             options=["--filter"],
-            help="Specify $filter='volumeName eq <volume name>' to filter on volume.",
+            help="Specify `$filter='volumeName eq <volume name>'` to filter on volume.",
         )
         return cls._args_schema
 
@@ -148,7 +147,7 @@ class List(AAZCommand):
                     "$filter", self.ctx.args.filter,
                 ),
                 **self.serialize_query_param(
-                    "api-version", "2023-01-01",
+                    "api-version", "2025-09-01",
                     required=True,
                 ),
             }
@@ -183,9 +182,10 @@ class List(AAZCommand):
             _schema_on_200 = cls._schema_on_200
             _schema_on_200.next_link = AAZStrType(
                 serialized_name="nextLink",
-                flags={"read_only": True},
             )
-            _schema_on_200.value = AAZListType()
+            _schema_on_200.value = AAZListType(
+                flags={"required": True},
+            )
 
             value = cls._schema_on_200.value
             value.Element = AAZObjectType()

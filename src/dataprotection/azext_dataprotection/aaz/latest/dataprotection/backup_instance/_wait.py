@@ -20,7 +20,7 @@ class Wait(AAZWaitCommand):
 
     _aaz_info = {
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.dataprotection/backupvaults/{}/backupinstances/{}", "2023-05-01"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.dataprotection/backupvaults/{}/backupinstances/{}", "2025-07-01"],
         ]
     }
 
@@ -54,6 +54,11 @@ class Wait(AAZWaitCommand):
             help="The name of the backup vault.",
             required=True,
             id_part="name",
+            fmt=AAZStrArgFormat(
+                pattern="^[A-Za-z][-A-Za-z0-9]*[A-Za-z0-9]$",
+                max_length=50,
+                min_length=2,
+            ),
         )
         return cls._args_schema
 
@@ -126,7 +131,7 @@ class Wait(AAZWaitCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-05-01",
+                    "api-version", "2025-07-01",
                     required=True,
                 ),
             }
@@ -206,14 +211,19 @@ class Wait(AAZWaitCommand):
             )
             properties.protection_error_details = AAZObjectType(
                 serialized_name="protectionErrorDetails",
+                flags={"read_only": True},
             )
             _WaitHelper._build_schema_user_facing_error_read(properties.protection_error_details)
             properties.protection_status = AAZObjectType(
                 serialized_name="protectionStatus",
+                flags={"read_only": True},
             )
             properties.provisioning_state = AAZStrType(
                 serialized_name="provisioningState",
                 flags={"read_only": True},
+            )
+            properties.resource_guard_operation_requests = AAZListType(
+                serialized_name="resourceGuardOperationRequests",
             )
             properties.validation_type = AAZStrType(
                 serialized_name="validationType",
@@ -332,6 +342,15 @@ class Wait(AAZWaitCommand):
                 flags={"required": True},
             )
 
+            disc_adls_blob_backup_datasource_parameters = cls._schema_on_200.properties.policy_info.policy_parameters.backup_datasource_parameters_list.Element.discriminate_by("object_type", "AdlsBlobBackupDatasourceParameters")
+            disc_adls_blob_backup_datasource_parameters.containers_list = AAZListType(
+                serialized_name="containersList",
+                flags={"required": True},
+            )
+
+            containers_list = cls._schema_on_200.properties.policy_info.policy_parameters.backup_datasource_parameters_list.Element.discriminate_by("object_type", "AdlsBlobBackupDatasourceParameters").containers_list
+            containers_list.Element = AAZStrType()
+
             disc_blob_backup_datasource_parameters = cls._schema_on_200.properties.policy_info.policy_parameters.backup_datasource_parameters_list.Element.discriminate_by("object_type", "BlobBackupDatasourceParameters")
             disc_blob_backup_datasource_parameters.containers_list = AAZListType(
                 serialized_name="containersList",
@@ -361,6 +380,9 @@ class Wait(AAZWaitCommand):
             disc_kubernetes_cluster_backup_datasource_parameters.included_resource_types = AAZListType(
                 serialized_name="includedResourceTypes",
             )
+            disc_kubernetes_cluster_backup_datasource_parameters.included_volume_types = AAZListType(
+                serialized_name="includedVolumeTypes",
+            )
             disc_kubernetes_cluster_backup_datasource_parameters.label_selectors = AAZListType(
                 serialized_name="labelSelectors",
             )
@@ -387,6 +409,9 @@ class Wait(AAZWaitCommand):
 
             included_resource_types = cls._schema_on_200.properties.policy_info.policy_parameters.backup_datasource_parameters_list.Element.discriminate_by("object_type", "KubernetesClusterBackupDatasourceParameters").included_resource_types
             included_resource_types.Element = AAZStrType()
+
+            included_volume_types = cls._schema_on_200.properties.policy_info.policy_parameters.backup_datasource_parameters_list.Element.discriminate_by("object_type", "KubernetesClusterBackupDatasourceParameters").included_volume_types
+            included_volume_types.Element = AAZStrType()
 
             label_selectors = cls._schema_on_200.properties.policy_info.policy_parameters.backup_datasource_parameters_list.Element.discriminate_by("object_type", "KubernetesClusterBackupDatasourceParameters").label_selectors
             label_selectors.Element = AAZStrType()
@@ -415,6 +440,9 @@ class Wait(AAZWaitCommand):
             )
             _WaitHelper._build_schema_user_facing_error_read(protection_status.error_details)
             protection_status.status = AAZStrType()
+
+            resource_guard_operation_requests = cls._schema_on_200.properties.resource_guard_operation_requests
+            resource_guard_operation_requests.Element = AAZStrType()
 
             system_data = cls._schema_on_200.system_data
             system_data.created_at = AAZStrType(
@@ -451,6 +479,14 @@ class _WaitHelper:
     def _build_schema_base_resource_properties_read(cls, _schema):
         if cls._schema_base_resource_properties_read is not None:
             _schema.object_type = cls._schema_base_resource_properties_read.object_type
+            _schema.discriminate_by(
+                "object_type",
+                "DefaultResourceProperties",
+                cls._schema_base_resource_properties_read.discriminate_by(
+                    "object_type",
+                    "DefaultResourceProperties",
+                )
+            )
             return
 
         cls._schema_base_resource_properties_read = _schema_base_resource_properties_read = AAZObjectType()
@@ -462,6 +498,14 @@ class _WaitHelper:
         )
 
         _schema.object_type = cls._schema_base_resource_properties_read.object_type
+        _schema.discriminate_by(
+                "object_type",
+                "DefaultResourceProperties",
+                cls._schema_base_resource_properties_read.discriminate_by(
+                    "object_type",
+                    "DefaultResourceProperties",
+                )
+            )
 
     _schema_inner_error_read = None
 

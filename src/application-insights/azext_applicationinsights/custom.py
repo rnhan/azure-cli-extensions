@@ -11,49 +11,83 @@ import datetime
 import isodate
 from knack.util import CLIError
 from knack.log import get_logger
-from msrestazure.azure_exceptions import CloudError
+from azure.core.exceptions import HttpResponseError
 from azure.cli.core.azclierror import InvalidArgumentValueError
 from azure.cli.core.commands.client_factory import get_mgmt_service_client
 from azure.cli.core.profiles import ResourceType
 from azure.cli.core.aaz import has_value, register_command
-from azext_applicationinsights.vendored_sdks.applicationinsights.models import ErrorResponseException
 from .util import get_id_from_azure_resource, get_query_targets, get_timespan, get_linked_properties
 from .aaz.latest.monitor.app_insights.api_key import List as APIKeyList, Create as _APIKeyCreate, Delete as _APIKeyDelete
 from .aaz.latest.monitor.app_insights.component.billing import Show as _BillingShow, Update as _BillingUpdate
 from .aaz.latest.monitor.app_insights.component.linked_storage import Link as _LinkedStorageAccountLink, Update as _LinkedStorageAccountUpdate, Show as _LinkedStorageAccountShow, Unlink as _LinkedStorageAccountUnlink
 from .aaz.latest.monitor.app_insights.component.continues_export import Delete as _ContinuesExportDelete, Show as _ContinuesExportShow, List as _ContinuesExportList
+from .aaz.latest.monitor.app_insights.workbook import Create as _WorkbookCreate, Update as _WorkbookUpdate
+from .aaz.latest.monitor.app_insights.workbook.identity import Assign as _IdentityAssign, Remove as _IdentityRemove
 
 logger = get_logger(__name__)
 HELP_MESSAGE = " Please use `az feature register --name AIWorkspacePreview --namespace microsoft.insights` to register the feature"
 
 
-def execute_query(cmd, client, application, analytics_query, start_time=None, end_time=None, offset='1h', resource_group_name=None):
+def execute_query(cmd, application, analytics_query, start_time=None, end_time=None, offset='1h', resource_group_name=None):
     """Executes a query against the provided Application Insights application."""
-    from .vendored_sdks.applicationinsights.models import QueryBody
     targets = get_query_targets(cmd.cli_ctx, application, resource_group_name)
     if not isinstance(offset, datetime.timedelta):
         offset = isodate.parse_duration(offset)
+    timespan = get_timespan(cmd.cli_ctx, start_time, end_time, offset)
+    from .aaz.latest.monitor.app_insights import QueryExecute
+    arg_obj = {
+        "app_id": targets[0],
+        "query": analytics_query,
+        "timespan": timespan,
+        "applications": targets[1:],
+    }
     try:
-        return client.query.execute(targets[0], QueryBody(query=analytics_query, timespan=get_timespan(cmd.cli_ctx, start_time, end_time, offset), applications=targets[1:]))
-    except ErrorResponseException as ex:
+        return QueryExecute(cli_ctx=cmd.cli_ctx)(command_args=arg_obj)
+    except Exception as ex:
         if "PathNotFoundError" in ex.message:
             raise ValueError("The Application Insight is not found. Please check the app id again.")
         raise ex
 
 
-def get_events(cmd, client, application, event_type, event=None, start_time=None, end_time=None, offset='1h', resource_group_name=None):
+def get_events(cmd, application, event_type, event=None, start_time=None, end_time=None, offset='1h', resource_group_name=None):
     timespan = get_timespan(cmd.cli_ctx, start_time, end_time, offset)
+    app_id = get_id_from_azure_resource(cmd.cli_ctx, application, resource_group=resource_group_name)
+    from .aaz.latest.monitor.app_insights.events import Show
+    arg_obj = {
+        "app_id": app_id,
+        "event_type": event_type,
+        "timespan": timespan,
+    }
     if event:
-        return client.events.get(get_id_from_azure_resource(cmd.cli_ctx, application, resource_group=resource_group_name), event_type, event, timespan=timespan)
-    return client.events.get_by_type(get_id_from_azure_resource(cmd.cli_ctx, application, resource_group=resource_group_name), event_type, timespan=get_timespan(cmd.cli_ctx, start_time, end_time, offset))
+        arg_obj["event_id"] = event
+    return Show(cli_ctx=cmd.cli_ctx)(command_args=arg_obj)
 
 
-def get_metric(cmd, client, application, metric, start_time=None, end_time=None, offset='1h', interval=None, aggregation=None, segment=None, top=None, orderby=None, filter_arg=None, resource_group_name=None):
-    return client.metrics.get(get_id_from_azure_resource(cmd.cli_ctx, application, resource_group=resource_group_name), metric, timespan=get_timespan(cmd.cli_ctx, start_time, end_time, offset), interval=interval, aggregation=aggregation, segment=segment, top=top, orderby=orderby, filter_arg=filter_arg)
+def get_metric(cmd, application, metric, start_time=None, end_time=None, offset='1h', interval=None, aggregation=None, segment=None, top=None, orderby=None, filter_arg=None, resource_group_name=None):
+    timespan = get_timespan(cmd.cli_ctx, start_time, end_time, offset)
+    app_id = get_id_from_azure_resource(cmd.cli_ctx, application, resource_group=resource_group_name)
+    from .aaz.latest.monitor.app_insights.metric import Show
+    arg_obj = {
+        "app_id": app_id,
+        "metric_id": metric,
+        "timespan": timespan,
+        "interval": interval,
+        "aggregation": aggregation,
+        "segment": segment,
+        "top": top,
+        "orderby": orderby,
+        "filter": filter_arg
+    }
+    return Show(cli_ctx=cmd.cli_ctx)(command_args=arg_obj)
 
 
-def get_metrics_metadata(cmd, client, application, resource_group_name=None):
-    return client.metrics.get_metadata(get_id_from_azure_resource(cmd.cli_ctx, application, resource_group=resource_group_name))
+def get_metrics_metadata(cmd, application, resource_group_name=None):
+    app_id = get_id_from_azure_resource(cmd.cli_ctx, application, resource_group=resource_group_name)
+    from .aaz.latest.monitor.app_insights.metric import GetMetadata
+    arg_obj = {
+        "app_id": app_id,
+    }
+    return GetMetadata(cli_ctx=cmd.cli_ctx)(command_args=arg_obj)
 
 
 def create_or_update_component(cmd, client, application, resource_group_name, location, tags=None,
@@ -80,8 +114,8 @@ def create_or_update_component(cmd, client, application, resource_group_name, lo
     client = applicationinsights_mgmt_plane_client(cmd.cli_ctx, api_version='2020-02-02-preview').components
     try:
         return client.create_or_update(resource_group_name, application, component)
-    except CloudError as ex:
-        ex.error._message = ex.error._message + HELP_MESSAGE
+    except HttpResponseError as ex:
+        ex.message = ex.message + HELP_MESSAGE
         raise ex
 
 
@@ -120,8 +154,8 @@ def update_component(cmd, client, application, resource_group_name, kind=None, w
         latest_client = applicationinsights_mgmt_plane_client(cmd.cli_ctx, api_version='2020-02-02-preview').components
         try:
             existing_component = latest_client.get(resource_group_name, application)
-        except CloudError as ex:
-            ex.error._message = ex.error._message + HELP_MESSAGE
+        except HttpResponseError as ex:
+            ex.message = ex.message + HELP_MESSAGE
             raise ex
 
         _apm_migration_consent(cmd, workspace_resource_id, existing_component.workspace_resource_id)
@@ -163,6 +197,8 @@ def connect_webapp(cmd, client, resource_group_name, application, app_service, e
         raise InvalidArgumentValueError(f"App Insights {application} under resource group {resource_group_name} was not found.")
 
     settings = [f"APPINSIGHTS_INSTRUMENTATIONKEY={app_insights.instrumentation_key}"]
+    if app_insights.connection_string is not None:
+        settings.append(f"APPINSIGHTS_CONNECTIONSTRING={app_insights.connection_string}")
     if enable_profiler is True:
         settings.append("APPINSIGHTS_PROFILERFEATURE_VERSION=1.0.0")
     elif enable_profiler is False:
@@ -189,6 +225,9 @@ def connect_function(cmd, client, resource_group_name, application, app_service)
 
     settings = [f"APPINSIGHTS_INSTRUMENTATIONKEY={app_insights.instrumentation_key}"]
 
+    if app_insights.connection_string is not None:
+        settings.append(f"APPINSIGHTS_CONNECTIONSTRING={app_insights.connection_string}")
+
     if is_valid_resource_id(app_service):
         resource_id = parse_resource_id(app_service)
         app_service = resource_id['name']
@@ -208,7 +247,7 @@ def show_components(cmd, client, application=None, resource_group_name=None):
                                                                   api_version='2020-02-02-preview').components
             try:
                 return latest_client.get(resource_group_name, application)
-            except CloudError:
+            except HttpResponseError:
                 logger.warning(HELP_MESSAGE)
                 return client.get(resource_group_name, application)
         raise CLIError("Application provided without resource group. Either specify app with resource group, or remove app.")
@@ -310,7 +349,7 @@ class BillingShow(_BillingShow):
             }
         result = {
             "currentBillingFeatures": output["CurrentBillingFeatures"],
-            "dataVolumeCap": new_data_volume_cap
+            "dataVolumeCap": new_data_volume_cap  # pylint: disable=possibly-used-before-assignment
         }
         return result
 
@@ -708,3 +747,153 @@ def update_web_test(instance,
 
 def delete_web_test(client, resource_group_name, web_test_name):
     return client.delete(resource_group_name=resource_group_name, web_test_name=web_test_name)
+
+
+class WorkbookCreate(_WorkbookCreate):
+    @classmethod
+    def _build_arguments_schema(cls, *args, **kwargs):
+        from azure.cli.core.aaz import AAZBoolArg, AAZListArg, AAZResourceIdArg, AAZResourceIdArgFormat
+        args_schema = super()._build_arguments_schema(*args, **kwargs)
+        args_schema.mi_system_assigned = AAZBoolArg(
+            options=["--mi-system-assigned"],
+            help="Enable system assigned identity"
+        )
+        args_schema.mi_user_assigned = AAZListArg(
+            options=["--mi-user-assigned"],
+            help="Space separated resource IDs to add user-assigned identities.",
+        )
+        args_schema.mi_user_assigned.Element = AAZResourceIdArg(
+            fmt=AAZResourceIdArgFormat(template="/subscriptions/{subscription}/resourceGroups/{resource_group}"
+                                                "/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{}")
+        )
+        args_schema.identity._registered = False
+        return args_schema
+
+    def pre_operations(self):
+        args = self.ctx.args
+        if not has_value(args.serialized_data):
+            args.serialized_data = 'null'
+        if args.mi_system_assigned:
+            args.identity.type = "SystemAssigned"
+        if has_value(args.mi_user_assigned):
+            args.identity.type = "UserAssigned" if not args.identity.type else "SystemAssigned,UserAssigned"
+            user_assigned_identities = {}
+            for identity in args.mi_user_assigned:
+                user_assigned_identities.update({
+                    identity.to_serialized_data(): {}
+                })
+            args.identity.user_assigned_identities = user_assigned_identities
+
+
+class WorkbookUpdate(_WorkbookUpdate):
+    @classmethod
+    def _build_arguments_schema(cls, *args, **kwargs):
+        args_schema = super()._build_arguments_schema(*args, **kwargs)
+        args_schema.identity._registered = False
+        return args_schema
+
+    def pre_operations(self):
+        args = self.ctx.args
+        if not has_value(args.serialized_data):
+            args.serialized_data = 'null'
+
+
+class IdentityAssign(_IdentityAssign):
+    @classmethod
+    def _build_arguments_schema(cls, *args, **kwargs):
+        from azure.cli.core.aaz import AAZBoolArg, AAZListArg, AAZResourceIdArg, AAZResourceIdArgFormat
+        args_schema = super()._build_arguments_schema(*args, **kwargs)
+        args_schema.system_assigned = AAZBoolArg(
+            options=["--system-assigned"],
+            help="Enable system assigned identity"
+        )
+        args_schema.user_assigned = AAZListArg(
+            options=["--user-assigned"],
+            help="Space separated resource IDs to add user-assigned identities.",
+        )
+        args_schema.user_assigned.Element = AAZResourceIdArg(
+            fmt=AAZResourceIdArgFormat(template="/subscriptions/{subscription}/resourceGroups/{resource_group}"
+                                                "/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{}")
+        )
+        args_schema.type._registered = False
+        args_schema.type._required = False
+        args_schema.user_assigned_identities._registered = False
+        return args_schema
+
+    def pre_operations(self):
+        args = self.ctx.args
+        if args.system_assigned:
+            args.type = "SystemAssigned"
+        if has_value(args.user_assigned):
+            args.type = "UserAssigned" if not args.type else "SystemAssigned,UserAssigned"
+            user_assigned_identities = {}
+            for identity in args.user_assigned:
+                user_assigned_identities.update({
+                    identity.to_serialized_data(): {}
+                })
+            args.user_assigned_identities = user_assigned_identities
+
+    def pre_instance_create(self):
+        self.ctx.vars.instance.properties.serialized_data = 'null'
+        old_identity = self.ctx.vars.instance.identity
+        args = self.ctx.args
+
+        if args.system_assigned:
+            args.type = "SystemAssigned" if not old_identity.type or old_identity.type.to_serialized_data() == 'SystemAssigned' else "SystemAssigned,UserAssigned"
+        if has_value(args.user_assigned):
+            args.type = "UserAssigned" if not old_identity.type or old_identity.type.to_serialized_data() == 'UserAssigned' else "SystemAssigned,UserAssigned"
+            if not old_identity.type:
+                user_assigned_identities = {}
+            else:
+                user_assigned_identities = {} if 'UserAssigned' not in old_identity.type.to_serialized_data() else {**old_identity.user_assigned_identities.to_serialized_data()}
+            for identity in args.user_assigned:
+                user_assigned_identities.update({
+                    identity.to_serialized_data(): {}
+                })
+            args.user_assigned_identities = user_assigned_identities
+
+
+class IdentityRemove(_IdentityRemove):
+    @classmethod
+    def _build_arguments_schema(cls, *args, **kwargs):
+        from azure.cli.core.aaz import AAZBoolArg, AAZListArg, AAZResourceIdArg, AAZResourceIdArgFormat
+        args_schema = super()._build_arguments_schema(*args, **kwargs)
+        args_schema.system_assigned = AAZBoolArg(
+            options=["--system-assigned"],
+            help="Enable system assigned identity"
+        )
+        args_schema.user_assigned = AAZListArg(
+            options=["--user-assigned"],
+            help="Space separated resource IDs to add user-assigned identities.",
+        )
+        args_schema.user_assigned.Element = AAZResourceIdArg(
+            fmt=AAZResourceIdArgFormat(template="/subscriptions/{subscription}/resourceGroups/{resource_group}"
+                                                "/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{}")
+        )
+        args_schema.type._registered = False
+        args_schema.user_assigned_identities._registered = False
+        return args_schema
+
+    def pre_instance_update(self, instance):
+        self.ctx.vars.instance.properties.serialized_data = 'null'
+        args = self.ctx.args
+        if has_value(args.user_assigned):
+            user_assigned_identities = instance.user_assigned_identities
+            for identity in args.user_assigned:
+                user_assigned_identities._data.pop(identity.to_serialized_data(), None)
+            args.user_assigned_identities = user_assigned_identities
+        if instance.user_assigned_identities and 'SystemAssigned' in instance.type.to_serialized_data():
+            args.type = "SystemAssigned,UserAssigned"
+        if not instance.user_assigned_identities and 'SystemAssigned' in instance.type.to_serialized_data():
+            args.type = 'SystemAssigned'
+        if args.system_assigned and instance.user_assigned_identities:
+            args.type = 'UserAssigned'
+        if args.system_assigned and instance.type.to_serialized_data() == 'SystemAssigned':
+            args.type = 'None'
+        if not instance.user_assigned_identities and instance.type.to_serialized_data() == 'UserAssigned':
+            args.type = 'None'
+
+    def _output(self, *args, **kwargs):
+        if not self.ctx.vars.instance.identity.to_serialized_data():
+            return {'type': None}
+        return self.deserialize_output(self.ctx.selectors.subresource.required(), client_flatten=True)

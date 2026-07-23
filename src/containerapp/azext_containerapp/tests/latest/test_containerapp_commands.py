@@ -9,14 +9,16 @@ import time
 import unittest
 
 from azure.cli.command_modules.containerapp._utils import format_location
-from azure.cli.core.azclierror import ValidationError, CLIInternalError
+from unittest import mock
+from azure.cli.core.azclierror import ValidationError
 
 from azure.cli.testsdk.scenario_tests import AllowLargeResponse, live_only
-from azure.cli.testsdk import (ScenarioTest, ResourceGroupPreparer, JMESPathCheck)
-from msrestazure.tools import parse_resource_id
+from azure.cli.testsdk import (ScenarioTest, ResourceGroupPreparer, JMESPathCheck, JMESPathCheckNotExists, JMESPathCheckExists, live_only, StorageAccountPreparer, LogAnalyticsWorkspacePreparer)
+from azure.mgmt.core.tools import parse_resource_id
 
 from azext_containerapp.tests.latest.common import (write_test_file, clean_up_test_file)
 from .common import TEST_LOCATION, STAGE_LOCATION
+from .custom_preparers import SubnetPreparer
 from .utils import create_containerapp_env, prepare_containerapp_env_for_app_e2e_tests
 
 TEST_DIR = os.path.abspath(os.path.join(os.path.abspath(__file__), '..'))
@@ -168,6 +170,41 @@ class ContainerappIdentityTests(ScenarioTest):
             JMESPathCheck('type', 'None'),
         ])
 
+    @AllowLargeResponse(8192)
+    @ResourceGroupPreparer(location="westeurope")
+    def test_containerapp_identity_keda(self, resource_group):
+        # MSI is not available in North Central US (Stage), if the TEST_LOCATION is "northcentralusstage", use eastus as location
+        location = TEST_LOCATION
+        if format_location(location) == format_location(STAGE_LOCATION):
+            location = "eastus"
+        self.cmd('configure --defaults location={}'.format(location))
+
+        ca_name = self.create_random_name(prefix='containerapp', length=24)
+        user_identity_name1 = self.create_random_name(prefix='containerapp-user1', length=24)
+
+        env = prepare_containerapp_env_for_app_e2e_tests(self, location=location)
+
+        user_identity_id = self.cmd('identity create -g {} -n {}'.format(resource_group, user_identity_name1)).get_output_in_json()["id"]
+
+        self.cmd(f'containerapp create -g {resource_group} -n {ca_name} --environment {env} --system-assigned --user-assigned {user_identity_name1} --scale-rule-name azure-queue --scale-rule-type azure-queue --scale-rule-metadata "accountName=account1" "queueName=queue1" "queueLength=1" --scale-rule-identity {user_identity_name1}')
+        self.cmd(f'containerapp show -g {resource_group} -n {ca_name}', checks=[
+            JMESPathCheck("properties.template.scale.rules[0].name", "azure-queue"),
+            JMESPathCheck("properties.template.scale.rules[0].azureQueue.accountName", "account1"),
+            JMESPathCheck("properties.template.scale.rules[0].azureQueue.queueName", "queue1"),
+            JMESPathCheck("properties.template.scale.rules[0].azureQueue.queueLength", "1"),
+            JMESPathCheck("properties.template.scale.rules[0].azureQueue.identity", user_identity_id, case_sensitive=False),
+        ])
+
+        self.cmd(f'containerapp update -g {resource_group} -n {ca_name} --scale-rule-name azure-blob --scale-rule-type azure-blob --scale-rule-metadata "accountName=account2" "blobContainerName=blob2" "blobCount=2" --scale-rule-identity {user_identity_id}')
+        self.cmd(f'containerapp show -g {resource_group} -n {ca_name}', checks=[
+            JMESPathCheck("properties.template.scale.rules[0].name", "azure-blob"),
+            JMESPathCheck("properties.template.scale.rules[0].custom.metadata.accountName", "account2"),
+            JMESPathCheck("properties.template.scale.rules[0].custom.metadata.blobContainerName", "blob2"),
+            JMESPathCheck("properties.template.scale.rules[0].custom.metadata.blobCount", "2"),
+            JMESPathCheck("properties.template.scale.rules[0].custom.identity", user_identity_id, case_sensitive=False),
+            JMESPathCheck("properties.template.scale.rules[0].custom.type", "azure-blob"),
+        ])
+
 
 class ContainerappIngressTests(ScenarioTest):
     def __init__(self, *arg, **kwargs):
@@ -259,130 +296,84 @@ class ContainerappIngressTests(ScenarioTest):
             self.assertEqual(revision["properties"]["trafficWeight"], 50)
 
     @AllowLargeResponse(8192)
-    @live_only()  # encounters 'CannotOverwriteExistingCassetteException' only when run from recording (passes when run live)
-    @ResourceGroupPreparer(location="westeurope")
-    def test_containerapp_custom_domains_e2e(self, resource_group):
+    @ResourceGroupPreparer(location="eastus2")
+    def test_containerapp_ingress_traffic_labels_e2e(self, resource_group):
         self.cmd('configure --defaults location={}'.format(TEST_LOCATION))
 
-        env_name = self.create_random_name(prefix='containerapp-env', length=24)
         ca_name = self.create_random_name(prefix='containerapp', length=24)
 
-        create_containerapp_env(self, env_name, resource_group)
+        env = prepare_containerapp_env_for_app_e2e_tests(self)
 
-        app = self.cmd('containerapp create -g {} -n {} --environment {} --ingress external --target-port 80'.format(resource_group, ca_name, env_name)).get_output_in_json()
+        self.cmd('containerapp create -g {} -n {} --environment {} --ingress external --target-port 0 --revisions-mode labels --target-label label1'.format(resource_group, ca_name, env))
 
-        self.cmd('containerapp hostname list -g {} -n {}'.format(resource_group, ca_name), checks=[
-            JMESPathCheck('length(@)', 0),
+        # wait for the first revision to come up and populate in traffic.
+        ingress = self.cmd('containerapp ingress show -g {} -n {}'.format(resource_group, ca_name)).get_output_in_json()
+        for _ in range(100):
+            if ingress["traffic"] != None:
+                break
+            time.sleep(5)
+            traffic = self.cmd('containerapp ingress show -g {} -n {}'.format(resource_group, ca_name)).get_output_in_json()
+
+        self.cmd('containerapp ingress show -g {} -n {}'.format(resource_group, ca_name), checks=[
+            JMESPathCheck('external', True),
+            JMESPathCheck('targetPort', 0),
+            JMESPathCheck('traffic[0].weight', 100),
+            JMESPathCheck('traffic[0].label', "label1"),
         ])
 
-        # list hostnames with a wrong location
-        self.cmd('containerapp hostname list -g {} -n {} -l "{}"'.format(resource_group, ca_name, "eastus2"), checks={
-            JMESPathCheck('length(@)', 0),
-        }, expect_failure=True)
+        # Create a new revision with a different label
+        self.cmd('containerapp update -g {} -n {} --cpu 1.0 --memory 2Gi --target-label label2'.format(resource_group, ca_name))
 
-        # create an App service domain and update its txt records
-        contacts = os.path.join(TEST_DIR, 'domain-contact.json')
-        zone_name = "{}.com".format(ca_name)
-        subdomain_1 = "devtest"
-        subdomain_2 = "clitest"
-        txt_name_1 = "asuid.{}".format(subdomain_1)
-        txt_name_2 = "asuid.{}".format(subdomain_2)
-        hostname_1 = "{}.{}".format(subdomain_1, zone_name)
-        hostname_2 = "{}.{}".format(subdomain_2, zone_name)
-        verification_id = app["properties"]["customDomainVerificationId"]
-        self.cmd("appservice domain create -g {} --hostname {} --contact-info=@'{}' --accept-terms".format(resource_group, zone_name, contacts)).get_output_in_json()
-        self.cmd('network dns record-set txt add-record -g {} -z {} -n {} -v {}'.format(resource_group, zone_name, txt_name_1, verification_id)).get_output_in_json()
-        self.cmd('network dns record-set txt add-record -g {} -z {} -n {} -v {}'.format(resource_group, zone_name, txt_name_2, verification_id)).get_output_in_json()
+        # it may take a minute for the new revision to be created and added to traffic.
+        traffic = self.cmd('containerapp ingress traffic show -g {} -n {}'.format(resource_group, ca_name)).get_output_in_json()    
+        for _ in range(100):
+            if len(traffic) >= 2:
+                break
+            time.sleep(5)
+            traffic = self.cmd('containerapp ingress traffic show -g {} -n {}'.format(resource_group, ca_name)).get_output_in_json()
+        
+        self.assertEqual(len(traffic), 2)
 
-        # upload cert, add hostname & binding
-        pfx_file = os.path.join(TEST_DIR, 'cert.pfx')
-        pfx_password = 'test12'
-        cert_id = self.cmd('containerapp ssl upload -n {} -g {} --environment {} --hostname {} --certificate-file "{}" --password {}'.format(ca_name, resource_group, env_name, hostname_1, pfx_file, pfx_password), checks=[
-            JMESPathCheck('[0].name', hostname_1),
-        ]).get_output_in_json()[0]["certificateId"]
+        revisions_list = self.cmd('containerapp revision list -g {} -n {}'.format(resource_group, ca_name)).get_output_in_json()
 
-        self.cmd('containerapp hostname list -g {} -n {}'.format(resource_group, ca_name), checks=[
-            JMESPathCheck('length(@)', 1),
-            JMESPathCheck('[0].name', hostname_1),
-            JMESPathCheck('[0].bindingType', "SniEnabled"),
-            JMESPathCheck('[0].certificateId', cert_id),
+        # TODO: The revision list call isn't handled by extensions, this will only work once the core CLI updates to at least 2024-10-02-preview
+        # self.assertEqual(revisions_list[0]["properties"]["labels"], "label1")
+        # self.assertEqual(revisions_list[2]["properties"]["labels"], "label2")
+        self.cmd('containerapp ingress traffic show -g {} -n {}'.format(resource_group, ca_name), checks=[
+            JMESPathCheck('[0].weight', 100),
+            JMESPathCheck('[0].label', "label1"),
+            JMESPathCheck('[0].revisionName', revisions_list[0]["name"]),
+            JMESPathCheck('[1].weight', 0),
+            JMESPathCheck('[1].label', "label2"),
+            JMESPathCheck('[1].revisionName', revisions_list[1]["name"]),
         ])
 
-        # get cert thumbprint
-        cert_thumbprint = self.cmd('containerapp env certificate list -n {} -g {} -c {}'.format(env_name, resource_group, cert_id), checks=[
-            JMESPathCheck('length(@)', 1),
-            JMESPathCheck('[0].id', cert_id),
-        ]).get_output_in_json()[0]["properties"]["thumbprint"]
-
-        # add binding by cert thumbprint
-        self.cmd('containerapp hostname bind -g {} -n {} --hostname {} --thumbprint {}'.format(resource_group, ca_name, hostname_2, cert_thumbprint), expect_failure=True)
-
-        self.cmd('containerapp hostname bind -g {} -n {} --hostname {} --thumbprint {} -e {}'.format(resource_group, ca_name, hostname_2, cert_thumbprint, env_name), checks=[
-            JMESPathCheck('length(@)', 2),
+        self.cmd('containerapp ingress traffic set -g {} -n {} --label-weight label1=80 label2=20'.format(resource_group, ca_name), checks=[
+            JMESPathCheck('[0].weight', 80),
+            JMESPathCheck('[0].label', "label1"),
+            JMESPathCheck('[0].revisionName', revisions_list[0]["name"]),
+            JMESPathCheck('[1].weight', 20),
+            JMESPathCheck('[1].label', "label2"),
+            JMESPathCheck('[1].revisionName', revisions_list[1]["name"]),
         ])
 
-        self.cmd('containerapp hostname list -g {} -n {}'.format(resource_group, ca_name), checks=[
-            JMESPathCheck('length(@)', 2),
-            JMESPathCheck('[0].bindingType', "SniEnabled"),
-            JMESPathCheck('[0].certificateId', cert_id),
-            JMESPathCheck('[1].bindingType', "SniEnabled"),
-            JMESPathCheck('[1].certificateId', cert_id),
+        self.cmd('containerapp ingress traffic show -g {} -n {}'.format(resource_group, ca_name), checks=[
+            JMESPathCheck('[0].weight', 80),
+            JMESPathCheck('[0].label', "label1"),
+            JMESPathCheck('[0].revisionName', revisions_list[0]["name"]),
+            JMESPathCheck('[1].weight', 20),
+            JMESPathCheck('[1].label', "label2"),
+            JMESPathCheck('[1].revisionName', revisions_list[1]["name"]),
         ])
-
-        # delete hostname with a wrong location
-        self.cmd('containerapp hostname delete -g {} -n {} --hostname {} -l "{}" --yes'.format(resource_group, ca_name, hostname_1, "eastus2"), expect_failure=True)
-
-        self.cmd('containerapp hostname delete -g {} -n {} --hostname {} -l "{}" --yes'.format(resource_group, ca_name, hostname_1, app["location"]), checks=[
-            JMESPathCheck('length(@)', 1),
-            JMESPathCheck('[0].name', hostname_2),
-            JMESPathCheck('[0].bindingType', "SniEnabled"),
-            JMESPathCheck('[0].certificateId', cert_id),
-        ]).get_output_in_json()
-
-        self.cmd('containerapp hostname list -g {} -n {}'.format(resource_group, ca_name), checks=[
-            JMESPathCheck('length(@)', 1),
-            JMESPathCheck('[0].name', hostname_2),
-            JMESPathCheck('[0].bindingType', "SniEnabled"),
-            JMESPathCheck('[0].certificateId', cert_id),
-        ])
-
-        self.cmd('containerapp hostname delete -g {} -n {} --hostname {} --yes'.format(resource_group, ca_name, hostname_2), checks=[
-            JMESPathCheck('length(@)', 0),
-        ]).get_output_in_json()
-
-        # add binding by cert id
-        self.cmd('containerapp hostname bind -g {} -n {} --hostname {} --certificate {}'.format(resource_group, ca_name, hostname_2, cert_id), checks=[
-            JMESPathCheck('length(@)', 1),
-            JMESPathCheck('[0].bindingType', "SniEnabled"),
-            JMESPathCheck('[0].certificateId', cert_id),
-            JMESPathCheck('[0].name', hostname_2),
-        ]).get_output_in_json()
-
-        self.cmd('containerapp hostname delete -g {} -n {} --hostname {} --yes'.format(resource_group, ca_name, hostname_2), checks=[
-            JMESPathCheck('length(@)', 0),
-        ]).get_output_in_json()
-
-        # add binding by cert name, with and without environment
-        cert_name = parse_resource_id(cert_id)["resource_name"]
-
-        self.cmd('containerapp hostname bind -g {} -n {} --hostname {} --certificate {}'.format(resource_group, ca_name, hostname_1, cert_name), expect_failure=True)
-
-        self.cmd('containerapp hostname bind -g {} -n {} --hostname {} --certificate {} -e {}'.format(resource_group, ca_name, hostname_1, cert_name, env_name), checks=[
-            JMESPathCheck('length(@)', 1),
-            JMESPathCheck('[0].bindingType', "SniEnabled"),
-            JMESPathCheck('[0].certificateId', cert_id),
-            JMESPathCheck('[0].name', hostname_1),
-        ]).get_output_in_json()
-
-        self.cmd('containerapp hostname delete -g {} -n {} --hostname {} --yes'.format(resource_group, ca_name, hostname_1), checks=[
-            JMESPathCheck('length(@)', 0),
-        ]).get_output_in_json()
 
     @AllowLargeResponse(8192)
     @ResourceGroupPreparer(location="northeurope")
     @live_only()  # encounters 'CannotOverwriteExistingCassetteException' only when run from recording (passes when run live) and vnet command error in cli pipeline
     def test_containerapp_tcp_ingress(self, resource_group):
-        self.cmd('configure --defaults location={}'.format(TEST_LOCATION))
+        location = TEST_LOCATION
+        if format_location(location) == format_location(STAGE_LOCATION):
+            location = "eastus"
+        self.cmd('configure --defaults location={}'.format(location))
 
         env_name = self.create_random_name(prefix='env', length=24)
         logs = self.create_random_name(prefix='logs', length=24)
@@ -433,6 +424,40 @@ class ContainerappIngressTests(ScenarioTest):
             JMESPathCheck('targetPort', 81),
             JMESPathCheck('transport', "Tcp"),
             JMESPathCheck('exposedPort', 3020),
+        ])
+
+        app = self.create_random_name(prefix='containerapp', length=24)
+
+        self.cmd(
+            f'containerapp create -g {resource_group} -n {app} --image redis --ingress external --target-port 6379 --environment {env_name} --transport tcp --scale-rule-type tcp --scale-rule-name tcp-scale-rule --scale-rule-tcp-concurrency 50 --scale-rule-auth trigger=secretref --scale-rule-metadata key=value',
+            checks=[
+                JMESPathCheck("properties.configuration.ingress.transport", "Tcp"),
+                JMESPathCheck("properties.provisioningState", "Succeeded"),
+                JMESPathCheck("properties.template.scale.rules[0].name", "tcp-scale-rule"),
+                JMESPathCheck("properties.template.scale.rules[0].tcp.auth[0].triggerParameter", "trigger"),
+                JMESPathCheck("properties.template.scale.rules[0].tcp.auth[0].secretRef", "secretref"),
+            ])
+        # the metadata is not returned in create/update command, we should use show command to check
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
+            JMESPathCheck("properties.template.scale.rules[0].name", "tcp-scale-rule"),
+            JMESPathCheck("properties.template.scale.rules[0].tcp.metadata.concurrentConnections", "50"),
+            JMESPathCheck("properties.template.scale.rules[0].tcp.metadata.key", "value")
+        ])
+        self.cmd(
+            f'containerapp update -g {resource_group} -n {app} --scale-rule-name tcp-scale-rule --scale-rule-type tcp  --scale-rule-tcp-concurrency 2 --scale-rule-auth "apiKey=api-key" "appKey=app-key"',
+            checks=[
+                JMESPathCheck("properties.configuration.ingress.transport", "Tcp"),
+                JMESPathCheck("properties.provisioningState", "Succeeded"),
+                JMESPathCheck("properties.template.scale.rules[0].name", "tcp-scale-rule"),
+                JMESPathCheck("properties.template.scale.rules[0].tcp.auth[0].triggerParameter", "apiKey"),
+                JMESPathCheck("properties.template.scale.rules[0].tcp.auth[0].secretRef", "api-key"),
+                JMESPathCheck("properties.template.scale.rules[0].tcp.auth[1].triggerParameter", "appKey"),
+                JMESPathCheck("properties.template.scale.rules[0].tcp.auth[1].secretRef", "app-key"),
+            ])
+        # the metadata is not returned in create/update command, we should use show command to check
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
+            JMESPathCheck("properties.template.scale.rules[0].name", "tcp-scale-rule"),
+            JMESPathCheck("properties.template.scale.rules[0].tcp.metadata.concurrentConnections", "2"),
         ])
 
     @AllowLargeResponse(8192)
@@ -633,6 +658,134 @@ class ContainerappIngressTests(ScenarioTest):
         ])
 
 
+class ContainerappCustomDomainTests(ScenarioTest):
+    def __init__(self, *arg, **kwargs):
+        super().__init__(*arg, random_config_dir=True, **kwargs)
+
+    @AllowLargeResponse(8192)
+    @live_only()  # encounters 'CannotOverwriteExistingCassetteException' only when run from recording (passes when run live)
+    @ResourceGroupPreparer(location="westeurope")
+    def test_containerapp_custom_domains_e2e(self, resource_group):
+        location = TEST_LOCATION
+        if format_location(location) == format_location(STAGE_LOCATION):
+            location = "eastus"
+        self.cmd('configure --defaults location={}'.format(location))
+
+        env_name = self.create_random_name(prefix='containerapp-env', length=24)
+        ca_name = self.create_random_name(prefix='containerapp', length=24)
+
+        create_containerapp_env(self, env_name, resource_group)
+
+        app = self.cmd('containerapp create -g {} -n {} --environment {} --ingress external --target-port 80'.format(resource_group, ca_name, env_name)).get_output_in_json()
+
+        self.cmd('containerapp hostname list -g {} -n {}'.format(resource_group, ca_name), checks=[
+            JMESPathCheck('length(@)', 0),
+        ])
+
+        # list hostnames with a wrong location
+        self.cmd('containerapp hostname list -g {} -n {} -l "{}"'.format(resource_group, ca_name, "eastus2"), checks={
+            JMESPathCheck('length(@)', 0),
+        }, expect_failure=True)
+
+        # create an App service domain and update its txt records
+        contacts = os.path.join(TEST_DIR, 'domain-contact.json')
+        zone_name = "{}.com".format(ca_name)
+        subdomain_1 = "devtest"
+        subdomain_2 = "clitest"
+        txt_name_1 = "asuid.{}".format(subdomain_1)
+        txt_name_2 = "asuid.{}".format(subdomain_2)
+        hostname_1 = "{}.{}".format(subdomain_1, zone_name)
+        hostname_2 = "{}.{}".format(subdomain_2, zone_name)
+        verification_id = app["properties"]["customDomainVerificationId"]
+        self.cmd("appservice domain create -g {} --hostname {} --contact-info=@'{}' --accept-terms".format(resource_group, zone_name, contacts)).get_output_in_json()
+        self.cmd('network dns record-set txt add-record -g {} -z {} -n {} -v {}'.format(resource_group, zone_name, txt_name_1, verification_id)).get_output_in_json()
+        self.cmd('network dns record-set txt add-record -g {} -z {} -n {} -v {}'.format(resource_group, zone_name, txt_name_2, verification_id)).get_output_in_json()
+
+        # upload cert, add hostname & binding
+        pfx_file = os.path.join(TEST_DIR, 'cert.pfx')
+        pfx_password = 'test12'
+        cert_id = self.cmd('containerapp ssl upload -n {} -g {} --environment {} --hostname {} --certificate-file "{}" --password {}'.format(ca_name, resource_group, env_name, hostname_1, pfx_file, pfx_password), checks=[
+            JMESPathCheck('[0].name', hostname_1),
+        ]).get_output_in_json()[0]["certificateId"]
+
+        self.cmd('containerapp hostname list -g {} -n {}'.format(resource_group, ca_name), checks=[
+            JMESPathCheck('length(@)', 1),
+            JMESPathCheck('[0].name', hostname_1),
+            JMESPathCheck('[0].bindingType', "SniEnabled"),
+            JMESPathCheck('[0].certificateId', cert_id),
+        ])
+
+        # get cert thumbprint
+        cert_thumbprint = self.cmd('containerapp env certificate list -n {} -g {} -c {}'.format(env_name, resource_group, cert_id), checks=[
+            JMESPathCheck('length(@)', 1),
+            JMESPathCheck('[0].id', cert_id),
+        ]).get_output_in_json()[0]["properties"]["thumbprint"]
+
+        # add binding by cert thumbprint
+        self.cmd('containerapp hostname bind -g {} -n {} --hostname {} --thumbprint {}'.format(resource_group, ca_name, hostname_2, cert_thumbprint), expect_failure=True)
+
+        self.cmd('containerapp hostname bind -g {} -n {} --hostname {} --thumbprint {} -e {}'.format(resource_group, ca_name, hostname_2, cert_thumbprint, env_name), checks=[
+            JMESPathCheck('length(@)', 2),
+        ])
+
+        self.cmd('containerapp hostname list -g {} -n {}'.format(resource_group, ca_name), checks=[
+            JMESPathCheck('length(@)', 2),
+            JMESPathCheck('[0].bindingType', "SniEnabled"),
+            JMESPathCheck('[0].certificateId', cert_id),
+            JMESPathCheck('[1].bindingType', "SniEnabled"),
+            JMESPathCheck('[1].certificateId', cert_id),
+        ])
+
+        # delete hostname with a wrong location
+        self.cmd('containerapp hostname delete -g {} -n {} --hostname {} -l "{}" --yes'.format(resource_group, ca_name, hostname_1, "eastus2"), expect_failure=True)
+
+        self.cmd('containerapp hostname delete -g {} -n {} --hostname {} -l "{}" --yes'.format(resource_group, ca_name, hostname_1, app["location"]), checks=[
+            JMESPathCheck('length(@)', 1),
+            JMESPathCheck('[0].name', hostname_2),
+            JMESPathCheck('[0].bindingType', "SniEnabled"),
+            JMESPathCheck('[0].certificateId', cert_id),
+        ]).get_output_in_json()
+
+        self.cmd('containerapp hostname list -g {} -n {}'.format(resource_group, ca_name), checks=[
+            JMESPathCheck('length(@)', 1),
+            JMESPathCheck('[0].name', hostname_2),
+            JMESPathCheck('[0].bindingType', "SniEnabled"),
+            JMESPathCheck('[0].certificateId', cert_id),
+        ])
+
+        self.cmd('containerapp hostname delete -g {} -n {} --hostname {} --yes'.format(resource_group, ca_name, hostname_2), checks=[
+            JMESPathCheck('length(@)', 0),
+        ]).get_output_in_json()
+
+        # add binding by cert id
+        self.cmd('containerapp hostname bind -g {} -n {} --hostname {} --certificate {}'.format(resource_group, ca_name, hostname_2, cert_id), checks=[
+            JMESPathCheck('length(@)', 1),
+            JMESPathCheck('[0].bindingType', "SniEnabled"),
+            JMESPathCheck('[0].certificateId', cert_id),
+            JMESPathCheck('[0].name', hostname_2),
+        ]).get_output_in_json()
+
+        self.cmd('containerapp hostname delete -g {} -n {} --hostname {} --yes'.format(resource_group, ca_name, hostname_2), checks=[
+            JMESPathCheck('length(@)', 0),
+        ]).get_output_in_json()
+
+        # add binding by cert name, with and without environment
+        cert_name = parse_resource_id(cert_id)["resource_name"]
+
+        self.cmd('containerapp hostname bind -g {} -n {} --hostname {} --certificate {}'.format(resource_group, ca_name, hostname_1, cert_name), expect_failure=True)
+
+        self.cmd('containerapp hostname bind -g {} -n {} --hostname {} --certificate {} -e {}'.format(resource_group, ca_name, hostname_1, cert_name, env_name), checks=[
+            JMESPathCheck('length(@)', 1),
+            JMESPathCheck('[0].bindingType', "SniEnabled"),
+            JMESPathCheck('[0].certificateId', cert_id),
+            JMESPathCheck('[0].name', hostname_1),
+        ]).get_output_in_json()
+
+        self.cmd('containerapp hostname delete -g {} -n {} --hostname {} --yes'.format(resource_group, ca_name, hostname_1), checks=[
+            JMESPathCheck('length(@)', 0),
+        ]).get_output_in_json()
+
+
 class ContainerappDaprTests(ScenarioTest):
     def __init__(self, *arg, **kwargs):
         super().__init__(*arg, random_config_dir=True, **kwargs)
@@ -726,10 +879,12 @@ class ContainerappDaprTests(ScenarioTest):
 
 
 class ContainerappServiceBindingTests(ScenarioTest):
+    def __init__(self, *arg, **kwargs):
+        super().__init__(*arg, random_config_dir=True, **kwargs)
 
     @AllowLargeResponse(8192)
     @ResourceGroupPreparer(location="eastus2")
-    def test_containerapp_dev_service_binding_none_client_type(self, resource_group):
+    def test_containerapp_dev_add_on_binding_none_client_type(self, resource_group):
         # type "linkers" is not available in North Central US (Stage), if the TEST_LOCATION is "northcentralusstage", use eastus as location
         location = TEST_LOCATION
         if format_location(location) == format_location(STAGE_LOCATION):
@@ -744,14 +899,14 @@ class ContainerappServiceBindingTests(ScenarioTest):
         env_rg = parse_resource_id(env_id).get('resource_group')
         env_name = parse_resource_id(env_id).get('name')
 
-        self.cmd('containerapp service redis create -g {} -n {} --environment {}'.format(env_rg, redis_ca_name, env_name), checks=[
+        self.cmd('containerapp add-on redis create -g {} -n {} --environment {}'.format(env_rg, redis_ca_name, env_name), checks=[
             JMESPathCheck('properties.provisioningState', "Succeeded")
         ])
 
-        self.cmd('containerapp service postgres create -g {} -n {} --environment {}'.format(env_rg, postgres_ca_name, env_name), checks=[
+        self.cmd('containerapp add-on postgres create -g {} -n {} --environment {}'.format(env_rg, postgres_ca_name, env_name), checks=[
             JMESPathCheck('properties.provisioningState', "Succeeded")
         ])
-        self.cmd('containerapp service kafka create -g {} -n {} --environment {}'.format(env_rg, kafka_ca_name, env_name), checks=[
+        self.cmd('containerapp add-on kafka create -g {} -n {} --environment {}'.format(env_rg, kafka_ca_name, env_name), checks=[
             JMESPathCheck('properties.provisioningState', "Succeeded")
         ])
 
@@ -790,21 +945,21 @@ class ContainerappServiceBindingTests(ScenarioTest):
 
     @AllowLargeResponse(8192)
     @ResourceGroupPreparer(location="eastus2")
-    def test_containerapp_dev_service_binding_customized_keys_yaml_e2e(self, resource_group):
+    def test_containerapp_dev_add_on_binding_customized_keys_yaml_e2e(self, resource_group):
         self.cmd('configure --defaults location={}'.format(TEST_LOCATION))
         ca_name = self.create_random_name(prefix='containerapp1', length=24)
-        redis_ca_name = 'redis-yaml'
+        redis_ca_name = 'redis-yaml2'
         postgres_ca_name = 'postgres-yaml'
 
         env_id = prepare_containerapp_env_for_app_e2e_tests(self)
         env_rg = parse_resource_id(env_id).get('resource_group')
         env_name = parse_resource_id(env_id).get('name')
 
-        redis_resource_id = self.cmd('containerapp service redis create -g {} -n {} --environment {}'.format(env_rg, redis_ca_name, env_name), checks=[
+        redis_resource_id = self.cmd('containerapp add-on redis create -g {} -n {} --environment {}'.format(env_rg, redis_ca_name, env_name), checks=[
             JMESPathCheck('properties.provisioningState', "Succeeded")
         ]).get_output_in_json()["id"]
 
-        postgres_resource_id = self.cmd('containerapp service postgres create -g {} -n {} --environment {}'.format(env_rg, postgres_ca_name, env_name)).get_output_in_json()["id"]
+        postgres_resource_id = self.cmd('containerapp add-on postgres create -g {} -n {} --environment {}'.format(env_rg, postgres_ca_name, env_name)).get_output_in_json()["id"]
         # test create
         containerapp_yaml_text = f"""
                                 location: {TEST_LOCATION}
@@ -921,14 +1076,14 @@ class ContainerappServiceBindingTests(ScenarioTest):
                 JMESPathCheck('properties.template.serviceBinds[1].customizedKeys', None),
             ])
 
-        self.cmd('containerapp service redis delete -g {} -n {} --yes'.format(env_rg, redis_ca_name), expect_failure=False)
-        self.cmd('containerapp service postgres delete -g {} -n {} --yes'.format(env_rg, postgres_ca_name), expect_failure=False)
+        self.cmd('containerapp add-on redis delete -g {} -n {} --yes'.format(env_rg, redis_ca_name), expect_failure=False)
+        self.cmd('containerapp add-on postgres delete -g {} -n {} --yes'.format(env_rg, postgres_ca_name), expect_failure=False)
         self.cmd('containerapp delete -n {} -g {} --yes'.format(ca_name, resource_group), expect_failure=False)
         clean_up_test_file(containerapp_file_name)
 
     @AllowLargeResponse(8192)
     @ResourceGroupPreparer(location="eastus2")
-    def test_containerapp_dev_service_binding_customized_keys_e2e(self, resource_group):
+    def test_containerapp_dev_add_on_binding_customized_keys_e2e(self, resource_group):
         # type "linkers" is not available in North Central US (Stage), if the TEST_LOCATION is "northcentralusstage", use eastus as location
         location = TEST_LOCATION
         if format_location(location) == format_location(STAGE_LOCATION):
@@ -942,11 +1097,11 @@ class ContainerappServiceBindingTests(ScenarioTest):
         env_rg = parse_resource_id(env_id).get('resource_group')
         env_name = parse_resource_id(env_id).get('name')
 
-        redis_resource_id = self.cmd('containerapp service redis create -g {} -n {} --environment {}'.format(env_rg, redis_ca_name, env_name), checks=[
+        redis_resource_id = self.cmd('containerapp add-on redis create -g {} -n {} --environment {}'.format(env_rg, redis_ca_name, env_name), checks=[
             JMESPathCheck('properties.provisioningState', "Succeeded")
         ]).get_output_in_json()["id"]
 
-        self.cmd('containerapp service postgres create -g {} -n {} --environment {}'.format(env_rg, postgres_ca_name, env_name))
+        self.cmd('containerapp add-on postgres create -g {} -n {} --environment {}'.format(env_rg, postgres_ca_name, env_name))
         self.cmd(
             'containerapp create -n {} -g  {} --environment {} --bind {},clientType=dotnet,resourcegroup={} {},clientType=none,resourcegroup={}'.format(
                 ca_name, resource_group, env_id, redis_ca_name, env_rg, postgres_ca_name, env_rg), expect_failure=False, checks=[
@@ -1010,13 +1165,14 @@ class ContainerappServiceBindingTests(ScenarioTest):
             ca_name2, resource_group, redis_ca_name), checks=[
             JMESPathCheck('properties.template.serviceBinds', None),
         ])
-        self.cmd('containerapp service redis delete -g {} -n {} --yes'.format(env_rg, redis_ca_name))
-        self.cmd('containerapp service postgres delete -g {} -n {} --yes'.format(env_rg, postgres_ca_name))
+        self.cmd('containerapp add-on redis delete -g {} -n {} --yes'.format(env_rg, redis_ca_name))
+        self.cmd('containerapp add-on postgres delete -g {} -n {} --yes'.format(env_rg, postgres_ca_name))
         self.cmd('containerapp delete -n {} -g {} --yes'.format(ca_name2, resource_group), expect_failure=False)
 
     @AllowLargeResponse(8192)
     @ResourceGroupPreparer(location="eastus2")
-    def test_containerapp_dev_service_binding_e2e(self, resource_group):
+    @SubnetPreparer(location="eastus", delegations='Microsoft.App/environments', service_endpoints="Microsoft.Storage.Global")
+    def test_containerapp_dev_add_on_binding_e2e(self, resource_group, subnet_id):
         # type "linkers" is not available in North Central US (Stage), if the TEST_LOCATION is "northcentralusstage", use eastus as location
         location = TEST_LOCATION
         if format_location(location) == format_location(STAGE_LOCATION):
@@ -1032,89 +1188,7 @@ class ContainerappServiceBindingTests(ScenarioTest):
         mariadb_ca_name = 'mariadb'
         qdrant_ca_name = "qdrant"
 
-        create_containerapp_env(self, env_name, resource_group)
-
-        self.cmd('containerapp service redis create -g {} -n {} --environment {}'.format(
-            resource_group, redis_ca_name, env_name))
-
-        self.cmd('containerapp service postgres create -g {} -n {} --environment {}'.format(
-            resource_group, postgres_ca_name, env_name))
-
-        self.cmd('containerapp service kafka create -g {} -n {} --environment {}'.format(
-            resource_group, kafka_ca_name, env_name))
-
-        self.cmd('containerapp service mariadb create -g {} -n {} --environment {}'.format(
-            resource_group, mariadb_ca_name, env_name))
-
-        self.cmd('containerapp service qdrant create -g {} -n {} --environment {}'.format(
-            resource_group, qdrant_ca_name, env_name))
-
-        self.cmd('containerapp create -g {} -n {} --environment {} --image {} --bind postgres:postgres_binding redis'.format(
-            resource_group, ca_name, env_name, image), checks=[
-            JMESPathCheck('properties.template.serviceBinds[0].name', "postgres_binding"),
-            JMESPathCheck('properties.template.serviceBinds[1].name', "redis")
-        ])
-
-        self.cmd('containerapp update -g {} -n {} --unbind postgres_binding'.format(
-            resource_group, ca_name, image), checks=[
-            JMESPathCheck('properties.template.serviceBinds[0].name', "redis"),
-        ])
-
-        self.cmd('containerapp update -g {} -n {} --bind postgres:postgres_binding kafka mariadb qdrant'.format(
-            resource_group, ca_name, image), checks=[
-            JMESPathCheck('properties.template.serviceBinds[0].name', "redis"),
-            JMESPathCheck('properties.template.serviceBinds[1].name', "postgres_binding"),
-            JMESPathCheck('properties.template.serviceBinds[2].name', "kafka"),
-            JMESPathCheck('properties.template.serviceBinds[3].name', "mariadb"),
-            JMESPathCheck('properties.template.serviceBinds[4].name', "qdrant")
-        ])
-
-        self.cmd('containerapp service postgres delete -g {} -n {} --yes'.format(
-            resource_group, postgres_ca_name, env_name))
-
-        self.cmd('containerapp service redis delete -g {} -n {} --yes'.format(
-            resource_group, redis_ca_name, env_name))
-
-        self.cmd('containerapp service kafka delete -g {} -n {} --yes'.format(
-            resource_group, kafka_ca_name, env_name))
-
-        self.cmd('containerapp service mariadb delete -g {} -n {} --yes'.format(
-            resource_group, mariadb_ca_name, env_name))
-
-        self.cmd('containerapp service qdrant delete -g {} -n {} --yes'.format(
-            resource_group, qdrant_ca_name, env_name))
-
-        self.cmd(f'containerapp delete -g {resource_group} -n {ca_name} --yes')
-
-        self.cmd('containerapp service list -g {} --environment {}'.format(resource_group, env_name), checks=[
-            JMESPathCheck('length(@)', 0),
-        ])
-
-        self.cmd('containerapp list -g {} --environment {}'.format(resource_group, env_name), checks=[
-            JMESPathCheck('length(@)', 0),
-        ])
-
-        self.cmd(f'containerapp env delete -g {resource_group} -n {env_name} --yes')
-
-    @AllowLargeResponse(8192)
-    @ResourceGroupPreparer(location="eastus2")
-    def test_containerapp_addon_binding_e2e(self, resource_group):
-        # type "linkers" is not available in North Central US (Stage), if the TEST_LOCATION is "northcentralusstage", use eastus as location
-        location = TEST_LOCATION
-        if format_location(location) == format_location(STAGE_LOCATION):
-            location = "eastus"
-        self.cmd('configure --defaults location={}'.format(location))
-
-        env_name = self.create_random_name(prefix='containerapp-env', length=24)
-        ca_name = self.create_random_name(prefix='containerapp', length=24)
-        image = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
-        redis_ca_name = 'redis'
-        postgres_ca_name = 'postgres'
-        kafka_ca_name = 'kafka'
-        mariadb_ca_name = 'mariadb'
-        qdrant_ca_name = "qdrant"
-        ADDON_LIST = ["redis", "postgres", "kafka", "mariadb", "qdrant"]
-        create_containerapp_env(self, env_name, resource_group)
+        create_containerapp_env(self, env_name, resource_group, subnetId=subnet_id)
 
         self.cmd('containerapp add-on redis create -g {} -n {} --environment {}'.format(
             resource_group, redis_ca_name, env_name))
@@ -1131,10 +1205,6 @@ class ContainerappServiceBindingTests(ScenarioTest):
         self.cmd('containerapp add-on qdrant create -g {} -n {} --environment {}'.format(
             resource_group, qdrant_ca_name, env_name))
 
-        for addon in ADDON_LIST:
-            self.cmd(f'containerapp show -g {resource_group} -n {addon}', checks=[
-                JMESPathCheck("properties.provisioningState", "Succeeded")])
-
         self.cmd('containerapp create -g {} -n {} --environment {} --image {} --bind postgres:postgres_binding redis'.format(
             resource_group, ca_name, env_name, image), checks=[
             JMESPathCheck('properties.template.serviceBinds[0].name', "postgres_binding"),
@@ -1148,7 +1218,6 @@ class ContainerappServiceBindingTests(ScenarioTest):
 
         self.cmd('containerapp update -g {} -n {} --bind postgres:postgres_binding kafka mariadb qdrant'.format(
             resource_group, ca_name, image), checks=[
-            JMESPathCheck("properties.provisioningState", "Succeeded"),
             JMESPathCheck('properties.template.serviceBinds[0].name', "redis"),
             JMESPathCheck('properties.template.serviceBinds[1].name', "postgres_binding"),
             JMESPathCheck('properties.template.serviceBinds[2].name', "kafka"),
@@ -1185,32 +1254,148 @@ class ContainerappServiceBindingTests(ScenarioTest):
 
     @AllowLargeResponse(8192)
     @ResourceGroupPreparer(location="eastus2")
+    def test_containerapp_addon_binding_e2e(self, resource_group):
+        # type "linkers" is not available in North Central US (Stage), if the TEST_LOCATION is "northcentralusstage", use francecentral as location
+        location = TEST_LOCATION
+        if format_location(location) == format_location(STAGE_LOCATION):
+            location = "francecentral"
+        self.cmd('configure --defaults location={}'.format(location))
+
+        ca_name = self.create_random_name(prefix='containerapp', length=24)
+        image = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
+        redis_ca_name = 'redis'
+        postgres_ca_name = 'postgres'
+        kafka_ca_name = 'kafka'
+        mariadb_ca_name = 'mariadb'
+        qdrant_ca_name = "qdrant"
+        weaviate_ca_name = "weaviate"
+        milvus_ca_name = "milvus"
+        ADDON_LIST = ["redis", "postgres", "kafka", "mariadb", "qdrant", "weaviate", "milvus"]
+
+        env_id = prepare_containerapp_env_for_app_e2e_tests(self, location=location)
+        env_rg = parse_resource_id(env_id).get('resource_group')
+        env_name = parse_resource_id(env_id).get('name')
+
+        self.cmd('containerapp add-on redis create -g {} -n {} --environment {}'.format(
+            env_rg, redis_ca_name, env_name))
+
+        self.cmd('containerapp add-on postgres create -g {} -n {} --environment {}'.format(
+            env_rg, postgres_ca_name, env_name))
+
+        self.cmd('containerapp add-on kafka create -g {} -n {} --environment {}'.format(
+            env_rg, kafka_ca_name, env_name))
+
+        self.cmd('containerapp add-on mariadb create -g {} -n {} --environment {}'.format(
+            env_rg, mariadb_ca_name, env_name))
+
+        self.cmd('containerapp add-on qdrant create -g {} -n {} --environment {}'.format(
+            env_rg, qdrant_ca_name, env_name))
+
+        self.cmd('containerapp add-on weaviate create -g {} -n {} --environment {}'.format(
+            env_rg, weaviate_ca_name, env_name))
+
+        self.cmd('containerapp add-on milvus create -g {} -n {} --environment {}'.format(
+            env_rg, milvus_ca_name, env_name))
+
+        for addon in ADDON_LIST:
+            self.cmd(f'containerapp show -g {env_rg} -n {addon}', checks=[
+                JMESPathCheck("properties.provisioningState", "Succeeded")])
+
+        self.cmd('containerapp create -g {} -n {} --environment {} --image {} --bind postgres:postgres_binding redis'.format(
+            env_rg, ca_name, env_name, image), checks=[
+            JMESPathCheck('properties.template.serviceBinds[0].name', "postgres_binding"),
+            JMESPathCheck('properties.template.serviceBinds[1].name', "redis")
+        ])
+
+        self.cmd('containerapp update -g {} -n {} --unbind postgres_binding'.format(
+            env_rg, ca_name, image), checks=[
+            JMESPathCheck('properties.template.serviceBinds[0].name', "redis"),
+        ])
+
+        self.cmd('containerapp update -g {} -n {} --bind postgres:postgres_binding kafka mariadb qdrant weaviate milvus'.format(
+            env_rg, ca_name, image), checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck('properties.template.serviceBinds[0].name', "redis"),
+            JMESPathCheck('properties.template.serviceBinds[1].name', "postgres_binding"),
+            JMESPathCheck('properties.template.serviceBinds[2].name', "kafka"),
+            JMESPathCheck('properties.template.serviceBinds[3].name', "mariadb"),
+            JMESPathCheck('properties.template.serviceBinds[4].name', "qdrant"),
+            JMESPathCheck('properties.template.serviceBinds[5].name', "weaviate"),
+            JMESPathCheck('properties.template.serviceBinds[6].name', "milvus")
+        ])
+
+        self.cmd('containerapp add-on postgres delete -g {} -n {} --yes'.format(
+            env_rg, postgres_ca_name, env_name))
+
+        self.cmd('containerapp add-on redis delete -g {} -n {} --yes'.format(
+            env_rg, redis_ca_name, env_name))
+
+        self.cmd('containerapp add-on kafka delete -g {} -n {} --yes'.format(
+            env_rg, kafka_ca_name, env_name))
+
+        self.cmd('containerapp add-on mariadb delete -g {} -n {} --yes'.format(
+            env_rg, mariadb_ca_name, env_name))
+
+        self.cmd('containerapp add-on qdrant delete -g {} -n {} --yes'.format(
+            env_rg, qdrant_ca_name, env_name))
+
+        self.cmd('containerapp add-on weaviate delete -g {} -n {} --yes'.format(
+            env_rg, weaviate_ca_name, env_name))
+
+        self.cmd('containerapp add-on milvus delete -g {} -n {} --yes'.format(
+            env_rg, milvus_ca_name, env_name))
+
+        self.cmd(f'containerapp delete -g {env_rg} -n {ca_name} --yes')
+
+        self.cmd('containerapp add-on list -g {} --environment {}'.format(env_rg, env_name), checks=[
+            JMESPathCheck('length(@)', 0),
+        ])
+
+    @AllowLargeResponse(8192)
+    @ResourceGroupPreparer(location="eastus2")
+    @live_only()
     def test_containerapp_managed_service_binding_e2e(self, resource_group):
         # `mysql flexible-server create`: type 'locations/checkNameAvailability' is not available in North Central US (Stage), if the TEST_LOCATION is "northcentralusstage", use eastus as location
         location = TEST_LOCATION
         if format_location(location) == format_location(STAGE_LOCATION):
-            location = "eastus"
+            location = "eastus2"
         self.cmd('configure --defaults location={}'.format(location))
 
         env_name = self.create_random_name(prefix='containerapp-env', length=24)
         ca_name = self.create_random_name(prefix='containerapp', length=24)
         mysqlserver = "mysqlflexsb"
         postgresqlserver = "postgresqlflexsb"
-
-        mysqlflex_json= self.cmd('mysql flexible-server create --resource-group {} --name {} --public-access {} -y'.format(resource_group, mysqlserver, "None")).output
-        postgresqlflex_json= self.cmd('postgres flexible-server create --resource-group {} --name {} --public-access {} -y'.format(resource_group, postgresqlserver, "None")).output
-        mysqlflex_dict = json.loads(mysqlflex_json)
+        postgresqldb = 'flexibleserverdb'
+        mysqlflex_dict = {
+            "username": "username",
+            "password": "password",
+            "databaseName": "databaseName"
+        }
+        postgresqlflex_dict = {
+            "username": "username",
+            "password": "password"
+        }
+        # In this case, we need to create mysql and postgres.
+        # Their api-version is updated very frequently and we don't want this recording file fail due to the api-version update
+        try:
+            mysqlflex_json = self.cmd('mysql flexible-server create --resource-group {} --name {} --public-access {} -y'.format(resource_group, mysqlserver, "None"), expect_failure=False).output
+            postgresqlflex_json = self.cmd('postgres flexible-server create --resource-group {} --name {} --public-access {} -d {} -y'.format(resource_group, postgresqlserver, "None", postgresqldb), expect_failure=False).output
+            mysqlflex_dict = json.loads(mysqlflex_json)
+            postgresqlflex_dict = json.loads(postgresqlflex_json)
+        except AssertionError as e:
+            if str(e).__contains__("Can't overwrite existing cassette"):
+                pass
+            else:
+                raise e
 
         mysqlusername = mysqlflex_dict['username']
         mysqlpassword = mysqlflex_dict['password']
 
         mysqldb = mysqlflex_dict['databaseName']
-        flex_binding="mysqlflex_binding"
-        postgresqlflex_dict = json.loads(postgresqlflex_json)
+        flex_binding ="mysqlflex_binding"
         postgresqlusername = postgresqlflex_dict['username']
         postgresqlpassword = postgresqlflex_dict['password']
-        postgresqldb = postgresqlflex_dict['databaseName']
-        create_containerapp_env(self, env_name, resource_group)
+        create_containerapp_env(self, env_name, resource_group, location=location)
 
         self.cmd('containerapp create -g {} -n {} --environment {} --bind {}:{},database={},username={},password={}'.format(
             resource_group, ca_name, env_name, mysqlserver, flex_binding, mysqldb , mysqlusername, mysqlpassword))
@@ -1275,22 +1460,22 @@ class ContainerappRevisionTests(ScenarioTest):
     @AllowLargeResponse(8192)
     @ResourceGroupPreparer(location="northeurope")
     def test_containerapp_revision_label_e2e(self, resource_group):
-        self.cmd('configure --defaults location={}'.format(TEST_LOCATION))
+        self.cmd(f"configure --defaults location={TEST_LOCATION}")
 
         ca_name = self.create_random_name(prefix='containerapp', length=24)
 
         env = prepare_containerapp_env_for_app_e2e_tests(self)
 
-        self.cmd('containerapp create -g {} -n {} --environment {} --image mcr.microsoft.com/k8se/quickstart:latest --ingress external --target-port 80'.format(resource_group, ca_name, env))
+        self.cmd(f"containerapp create -g {resource_group} -n {ca_name} --environment {env} --image mcr.microsoft.com/k8se/quickstart:latest --ingress external --target-port 80")
 
-        self.cmd('containerapp ingress show -g {} -n {}'.format(resource_group, ca_name), checks=[
+        self.cmd(f"containerapp ingress show -g {resource_group} -n {ca_name}", checks=[
             JMESPathCheck('external', True),
             JMESPathCheck('targetPort', 80),
         ])
 
-        self.cmd('containerapp create -g {} -n {} --environment {} --ingress external --target-port 80 --image nginx'.format(resource_group, ca_name, env))
+        self.cmd(f"containerapp create -g {resource_group} -n {ca_name} --environment {env} --ingress external --target-port 80 --image nginx")
 
-        self.cmd('containerapp revision set-mode -g {} -n {} --mode multiple'.format(resource_group, ca_name, env))
+        self.cmd(f"containerapp revision set-mode -g {resource_group} -n {ca_name} --mode multiple")
 
         revision_names = self.cmd(f"containerapp revision list -g {resource_group} -n {ca_name} --all --query '[].name'").get_output_in_json()
 
@@ -1336,6 +1521,137 @@ class ContainerappRevisionTests(ScenarioTest):
 
         self.assertEqual(len([w for w in traffic_weight if "label" in w]), 0)
 
+    @AllowLargeResponse(8192)
+    @ResourceGroupPreparer(location="northeurope")
+    @live_only()
+    def test_containerapp_revision_labels_mode_e2e(self, resource_group):
+        self.cmd(f"configure --defaults location={TEST_LOCATION}")
+
+        ca_name = self.create_random_name(prefix='containerapp', length=24)
+
+        env = prepare_containerapp_env_for_app_e2e_tests(self)
+
+        self.cmd(f"containerapp create -g {resource_group} -n {ca_name} --environment {env} --image mcr.microsoft.com/k8se/quickstart:latest --ingress external --target-port 80")
+
+        self.cmd(f"containerapp ingress show -g {resource_group} -n {ca_name}", checks=[
+            JMESPathCheck('external', True),
+            JMESPathCheck('targetPort', 80),
+        ])
+
+        label0 = 'label0'
+        self.cmd(f"containerapp revision set-mode -g {resource_group} -n {ca_name} --mode labels --target-label {label0}")
+
+        label1 = 'label1'
+        self.cmd(f"containerapp update -g {resource_group} -n {ca_name} --image mcr.microsoft.com/azuredocs/containerapps-helloworld:latest --target-label {label1}")
+        time.sleep(20)
+        # --all show revisions include inactive
+        revision_names = self.cmd(f"containerapp revision list -g {resource_group} -n {ca_name} --all --query '[].name'").get_output_in_json()
+        self.assertEqual(len(revision_names), 3)
+        revision_names = self.cmd(
+            f"containerapp revision list -g {resource_group} -n {ca_name} --query '[].name'").get_output_in_json()
+        self.assertEqual(len(revision_names), 2)
+        # Traffic may not be updated immidately
+        traffic_weight = self.cmd(f"containerapp ingress traffic show -g {resource_group} -n {ca_name}").get_output_in_json()
+        for retry in range(100):
+            if len(traffic_weight) >= 2:
+                break
+            time.sleep(5)
+            traffic_weight = self.cmd(f"containerapp ingress traffic show -g {resource_group} -n {ca_name}").get_output_in_json()
+        self.assertEqual(len(traffic_weight), 2)
+        # self.assertEqual(traffic_weight[0]["label"], label0)
+        # self.assertEqual(traffic_weight[0]["revisionName"], revision_names[0])
+        # self.assertEqual(traffic_weight[0]["weight"], 100)
+        # self.assertEqual(traffic_weight[1]["label"], label1)
+        # self.assertEqual(traffic_weight[1]["revisionName"], revision_names[1])
+        # self.assertEqual(traffic_weight[1]["weight"], 0)
+
+        self.cmd(f"containerapp ingress traffic set -g {resource_group} -n {ca_name} --label-weight {label0}=75 {label1}=25")
+
+        traffic_weight = self.cmd(f"containerapp ingress traffic show -g {resource_group} -n {ca_name}").get_output_in_json()
+        self.assertEqual(traffic_weight[0]["label"], label0)
+        self.assertEqual(traffic_weight[0]["revisionName"], revision_names[0])
+        self.assertEqual(traffic_weight[0]["weight"], 75)
+        self.assertEqual(traffic_weight[1]["label"], label1)
+        self.assertEqual(traffic_weight[1]["revisionName"], revision_names[1])
+        self.assertEqual(traffic_weight[1]["weight"], 25)
+        self.assertEqual(len(traffic_weight), 2)
+
+        traffic_weight = self.cmd(f"containerapp revision label swap -g {resource_group} -n {ca_name} --source {label0} --target {label1}").get_output_in_json()
+        self.assertEqual(traffic_weight[0]["label"], label1)
+        self.assertEqual(traffic_weight[0]["revisionName"], revision_names[0])
+        self.assertEqual(traffic_weight[0]["weight"], 75)
+        self.assertEqual(traffic_weight[1]["label"], label0)
+        self.assertEqual(traffic_weight[1]["revisionName"], revision_names[1])
+        self.assertEqual(traffic_weight[1]["weight"], 25)
+        self.assertEqual(len(traffic_weight), 2)
+
+        # make both labels point at the same revision
+        self.cmd(f"containerapp revision label add -g {resource_group} -n {ca_name} --label {label0} --revision {revision_names[0]} --yes")
+
+        traffic_weight = self.cmd(f"containerapp ingress traffic show -g {resource_group} -n {ca_name}").get_output_in_json()
+        self.assertEqual(traffic_weight[0]["label"], label1)
+        self.assertEqual(traffic_weight[0]["revisionName"], revision_names[0])
+        self.assertEqual(traffic_weight[0]["weight"], 75)
+        self.assertEqual(traffic_weight[1]["label"], label0)
+        self.assertEqual(traffic_weight[1]["revisionName"], revision_names[0])
+        self.assertEqual(traffic_weight[1]["weight"], 25)
+        self.assertEqual(len(traffic_weight), 2)
+
+        # Make them different again. There's a bug in `containerapp ingress traffic set` that can't handle updating weights in multiple sections with the same revision
+        traffic_weight = self.cmd(f"containerapp revision label add -g {resource_group} -n {ca_name} --label {label1} --revision {revision_names[1]} --yes").get_output_in_json()
+        self.assertEqual(traffic_weight[0]["label"], label1)
+        self.assertEqual(traffic_weight[0]["revisionName"], revision_names[1])
+        self.assertEqual(traffic_weight[0]["weight"], 75)
+        self.assertEqual(traffic_weight[1]["label"], label0)
+        self.assertEqual(traffic_weight[1]["revisionName"], revision_names[0])
+        self.assertEqual(traffic_weight[1]["weight"], 25)
+        self.assertEqual(len(traffic_weight), 2)
+
+        self.cmd(f"containerapp ingress traffic set -g {resource_group} -n {ca_name} --label-weight {label0}=100 {label1}=0")
+        traffic_weight = self.cmd(f"containerapp ingress traffic show -g {resource_group} -n {ca_name}").get_output_in_json()
+        self.assertEqual(traffic_weight[0]["label"], label1)
+        self.assertEqual(traffic_weight[0]["revisionName"], revision_names[1])
+        self.assertEqual(traffic_weight[0]["weight"], 0)
+        self.assertEqual(traffic_weight[1]["label"], label0)
+        self.assertEqual(traffic_weight[1]["revisionName"], revision_names[0])
+        self.assertEqual(traffic_weight[1]["weight"], 100)
+        self.assertEqual(len(traffic_weight), 2)
+
+        traffic_weight = self.cmd(f"containerapp revision label remove -g {resource_group} -n {ca_name} --label {label1}").get_output_in_json()
+
+        self.assertEqual(traffic_weight[0]["label"], label0)
+        self.assertEqual(traffic_weight[0]["revisionName"], revision_names[0])
+        self.assertEqual(traffic_weight[0]["weight"], 100)
+        self.assertEqual(len(traffic_weight), 1)
+
+
+    @AllowLargeResponse(8192)
+    @ResourceGroupPreparer(location="northeurope")
+    def test_containerapp_update_mode_e2e(self, resource_group):
+        self.cmd(f"configure --defaults location={TEST_LOCATION}")
+
+        ca_name = self.create_random_name(prefix='containerapp', length=24)
+
+        env = prepare_containerapp_env_for_app_e2e_tests(self)
+
+        self.cmd(f"containerapp create -g {resource_group} -n {ca_name} --environment {env} --image mcr.microsoft.com/k8se/quickstart:latest --ingress external --target-port 80",
+                 checks=[
+                    JMESPathCheck('properties.configuration.activeRevisionsMode', "Single"),                     
+                 ])
+
+        try:
+            # Switch to Labels mode
+            self.cmd(f"containerapp update -g {resource_group} -n {ca_name} --revisions-mode labels --target-label label0")
+            self.fail("Expected an error when trying to update to labels mode with `containerapp update` command.")
+        except Exception as e:
+            self.assertIn("is not in labels mode", str(e))
+
+        try:
+            # Switch to Labels mode
+            self.cmd(f"containerapp up -g {resource_group} -n {ca_name} --revisions-mode labels --target-label label0 --image mcr.microsoft.com/k8se/quickstart:latest")
+            self.fail("Expected an error when trying to update to labels mode with `containerapp up` command.")
+        except Exception as e:
+            self.assertIn("is not in labels mode", str(e))
 
 class ContainerappAnonymousRegistryTests(ScenarioTest):
     def __init__(self, *arg, **kwargs):
@@ -1362,7 +1678,6 @@ class ContainerappRegistryIdentityTests(ScenarioTest):
 
     @AllowLargeResponse(8192)
     @ResourceGroupPreparer(location="westeurope")
-    @live_only()  # encounters 'CannotOverwriteExistingCassetteException' only when run from recording (passes when run live)
     def test_containerapp_registry_identity_user(self, resource_group):
         # MSI is not available in North Central US (Stage), if the TEST_LOCATION is "northcentralusstage", use eastus as location
         location = TEST_LOCATION
@@ -1382,23 +1697,94 @@ class ContainerappRegistryIdentityTests(ScenarioTest):
 
         self.cmd(f'acr create --sku basic -n {acr} -g {resource_group} --admin-enabled')
         self.cmd(f'acr import -n {acr} --source {image_source}')
+        with mock.patch('azure.cli.command_modules.role.custom._gen_guid', side_effect=self.create_guid):
+            self.cmd(f'containerapp create -g {resource_group} -n {app} --registry-identity {identity_rid} --image {image_name} --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io')
 
-        self.cmd(f'containerapp create -g {resource_group} -n {app} --registry-identity {identity_rid} --image {image_name} --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io')
-
-        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[JMESPathCheck("properties.provisioningState", "Succeeded")])
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("properties.configuration.registries[0].identity", identity_rid),
+            JMESPathCheck("properties.configuration.registries[0].server", f'{acr}.azurecr.io'),
+            JMESPathCheck("properties.configuration.registries[0].username", ""),
+            JMESPathCheck("properties.configuration.registries[0].passwordSecretRef", ""),
+            JMESPathCheck("properties.template.containers[0].image", image_name),
+        ])
 
         app2 = self.create_random_name(prefix='aca', length=24)
-        self.cmd(f'containerapp create -g {resource_group} -n {app2} --registry-identity {identity_rid} --image {image_name} --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io --revision-suffix test1')
+        with mock.patch('azure.cli.command_modules.role.custom._gen_guid', side_effect=self.create_guid):
+            self.cmd(f'containerapp create -g {resource_group} -n {app2} --registry-identity {identity_rid} --image {image_name} --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io --revision-suffix test1')
 
         self.cmd(f'containerapp show -g {resource_group} -n {app2}', checks=[
             JMESPathCheck("properties.provisioningState", "Succeeded"),
             JMESPathCheck("properties.template.revisionSuffix", "test1"),
+            JMESPathCheck("properties.configuration.registries[0].identity", identity_rid),
             JMESPathCheck("properties.template.containers[0].image", image_name),
         ])
 
+    @live_only()  # Pass lively, But failed in playback mode when execute queue_acr_build
     @AllowLargeResponse(8192)
     @ResourceGroupPreparer(location="westeurope")
-    @live_only()  # encounters 'CannotOverwriteExistingCassetteException' only when run from recording (passes when run live)
+    def test_containerapp_create_source_registry_identity_user(self, resource_group):
+        # MSI is not available in North Central US (Stage), if the TEST_LOCATION is "northcentralusstage", use eastus as location
+        location = TEST_LOCATION
+        if format_location(location) == format_location(STAGE_LOCATION):
+            location = "eastus"
+        self.cmd('configure --defaults location={}'.format(location))
+        source_path = os.path.join(TEST_DIR, os.path.join("data", "source_built_using_dockerfile"))
+
+        app = self.create_random_name(prefix='aca', length=24)
+        identity = self.create_random_name(prefix='id', length=24)
+        acr = self.create_random_name(prefix='acr', length=24)
+
+        env = prepare_containerapp_env_for_app_e2e_tests(self, location=location)
+
+        identity_rid = self.cmd(f'identity create -g {resource_group} -n {identity}').get_output_in_json()["id"]
+
+        self.cmd(f'acr create --sku basic -n {acr} -g {resource_group} --admin-enabled')
+        with mock.patch('azure.cli.command_modules.role.custom._gen_guid', side_effect=self.create_guid):
+            self.cmd(
+                f'containerapp create -g {resource_group} -n {app} --registry-identity {identity_rid} --source "{source_path}" --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io')
+
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("properties.configuration.registries[0].identity", identity_rid),
+            JMESPathCheck("properties.configuration.registries[0].server", f'{acr}.azurecr.io'),
+            JMESPathCheck("properties.configuration.registries[0].username", ""),
+            JMESPathCheck("properties.configuration.registries[0].passwordSecretRef", ""),
+        ])
+
+        app2 = self.create_random_name(prefix='aca', length=24)
+        with mock.patch('azure.cli.command_modules.role.custom._gen_guid', side_effect=self.create_guid):
+            self.cmd(
+                f'containerapp create -g {resource_group} -n {app2} --registry-identity {identity_rid} --source "{source_path}" --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io --revision-suffix test1')
+
+        app_json = self.cmd(f'containerapp show -g {resource_group} -n {app2}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("properties.template.revisionSuffix", "test1"),
+            JMESPathCheck("properties.configuration.registries[0].identity", identity_rid),
+            JMESPathCheck("properties.configuration.registries[0].server", f'{acr}.azurecr.io'),
+            JMESPathCheck("properties.configuration.registries[0].username", ""),
+            JMESPathCheck("properties.configuration.registries[0].passwordSecretRef", ""),
+        ]).get_output_in_json()
+        image_name1 = app_json["properties"]["template"]["containers"][0]["image"]
+        self.assertTrue(image_name1.startswith(f'{acr}.azurecr.io'))
+
+        with mock.patch('azure.cli.command_modules.role.custom._gen_guid', side_effect=self.create_guid):
+            self.cmd(
+                f'containerapp update -g {resource_group} -n {app2} --source "{source_path}"')
+
+        app_json = self.cmd(f'containerapp show -g {resource_group} -n {app2}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("properties.configuration.registries[0].identity", identity_rid),
+            JMESPathCheck("properties.configuration.registries[0].server", f'{acr}.azurecr.io'),
+            JMESPathCheck("properties.configuration.registries[0].username", ""),
+            JMESPathCheck("properties.configuration.registries[0].passwordSecretRef", ""),
+        ]).get_output_in_json()
+        image_name2 = app_json["properties"]["template"]["containers"][0]["image"]
+        self.assertTrue(image_name2.startswith(f'{acr}.azurecr.io'))
+        self.assertNotEqual(image_name1, image_name2)
+
+    @AllowLargeResponse(8192)
+    @ResourceGroupPreparer(location="westeurope")
     def test_containerapp_registry_identity_system(self, resource_group):
         # MSI is not available in North Central US (Stage), if the TEST_LOCATION is "northcentralusstage", use eastus as location
         location = TEST_LOCATION
@@ -1415,19 +1801,78 @@ class ContainerappRegistryIdentityTests(ScenarioTest):
 
         self.cmd(f'acr create --sku basic -n {acr} -g {resource_group} --admin-enabled')
         self.cmd(f'acr import -n {acr} --source {image_source}')
+        with mock.patch('azure.cli.command_modules.role.custom._gen_guid', side_effect=self.create_guid):
+            self.cmd(f'containerapp create -g {resource_group} -n {app} --registry-identity "system" --image {image_name} --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io')
 
-        self.cmd(f'containerapp create -g {resource_group} -n {app} --registry-identity "system" --image {image_name} --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io')
-
-        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[JMESPathCheck("properties.provisioningState", "Succeeded")])
-
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("properties.template.containers[0].image", image_name),
+            JMESPathCheck("properties.configuration.registries[0].identity", 'system'),
+            JMESPathCheck("properties.configuration.registries[0].server", f'{acr}.azurecr.io'),
+            JMESPathCheck("properties.configuration.registries[0].username", ""),
+            JMESPathCheck("properties.configuration.registries[0].passwordSecretRef", ""),
+        ])
+        # Default use system-assign registry identity
         app2 = self.create_random_name(prefix='aca', length=24)
-        self.cmd(f'containerapp create -g {resource_group} -n {app2} --registry-identity "system" --image {image_name} --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io --revision-suffix test1')
+        with mock.patch('azure.cli.command_modules.role.custom._gen_guid', side_effect=self.create_guid):
+            self.cmd(f'containerapp create -g {resource_group} -n {app2} --image {image_name} --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io --revision-suffix test1 --no-wait')
 
         self.cmd(f'containerapp show -g {resource_group} -n {app2}', checks=[
             JMESPathCheck("properties.provisioningState", "Succeeded"),
             JMESPathCheck("properties.template.revisionSuffix", "test1"),
             JMESPathCheck("properties.template.containers[0].image", image_name),
+            JMESPathCheck("properties.configuration.registries[0].identity", 'system'),
+            JMESPathCheck("properties.configuration.registries[0].server", f'{acr}.azurecr.io'),
+            JMESPathCheck("properties.configuration.registries[0].username", ""),
+            JMESPathCheck("properties.configuration.registries[0].passwordSecretRef", ""),
         ])
+
+    @live_only()  # Pass lively, But failed in playback mode when execute queue_acr_build
+    @AllowLargeResponse(8192)
+    @ResourceGroupPreparer(location="westeurope")
+    def test_containerapp_create_source_registry_identity_system(self, resource_group):
+        # MSI is not available in North Central US (Stage), if the TEST_LOCATION is "northcentralusstage", use eastus as location
+        location = TEST_LOCATION
+        if format_location(location) == format_location(STAGE_LOCATION):
+            location = "eastus"
+        self.cmd('configure --defaults location={}'.format(location))
+        source_path = os.path.join(TEST_DIR, os.path.join("data", "source_built_using_dockerfile"))
+
+        app = self.create_random_name(prefix='aca', length=24)
+        acr = self.create_random_name(prefix='acr', length=24)
+
+        env = prepare_containerapp_env_for_app_e2e_tests(self, location=location)
+
+        self.cmd(f'acr create --sku basic -n {acr} -g {resource_group} --admin-enabled')
+        with mock.patch('azure.cli.command_modules.role.custom._gen_guid', side_effect=self.create_guid):
+            self.cmd(f'containerapp create -g {resource_group} -n {app} --registry-identity "system" --source "{source_path}" --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io')
+
+        app_json = self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("properties.configuration.registries[0].identity", 'system'),
+            JMESPathCheck("properties.configuration.registries[0].server", f'{acr}.azurecr.io'),
+            JMESPathCheck("properties.configuration.registries[0].username", ""),
+            JMESPathCheck("properties.configuration.registries[0].passwordSecretRef", ""),
+        ]).get_output_in_json()
+        image_name1 = app_json["properties"]["template"]["containers"][0]["image"]
+        self.assertTrue(image_name1.startswith(f'{acr}.azurecr.io'))
+
+        # Default use system-assign registry identity
+        app2 = self.create_random_name(prefix='aca', length=24)
+        with mock.patch('azure.cli.command_modules.role.custom._gen_guid', side_effect=self.create_guid):
+            self.cmd(f'containerapp create -g {resource_group} -n {app2} --source "{source_path}" --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io --revision-suffix test1 --no-wait')
+
+        app_json = self.cmd(f'containerapp show -g {resource_group} -n {app2}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("properties.template.revisionSuffix", "test1"),
+            JMESPathCheck("properties.configuration.registries[0].identity", 'system'),
+            JMESPathCheck("properties.configuration.registries[0].server", f'{acr}.azurecr.io'),
+            JMESPathCheck("properties.configuration.registries[0].username", ""),
+            JMESPathCheck("properties.configuration.registries[0].passwordSecretRef", ""),
+        ]).get_output_in_json()
+        image_name2 = app_json["properties"]["template"]["containers"][0]["image"]
+        self.assertTrue(image_name2.startswith(f'{acr}.azurecr.io'))
+        self.assertNotEqual(image_name1, image_name2)
 
     @AllowLargeResponse(8192)
     @ResourceGroupPreparer(location="westeurope")
@@ -1470,13 +1915,17 @@ class ContainerappRegistryIdentityTests(ScenarioTest):
     @AllowLargeResponse(8192)
     @ResourceGroupPreparer(location="westeurope")
     def test_containerapp_registry_acr_look_up_credentical(self, resource_group):
-        self.cmd('configure --defaults location={}'.format(TEST_LOCATION))
+        # MSI is not available in North Central US (Stage), if the TEST_LOCATION is "northcentralusstage", use eastus as location
+        location = TEST_LOCATION
+        if format_location(location) == format_location(STAGE_LOCATION):
+            location = "eastus"
+        self.cmd('configure --defaults location={}'.format(location))
         app = self.create_random_name(prefix='aca', length=24)
         acr = self.create_random_name(prefix='acr', length=24)
         image_source = "mcr.microsoft.com/k8se/quickstart:latest"
         image_name = f"{acr}.azurecr.io/k8se/quickstart:latest"
 
-        env = prepare_containerapp_env_for_app_e2e_tests(self)
+        env = prepare_containerapp_env_for_app_e2e_tests(self, location=location)
 
         acr_location = TEST_LOCATION
         if format_location(acr_location) == format_location(STAGE_LOCATION):
@@ -1484,7 +1933,20 @@ class ContainerappRegistryIdentityTests(ScenarioTest):
         self.cmd(f'acr create --sku basic -n {acr} -g {resource_group} --admin-enabled --location {acr_location}')
         self.cmd(f'acr import -n {acr} --source {image_source}')
 
-        self.cmd(f'containerapp create -g {resource_group} -n {app}  --image {image_name} --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io')
+        # `az containberapp create` only with `--registry-server {acr}.azurecr.io`, use SystemAssigned as default for image pull
+        with mock.patch('azure.cli.command_modules.role.custom._gen_guid', side_effect=self.create_guid):
+            self.cmd(f'containerapp create -g {resource_group} -n {app}  --image {image_name} --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io', checks=[
+                JMESPathCheck("identity.type", "SystemAssigned"),
+                JMESPathCheck("properties.configuration.secrets", None),
+                JMESPathCheck("length(properties.configuration.registries)", 1),
+                JMESPathCheck("properties.configuration.registries[0].identity", 'system'),
+                JMESPathCheck("properties.configuration.registries[0].server", f'{acr}.azurecr.io'),
+                JMESPathCheck("properties.configuration.registries[0].username", ""),
+                JMESPathCheck("properties.configuration.registries[0].passwordSecretRef", ""),
+            ])
+
+        # --registry-server {acr}.azurecr.io --registry-username, auto lookup credentical
+        self.cmd(f'containerapp create -g {resource_group} -n {app}  --image {image_name} --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io --registry-username a')
 
         self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
             JMESPathCheck("properties.provisioningState", "Succeeded"),
@@ -1492,6 +1954,522 @@ class ContainerappRegistryIdentityTests(ScenarioTest):
             JMESPathCheck("properties.configuration.registries[0].server", f"{acr}.azurecr.io"),
             JMESPathCheck("properties.template.containers[0].image", image_name),
             JMESPathCheck("properties.configuration.secrets[0].name", f"{acr}azurecrio-{acr}")
+        ])
+
+    @AllowLargeResponse(8192)
+    @ResourceGroupPreparer(location="westeurope")
+    def test_containerapp_identity_registry(self, resource_group):
+        # MSI is not available in North Central US (Stage), if the TEST_LOCATION is "northcentralusstage", use eastus as location
+        location = TEST_LOCATION
+        if format_location(location) == format_location(STAGE_LOCATION):
+            location = "eastus"
+        self.cmd('configure --defaults location={}'.format(location))
+
+        env_name = self.create_random_name(prefix='containerapp-e2e-env', length=24)
+        ca_name = self.create_random_name(prefix='containerapp', length=24)
+        user_identity_name = self.create_random_name(prefix='containerapp', length=24)
+        acr = self.create_random_name(prefix='acr', length=24)
+        image_source = "mcr.microsoft.com/k8se/quickstart:latest"
+        image_name = f"{acr}.azurecr.io/k8se/quickstart:latest"
+
+        # prepare env
+        user_identity_name = self.create_random_name(prefix='env-msi', length=24)
+        identity_json = self.cmd('identity create -g {} -n {}'.format(resource_group, user_identity_name)).get_output_in_json()
+        user_identity_id = identity_json["id"]
+
+        self.cmd('containerapp env create -g {} -n {} --mi-system-assigned --mi-user-assigned {} --logs-destination none'.format(resource_group, env_name, user_identity_id))
+        containerapp_env = self.cmd('containerapp env show -g {} -n {}'.format(resource_group, env_name)).get_output_in_json()
+        while containerapp_env["properties"]["provisioningState"].lower() == "waiting":
+            time.sleep(5)
+            containerapp_env = self.cmd('containerapp env show -g {} -n {}'.format(resource_group, env_name)).get_output_in_json()
+        env = containerapp_env["id"]
+
+        # prepare acr
+        acr_id = self.cmd(f'acr create --sku basic -n {acr} -g {resource_group} --location {location}').get_output_in_json()["id"]
+        # role assign
+        roleAssignmentName1 = self.create_guid()
+        roleAssignmentName2 = self.create_guid()
+        self.cmd(f'role assignment create --role acrpull --assignee {containerapp_env["identity"]["principalId"]} --scope {acr_id} --name {roleAssignmentName1}')
+        self.cmd(f'role assignment create --role acrpull --assignee {identity_json["principalId"]} --scope {acr_id} --name {roleAssignmentName2}')
+        # upload image
+        self.cmd(f'acr import -n {acr} --source {image_source}')
+
+        # wait for role assignment take effect
+        time.sleep(30)
+
+        # use env system msi to pull image
+        self.cmd(f'containerapp create -g {resource_group} -n {ca_name}  --image {image_name} --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io --registry-identity system-environment')
+        self.cmd(f'containerapp show -g {resource_group} -n {ca_name}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("identity.type", "None"),
+            JMESPathCheck("properties.configuration.registries[0].server", f"{acr}.azurecr.io"),
+            JMESPathCheck("properties.configuration.registries[0].identity", "system-environment", case_sensitive=False),
+            JMESPathCheck("properties.template.containers[0].image", image_name),
+        ])
+
+        # update use env user assigned identity
+        self.cmd(f'containerapp registry set -g {resource_group} -n {ca_name} --server {acr}.azurecr.io --identity {user_identity_id}')
+        self.cmd(f'containerapp show -g {resource_group} -n {ca_name}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("identity.type", "None"),
+            JMESPathCheck("properties.configuration.registries[0].server", f"{acr}.azurecr.io"),
+            JMESPathCheck("properties.configuration.registries[0].identity", user_identity_id, case_sensitive=False),
+            JMESPathCheck("properties.template.containers[0].image", image_name),
+        ])
+
+        # update containerapp to create new revision
+        self.cmd(f'containerapp update -g {resource_group} -n {ca_name}  --revision-suffix v2')
+        self.cmd(f'containerapp show -g {resource_group} -n {ca_name}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("identity.type", "None"),
+            JMESPathCheck("properties.configuration.registries[0].server", f"{acr}.azurecr.io"),
+            JMESPathCheck("properties.configuration.registries[0].identity", user_identity_id, case_sensitive=False),
+            JMESPathCheck("properties.template.containers[0].image", image_name),
+            JMESPathCheck("properties.template.revisionSuffix", "v2")
+        ])
+
+        # update use env system managed identity
+        self.cmd(f'containerapp registry set -g {resource_group} -n {ca_name} --server {acr}.azurecr.io --identity system-environment')
+        self.cmd(f'containerapp show -g {resource_group} -n {ca_name}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("identity.type", "None"),
+            JMESPathCheck("properties.configuration.registries[0].server", f"{acr}.azurecr.io"),
+            JMESPathCheck("properties.configuration.registries[0].identity", "system-environment"),
+            JMESPathCheck("properties.template.containers[0].image", image_name),
+        ])
+
+        # update containerapp to create new revision
+        self.cmd(f'containerapp update -g {resource_group} -n {ca_name}  --revision-suffix v3')
+        self.cmd(f'containerapp show -g {resource_group} -n {ca_name}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("identity.type", "None"),
+            JMESPathCheck("properties.configuration.registries[0].server", f"{acr}.azurecr.io"),
+            JMESPathCheck("properties.configuration.registries[0].identity", "system-environment"),
+            JMESPathCheck("properties.template.containers[0].image", image_name),
+            JMESPathCheck("properties.template.revisionSuffix", "v3")
+        ])
+
+
+class ContainerappUpRegistryIdentityTests(ScenarioTest):
+    def __init__(self, *arg, **kwargs):
+        super().__init__(*arg, random_config_dir=True, **kwargs)
+
+    @AllowLargeResponse(8192)
+    @ResourceGroupPreparer(location="westeurope")
+    def test_containerapp_up_registry_identity_user(self, resource_group):
+        # MSI is not available in North Central US (Stage), if the TEST_LOCATION is "northcentralusstage", use eastus as location
+        location = TEST_LOCATION
+        if format_location(location) == format_location(STAGE_LOCATION):
+            location = "eastus"
+        self.cmd('configure --defaults location={}'.format(location))
+
+        app = self.create_random_name(prefix='aca', length=24)
+        identity1 = self.create_random_name(prefix='id1', length=24)
+        identity2 = self.create_random_name(prefix='id2', length=24)
+        acr = self.create_random_name(prefix='acr', length=24)
+        image_source = "mcr.microsoft.com/k8se/quickstart:latest"
+        image_name = f"{acr}.azurecr.io/k8se/quickstart:latest"
+
+        env = prepare_containerapp_env_for_app_e2e_tests(self, location=location)
+
+        identity_rid_1 = self.cmd(f'identity create -g {resource_group} -n {identity1}').get_output_in_json()["id"]
+        identity_rid_2 = self.cmd(f'identity create -g {resource_group} -n {identity2}').get_output_in_json()["id"]
+
+        # create an ACR without --admin-enabled
+        self.cmd(f'acr create --sku basic -n {acr} -g {resource_group}', checks=[
+            JMESPathCheck("adminUserEnabled", False),
+            JMESPathCheck("anonymousPullEnabled", False),
+        ])
+        self.cmd(f'acr import -n {acr} --source {image_source}')
+        # create a new containerapp with `az containerapp up` only with `--registry-server {acr}.azurecr.io`
+        # Use SystemAssigned as default for image pull
+        with mock.patch('azure.cli.command_modules.role.custom._gen_guid', side_effect=self.create_guid):
+            self.cmd(
+                f'containerapp up -g {resource_group} -n {app} --image {image_name} --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io')
+
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("identity.type", "SystemAssigned"),
+            JMESPathCheck("properties.configuration.secrets", None),
+            JMESPathCheck("length(properties.configuration.registries)", 1),
+            JMESPathCheck("properties.configuration.registries[0].identity", 'system'),
+            JMESPathCheck("properties.configuration.registries[0].server", f'{acr}.azurecr.io'),
+            JMESPathCheck("properties.configuration.registries[0].username", ""),
+            JMESPathCheck("properties.configuration.registries[0].passwordSecretRef", ""),
+        ])
+        # update the registry to a user-identity
+        with mock.patch('azure.cli.command_modules.role.custom._gen_guid', side_effect=self.create_guid):
+            self.cmd(
+                f'containerapp up -g {resource_group} -n {app} --registry-identity {identity_rid_1} --image {image_name} --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io')
+
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("identity.type", "SystemAssigned, UserAssigned"),
+            JMESPathCheckExists(f'identity.userAssignedIdentities."{identity_rid_1}"'),
+            JMESPathCheck("length(properties.configuration.registries)", 1),
+            JMESPathCheck("properties.configuration.registries[0].identity", identity_rid_1),
+            JMESPathCheck("properties.configuration.registries[0].server", f'{acr}.azurecr.io'),
+            JMESPathCheck("properties.configuration.registries[0].username", ""),
+            JMESPathCheck("properties.configuration.registries[0].passwordSecretRef", ""),
+        ])
+
+        # update the containerapp with --system-assigned
+        self.cmd(
+            f'containerapp up -g {resource_group} -n {app} --registry-identity {identity_rid_1} --image {image_name} --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io --system-assigned')
+
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("identity.type", "SystemAssigned, UserAssigned"),
+            JMESPathCheckExists(f'identity.userAssignedIdentities."{identity_rid_1}"'),
+            JMESPathCheck("length(properties.configuration.registries)", 1),
+            JMESPathCheck("properties.configuration.registries[0].identity", identity_rid_1),
+            JMESPathCheck("properties.configuration.registries[0].server", f'{acr}.azurecr.io'),
+            JMESPathCheck("properties.configuration.registries[0].username", ""),
+            JMESPathCheck("properties.configuration.registries[0].passwordSecretRef", ""),
+        ])
+
+        # update the containerapp with --system-assigned --user-assigned
+        self.cmd(
+            f'containerapp up -g {resource_group} -n {app} --user-assigned {identity_rid_1} --system-assigned --image {image_name} --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io')
+
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("identity.type", "SystemAssigned, UserAssigned"),
+            JMESPathCheckExists(f'identity.userAssignedIdentities."{identity_rid_1}"'),
+            JMESPathCheck("length(properties.configuration.registries)", 1),
+            JMESPathCheck("properties.configuration.registries[0].identity", identity_rid_1),
+            JMESPathCheck("properties.configuration.registries[0].server", f'{acr}.azurecr.io'),
+            JMESPathCheck("properties.configuration.registries[0].username", ""),
+            JMESPathCheck("properties.configuration.registries[0].passwordSecretRef", ""),
+        ])
+
+        self.cmd(f'containerapp identity remove --system-assigned -g {resource_group} -n {app}', checks=[
+            JMESPathCheck("type", "UserAssigned"),
+        ])
+
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("identity.type", "UserAssigned"),
+            JMESPathCheckExists(f'identity.userAssignedIdentities."{identity_rid_1}"'),
+            JMESPathCheck("length(properties.configuration.registries)", 1),
+            JMESPathCheck("properties.configuration.registries[0].identity", identity_rid_1),
+            JMESPathCheck("properties.configuration.registries[0].server", f'{acr}.azurecr.io'),
+            JMESPathCheck("properties.configuration.registries[0].username", ""),
+            JMESPathCheck("properties.configuration.registries[0].passwordSecretRef", ""),
+        ])
+
+        # update the containerapp with --system-assigned --user-assigned
+        self.cmd(
+            f'containerapp up -g {resource_group} -n {app} --user-assigned {identity_rid_1} {identity_rid_2} --system-assigned --image {image_name} --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io')
+
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("identity.type", "SystemAssigned, UserAssigned"),
+            JMESPathCheckExists(f'identity.userAssignedIdentities."{identity_rid_1}"'),
+            JMESPathCheckExists(f'identity.userAssignedIdentities."{identity_rid_2}"'),
+            JMESPathCheck("length(properties.configuration.registries)", 1),
+            JMESPathCheck("properties.configuration.registries[0].identity", identity_rid_1),
+            JMESPathCheck("properties.configuration.registries[0].server", f'{acr}.azurecr.io'),
+            JMESPathCheck("properties.configuration.registries[0].username", ""),
+            JMESPathCheck("properties.configuration.registries[0].passwordSecretRef", ""),
+        ])
+
+    @AllowLargeResponse(8192)
+    @ResourceGroupPreparer(location="westeurope")
+    def test_containerapp_up_registry_identity_system(self, resource_group):
+        # MSI is not available in North Central US (Stage), if the TEST_LOCATION is "northcentralusstage", use eastus as location
+        location = TEST_LOCATION
+        if format_location(location) == format_location(STAGE_LOCATION):
+            location = "eastus"
+        self.cmd('configure --defaults location={}'.format(location))
+
+        app = self.create_random_name(prefix='aca', length=24)
+        acr = self.create_random_name(prefix='acr', length=24)
+        image_source = "mcr.microsoft.com/k8se/quickstart:latest"
+        image_name = f"{acr}.azurecr.io/k8se/quickstart:latest"
+
+        env = prepare_containerapp_env_for_app_e2e_tests(self, location=location)
+
+        self.cmd(f'acr create --sku basic -n {acr} -g {resource_group} --admin-enabled')
+        self.cmd(f'acr import -n {acr} --source {image_source}')
+        with mock.patch('azure.cli.command_modules.role.custom._gen_guid', side_effect=self.create_guid):
+            self.cmd(f'containerapp up -g {resource_group} -n {app} --registry-identity "system" --image {image_name} --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io')
+
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("identity.type", "SystemAssigned"),
+            JMESPathCheck("properties.configuration.secrets", None),
+            JMESPathCheck("length(properties.configuration.registries)", 1),
+            JMESPathCheck("properties.configuration.registries[0].identity", 'system'),
+            JMESPathCheck("properties.configuration.registries[0].server", f'{acr}.azurecr.io'),
+            JMESPathCheck("properties.configuration.registries[0].username", ""),
+            JMESPathCheck("properties.configuration.registries[0].passwordSecretRef", "")
+        ])
+
+        with mock.patch('azure.cli.command_modules.role.custom._gen_guid', side_effect=self.create_guid):
+            self.cmd(
+                f'containerapp up -g {resource_group} -n {app} --registry-identity "system" --image {image_name} --ingress internal --target-port 80 --environment {env} --registry-server {acr}.azurecr.io')
+
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("identity.type", "SystemAssigned"),
+            JMESPathCheck("properties.configuration.secrets", None),
+            JMESPathCheck("length(properties.configuration.registries)", 1),
+            JMESPathCheck("properties.configuration.registries[0].identity", 'system'),
+            JMESPathCheck("properties.configuration.registries[0].server", f'{acr}.azurecr.io'),
+            JMESPathCheck("properties.configuration.registries[0].username", ""),
+            JMESPathCheck("properties.configuration.registries[0].passwordSecretRef", "")
+        ])
+
+    @AllowLargeResponse(8192)
+    @ResourceGroupPreparer(location="westeurope")
+    def test_containerapp_up_private_registry_port(self, resource_group):
+        # MSI is not available in North Central US (Stage), if the TEST_LOCATION is "northcentralusstage", use eastus as location
+        location = TEST_LOCATION
+        if format_location(location) == format_location(STAGE_LOCATION):
+            location = "eastus"
+        self.cmd('configure --defaults location={}'.format(location))
+
+        app = self.create_random_name(prefix='aca', length=24)
+        acr = self.create_random_name(prefix='acr', length=24)
+        image_source = "mcr.microsoft.com/k8se/quickstart:latest"
+        image_name = f"{acr}.azurecr.io:443/k8se/quickstart:latest"
+
+        env = prepare_containerapp_env_for_app_e2e_tests(self, location=location)
+        acr_location = TEST_LOCATION
+        if format_location(acr_location) == format_location(STAGE_LOCATION):
+            acr_location = "eastus"
+        self.cmd(f'acr create --sku basic -n {acr} -g {resource_group} --admin-enabled -l {acr_location}')
+        self.cmd(f'acr import -n {acr} --source {image_source}')
+        password = self.cmd(f'acr credential show -n {acr} --query passwords[0].value').get_output_in_json()
+
+        self.cmd(
+            f'containerapp up -g {resource_group} -n {app}  --image {image_name} --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io:443 --registry-username {acr} --registry-password {password}')
+
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("properties.configuration.registries[0].server", f"{acr}.azurecr.io:443"),
+            JMESPathCheck("properties.configuration.registries[0].identity", ""),
+            JMESPathCheck("properties.configuration.registries[0].username", acr),
+            JMESPathCheck("properties.configuration.registries[0].passwordSecretRef", f"{acr}azurecrio-443-{acr}"),
+            JMESPathCheck("properties.template.containers[0].image", image_name),
+            JMESPathCheck("properties.configuration.secrets[0].name", f"{acr}azurecrio-443-{acr}"),
+        ])
+
+        app2 = self.create_random_name(prefix='aca', length=24)
+        image_name = f"{acr}.azurecr.io/k8se/quickstart:latest"
+        self.cmd(
+            f'containerapp up -g {resource_group} -n {app2}  --image {image_name} --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io --registry-username {acr} --registry-password {password}')
+
+        self.cmd(f'containerapp show -g {resource_group} -n {app2}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("identity.type", "None"),
+            JMESPathCheck("properties.configuration.registries[0].server", f"{acr}.azurecr.io"),
+            JMESPathCheck("properties.configuration.registries[0].identity", ""),
+            JMESPathCheck("properties.configuration.registries[0].username", acr),
+            JMESPathCheck("properties.template.containers[0].image", image_name),
+            JMESPathCheck("properties.configuration.secrets[0].name", f"{acr}azurecrio-{acr}")
+        ])
+
+        # update from username/password to system
+        with mock.patch('azure.cli.command_modules.role.custom._gen_guid', side_effect=self.create_guid):
+            self.cmd(
+                f'containerapp up -g {resource_group} -n {app2}  --image {image_name} --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io --registry-identity system',
+                expect_failure=False)
+
+        self.cmd(f'containerapp show -g {resource_group} -n {app2}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("identity.type", "SystemAssigned"),
+            JMESPathCheck("properties.configuration.secrets", None),
+            JMESPathCheck("length(properties.configuration.registries)", 1),
+            JMESPathCheck("properties.configuration.registries[0].identity", 'system'),
+            JMESPathCheck("properties.configuration.registries[0].server", f"{acr}.azurecr.io"),
+            JMESPathCheck("properties.configuration.registries[0].username", ""),
+            JMESPathCheck("properties.configuration.registries[0].passwordSecretRef", ""),
+            JMESPathCheck("properties.template.containers[0].image", image_name),
+        ])
+
+    @AllowLargeResponse(8192)
+    @ResourceGroupPreparer(location="westeurope")
+    def test_containerapp_up_registry_acr_look_up_credentical(self, resource_group):
+        # MSI is not available in North Central US (Stage), if the TEST_LOCATION is "northcentralusstage", use eastus as location
+        location = TEST_LOCATION
+        if format_location(location) == format_location(STAGE_LOCATION):
+            location = "eastus"
+        self.cmd('configure --defaults location={}'.format(location))
+        app = self.create_random_name(prefix='aca', length=24)
+        acr = self.create_random_name(prefix='acr', length=24)
+        image_source = "mcr.microsoft.com/k8se/quickstart:latest"
+        image_name = f"{acr}.azurecr.io/k8se/quickstart:latest"
+
+        env = prepare_containerapp_env_for_app_e2e_tests(self, location=location)
+
+        acr_location = TEST_LOCATION
+        if format_location(acr_location) == format_location(STAGE_LOCATION):
+            acr_location = "eastus"
+        self.cmd(f'acr create --sku basic -n {acr} -g {resource_group} --admin-enabled --location {acr_location}')
+        self.cmd(f'acr import -n {acr} --source {image_source}')
+
+        # `az containberapp create` only with `--registry-server {acr}.azurecr.io`, use SystemAssigned as default for image pull
+        with mock.patch('azure.cli.command_modules.role.custom._gen_guid', side_effect=self.create_guid):
+            self.cmd(f'containerapp up -g {resource_group} -n {app}  --image {image_name} --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io', expect_failure=False)
+
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
+                JMESPathCheck("properties.provisioningState", "Succeeded"),
+                JMESPathCheck("identity.type", "SystemAssigned"),
+                JMESPathCheck("properties.configuration.secrets", None),
+                JMESPathCheck("length(properties.configuration.registries)", 1),
+                JMESPathCheck("properties.configuration.registries[0].identity", 'system'),
+                JMESPathCheck("properties.configuration.registries[0].server", f'{acr}.azurecr.io'),
+                JMESPathCheck("properties.configuration.registries[0].username", ""),
+                JMESPathCheck("properties.configuration.registries[0].passwordSecretRef", ""),
+        ])
+
+        # --registry-server {acr}.azurecr.io --registry-username, auto lookup credentical
+        self.cmd(
+            f'containerapp up -g {resource_group} -n {app}  --image {image_name} --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io --registry-username a', expect_failure=False)
+
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("identity.type", "SystemAssigned"),
+            JMESPathCheck("properties.template.containers[0].image", image_name),
+            JMESPathCheck("properties.configuration.secrets[0].name", f"{acr}azurecrio-{acr}"),
+            JMESPathCheck("properties.configuration.registries[0].server", f"{acr}.azurecr.io"),
+            JMESPathCheck("properties.configuration.registries[0].identity", ""),
+            JMESPathCheck("properties.configuration.registries[0].username", acr),
+        ])
+        # update existing app, the registry keep consistent
+        with mock.patch('azure.cli.command_modules.role.custom._gen_guid', side_effect=self.create_guid):
+            self.cmd(f'containerapp up -g {resource_group} -n {app}  --image {image_name} --environment {env} --registry-server {acr}.azurecr.io', expect_failure=False)
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("identity.type", "SystemAssigned"),
+            JMESPathCheck("properties.template.containers[0].image", image_name),
+            JMESPathCheck("properties.configuration.secrets[0].name", f"{acr}azurecrio-{acr}"),
+            JMESPathCheck("properties.configuration.registries[0].server", f"{acr}.azurecr.io"),
+            JMESPathCheck("properties.configuration.registries[0].identity", ""),
+            JMESPathCheck("properties.configuration.registries[0].username", acr)
+        ])
+        # update containerapp registry from username/password to identity
+        with mock.patch('azure.cli.command_modules.role.custom._gen_guid', side_effect=self.create_guid):
+            self.cmd(f'containerapp up -g {resource_group} -n {app}  --image {image_name} --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io --registry-identity system', expect_failure=False)
+
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("identity.type", "SystemAssigned"),
+            JMESPathCheck("properties.configuration.secrets", None),
+            JMESPathCheck("length(properties.configuration.registries)", 1),
+            JMESPathCheck("properties.configuration.registries[0].identity", 'system'),
+            JMESPathCheck("properties.configuration.registries[0].server", f'{acr}.azurecr.io'),
+            JMESPathCheck("properties.configuration.registries[0].username", ""),
+            JMESPathCheck("properties.configuration.registries[0].passwordSecretRef", ""),
+        ])
+
+    @AllowLargeResponse(8192)
+    @ResourceGroupPreparer(location="westeurope")
+    @SubnetPreparer(location="eastus", delegations='Microsoft.App/environments', service_endpoints="Microsoft.Storage.Global")
+    def test_containerapp_up_identity_registry(self, resource_group, subnet_id, vnet_name, subnet_name):
+        # MSI is not available in North Central US (Stage), if the TEST_LOCATION is "northcentralusstage", use eastus as location
+        location = TEST_LOCATION
+        if format_location(location) == format_location(STAGE_LOCATION):
+            location = "eastus"
+        self.cmd('configure --defaults location={}'.format(location))
+
+        env_name = self.create_random_name(prefix='containerapp-e2e-env', length=24)
+        ca_name = self.create_random_name(prefix='containerapp', length=24)
+        user_identity_name = self.create_random_name(prefix='containerapp', length=24)
+        acr = self.create_random_name(prefix='acr', length=24)
+        image_source = "mcr.microsoft.com/k8se/quickstart:latest"
+        image_name = f"{acr}.azurecr.io/k8se/quickstart:latest"
+
+        # prepare env
+        user_identity_name = self.create_random_name(prefix='env-msi', length=24)
+        identity_json = self.cmd(
+            'identity create -g {} -n {}'.format(resource_group, user_identity_name)).get_output_in_json()
+        user_identity_id = identity_json["id"]
+
+        self.cmd(
+            'containerapp env create -g {} -n {} --mi-system-assigned --mi-user-assigned {} --logs-destination none -s {}'.format(
+                resource_group, env_name, user_identity_id, subnet_id))
+        containerapp_env = self.cmd(
+            'containerapp env show -g {} -n {}'.format(resource_group, env_name)).get_output_in_json()
+        while containerapp_env["properties"]["provisioningState"].lower() == "waiting":
+            time.sleep(5)
+            containerapp_env = self.cmd(
+                'containerapp env show -g {} -n {}'.format(resource_group, env_name)).get_output_in_json()
+        env = containerapp_env["id"]
+
+        # prepare acr
+        acr_id = \
+        self.cmd(f'acr create --sku basic -n {acr} -g {resource_group} --location {location}').get_output_in_json()[
+            "id"]
+        # role assign
+        roleAssignmentName1 = self.create_guid()
+        roleAssignmentName2 = self.create_guid()
+        self.cmd(
+            f'role assignment create --role acrpull --assignee {containerapp_env["identity"]["principalId"]} --scope {acr_id} --name {roleAssignmentName1}')
+        self.cmd(
+            f'role assignment create --role acrpull --assignee {identity_json["principalId"]} --scope {acr_id} --name {roleAssignmentName2}')
+        # upload image
+        self.cmd(f'acr import -n {acr} --source {image_source}')
+
+        # wait for role assignment take effect
+        time.sleep(30)
+
+        # use env system msi to pull image
+        self.cmd(
+            f'containerapp up -g {resource_group} -n {ca_name}  --image {image_name} --ingress external --target-port 80 --environment {env} --registry-server {acr}.azurecr.io --registry-identity system-environment')
+        self.cmd(f'containerapp show -g {resource_group} -n {ca_name}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("identity.type", "None"),
+            JMESPathCheck("properties.configuration.registries[0].server", f"{acr}.azurecr.io"),
+            JMESPathCheck("properties.configuration.registries[0].identity", "system-environment",
+                          case_sensitive=False),
+            JMESPathCheck("properties.template.containers[0].image", image_name),
+        ])
+
+        # update use env user assigned identity
+        self.cmd(
+            f'containerapp registry set -g {resource_group} -n {ca_name} --server {acr}.azurecr.io --identity {user_identity_id}')
+        self.cmd(f'containerapp show -g {resource_group} -n {ca_name}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("identity.type", "None"),
+            JMESPathCheck("properties.configuration.registries[0].server", f"{acr}.azurecr.io"),
+            JMESPathCheck("properties.configuration.registries[0].identity", user_identity_id, case_sensitive=False),
+            JMESPathCheck("properties.template.containers[0].image", image_name),
+        ])
+
+        # update containerapp to create new revision
+        self.cmd(f'containerapp update -g {resource_group} -n {ca_name}  --revision-suffix v2')
+        self.cmd(f'containerapp show -g {resource_group} -n {ca_name}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("identity.type", "None"),
+            JMESPathCheck("properties.configuration.registries[0].server", f"{acr}.azurecr.io"),
+            JMESPathCheck("properties.configuration.registries[0].identity", user_identity_id, case_sensitive=False),
+            JMESPathCheck("properties.template.containers[0].image", image_name),
+            JMESPathCheck("properties.template.revisionSuffix", "v2")
+        ])
+
+        # update use env system managed identity
+        self.cmd(
+            f'containerapp registry set -g {resource_group} -n {ca_name} --server {acr}.azurecr.io --identity system-environment')
+        self.cmd(f'containerapp show -g {resource_group} -n {ca_name}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("identity.type", "None"),
+            JMESPathCheck("properties.configuration.registries[0].server", f"{acr}.azurecr.io"),
+            JMESPathCheck("properties.configuration.registries[0].identity", "system-environment"),
+            JMESPathCheck("properties.template.containers[0].image", image_name),
+        ])
+
+        # update containerapp to create new revision
+        self.cmd(f'containerapp update -g {resource_group} -n {ca_name}  --revision-suffix v3')
+        self.cmd(f'containerapp show -g {resource_group} -n {ca_name}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("identity.type", "None"),
+            JMESPathCheck("properties.configuration.registries[0].server", f"{acr}.azurecr.io"),
+            JMESPathCheck("properties.configuration.registries[0].identity", "system-environment"),
+            JMESPathCheck("properties.template.containers[0].image", image_name),
+            JMESPathCheck("properties.template.revisionSuffix", "v3")
         ])
 
 
@@ -1581,6 +2559,39 @@ class ContainerappScaleTests(ScenarioTest):
             JMESPathCheck("properties.template.scale.rules[0].custom.auth[0].secretRef", "api-key"),
             JMESPathCheck("properties.template.scale.rules[0].custom.auth[1].triggerParameter", "appKey"),
             JMESPathCheck("properties.template.scale.rules[0].custom.auth[1].secretRef", "app-key"),
+        ])
+
+    @AllowLargeResponse(8192)
+    @ResourceGroupPreparer(location="westeurope")
+    def test_containerapp_scale_type_tcp(self, resource_group):
+        self.cmd('configure --defaults location={}'.format(TEST_LOCATION))
+
+        app = self.create_random_name(prefix='aca', length=24)
+
+        env = prepare_containerapp_env_for_app_e2e_tests(self)
+
+        self.cmd(
+            f'containerapp create -g {resource_group} -n {app} --image redis --transport tcp --ingress internal --target-port 6379 --environment {env}',
+            checks=[
+                JMESPathCheck("properties.provisioningState", "Succeeded"),
+                JMESPathCheck("properties.configuration.ingress.transport", "Tcp"),
+            ])
+
+        self.cmd(
+            f'containerapp update -g {resource_group} -n {app} --scale-rule-name tcp-scale-rule --scale-rule-type tcp --scale-rule-tcp-concurrency 2 --scale-rule-auth "apiKey=api-key" "appKey=app-key"',
+            checks=[
+                JMESPathCheck("properties.provisioningState", "Succeeded"),
+                JMESPathCheck("properties.configuration.ingress.transport", "Tcp"),
+                JMESPathCheck("properties.template.scale.rules[0].name", "tcp-scale-rule"),
+                JMESPathCheck("properties.template.scale.rules[0].tcp.auth[0].triggerParameter", "apiKey"),
+                JMESPathCheck("properties.template.scale.rules[0].tcp.auth[0].secretRef", "api-key"),
+                JMESPathCheck("properties.template.scale.rules[0].tcp.auth[1].triggerParameter", "appKey"),
+                JMESPathCheck("properties.template.scale.rules[0].tcp.auth[1].secretRef", "app-key"),
+            ])
+        # the metadata is not returned in create/update command, we should use show command to check
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
+            JMESPathCheck("properties.template.scale.rules[0].name", "tcp-scale-rule"),
+            JMESPathCheck("properties.template.scale.rules[0].tcp.metadata.concurrentConnections", "2"),
         ])
 
     @AllowLargeResponse(8192)
@@ -1774,6 +2785,15 @@ properties:
                                             concurrentRequests: '50'
                                             key: value
                                         name: http-scale-rule
+                                      - name: asb-rule
+                                        custom:
+                                         type: azure-servicebus
+                                         metadata:
+                                          topicName: testtopic
+                                          subscriptionName: testsubname
+                                          namespace: test-namespace
+                                          messageCount: 5
+                                         identity: {user_identity_id}
                                 identity:
                                   type: UserAssigned
                                   userAssignedIdentities:
@@ -1803,11 +2823,20 @@ properties:
             JMESPathCheck("properties.template.containers[0].name", "nginx"),
             JMESPathCheck("properties.template.scale.minReplicas", 1),
             JMESPathCheck("properties.template.scale.maxReplicas", 3),
+            JMESPathCheck("properties.template.scale.cooldownPeriod", 300),  # default value from RP
+            JMESPathCheck("properties.template.scale.pollingInterval", 30),  # default value from RP
             JMESPathCheck("properties.template.scale.rules[0].name", "http-scale-rule"),
             JMESPathCheck("properties.template.scale.rules[0].http.metadata.concurrentRequests", "50"),
             JMESPathCheck("properties.template.scale.rules[0].http.metadata.key", "value"),
             JMESPathCheck("properties.template.scale.rules[0].http.auth[0].triggerParameter", "trigger"),
             JMESPathCheck("properties.template.scale.rules[0].http.auth[0].secretRef", "secretref"),
+            JMESPathCheck("properties.template.scale.rules[1].name", "asb-rule"),
+            JMESPathCheck("properties.template.scale.rules[1].custom.type", "azure-servicebus"),
+            JMESPathCheck("properties.template.scale.rules[1].custom.metadata.topicName", "testtopic"),
+            JMESPathCheck("properties.template.scale.rules[1].custom.metadata.subscriptionName", "testsubname"),
+            JMESPathCheck("properties.template.scale.rules[1].custom.metadata.namespace", "test-namespace"),
+            JMESPathCheck("properties.template.scale.rules[1].custom.metadata.messageCount", "5"),
+            JMESPathCheck("properties.template.scale.rules[1].custom.identity", user_identity_id),
         ])
 
         # test managedEnvironmentId
@@ -1823,6 +2852,10 @@ properties:
                                               - external: false
                                                 targetPort: 8080
                                                 exposedPort: 1234
+                                          template:
+                                            scale:
+                                              cooldownPeriod: 60
+                                              pollingInterval: 301
                                         """
 
         write_test_file(containerapp_file_name, containerapp_yaml_text)
@@ -1835,6 +2868,23 @@ properties:
             JMESPathCheck("properties.configuration.ingress.additionalPortMappings[1].external", False),
             JMESPathCheck("properties.configuration.ingress.additionalPortMappings[1].targetPort", 8080),
             JMESPathCheck("properties.configuration.ingress.additionalPortMappings[1].exposedPort", 1234),
+            JMESPathCheck("properties.configuration.ingress.ipSecurityRestrictions[0].name", "name"),
+            JMESPathCheck("properties.configuration.ingress.ipSecurityRestrictions[0].ipAddressRange",
+                          "1.1.1.1/10"),
+            JMESPathCheck("properties.configuration.ingress.ipSecurityRestrictions[0].action", "Allow"),
+            JMESPathCheck("properties.environmentId", containerapp_env["id"]),
+            JMESPathCheck("properties.template.terminationGracePeriodSeconds", 90),
+            JMESPathCheck("properties.template.containers[0].name", "nginx"),
+            JMESPathCheck("properties.template.scale.minReplicas", 1),
+            JMESPathCheck("properties.template.scale.maxReplicas", 3),
+            JMESPathCheck("properties.template.scale.cooldownPeriod", 60),
+            JMESPathCheck("properties.template.scale.pollingInterval", 301),
+            JMESPathCheck("properties.template.scale.rules[0].name", "http-scale-rule"),
+            JMESPathCheck("properties.template.scale.rules[0].http.auth[0].triggerParameter", "trigger"),
+            JMESPathCheck("properties.template.scale.rules[0].http.auth[0].secretRef", "secretref"),
+            JMESPathCheck("properties.template.scale.rules[1].name", "asb-rule"),
+            JMESPathCheck("properties.template.scale.rules[1].custom.type", "azure-servicebus"),
+            JMESPathCheck("properties.template.scale.rules[1].custom.identity", user_identity_id),
         ])
         clean_up_test_file(containerapp_file_name)
 
@@ -1870,14 +2920,13 @@ properties:
                 secrets:
                 - name: secret1
                   value: 1
-                activeRevisionsMode: Multiple
+                activeRevisionsMode: labels
+                targetLabel: label1
+                maxInactiveRevisions: 10
                 ingress:
                   external: true
                   allowInsecure: false
                   targetPort: 80
-                  traffic:
-                    - latestRevision: true
-                      weight: 100
                   transport: Auto
                   ipSecurityRestrictions:
                     - name: name
@@ -1922,10 +2971,13 @@ properties:
 
         self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
             JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("properties.configuration.activeRevisionsMode", "Labels"),
             JMESPathCheck("properties.configuration.ingress.external", True),
+            # JMESPathCheck("properties.configuration.ingress.traffic[0].label", "label1"),
             JMESPathCheck("properties.configuration.ingress.ipSecurityRestrictions[0].name", "name"),
             JMESPathCheck("properties.configuration.ingress.ipSecurityRestrictions[0].ipAddressRange", "1.1.1.1/10"),
             JMESPathCheck("properties.configuration.ingress.ipSecurityRestrictions[0].action", "Allow"),
+            JMESPathCheck("properties.configuration.maxInactiveRevisions", "10"),
             JMESPathCheck("length(properties.configuration.secrets)", 1),
             JMESPathCheck("properties.environmentId", containerapp_env["id"]),
             JMESPathCheck("properties.template.revisionSuffix", "myrevision"),
@@ -1953,14 +3005,12 @@ properties:
                         - name: secret1
                         - name: secret2
                           value: 123
-                        activeRevisionsMode: Multiple
+                        activeRevisionsMode: labels
+                        targetLabel: label1
                         ingress:
                           external: true
                           allowInsecure: false
                           targetPort: 80
-                          traffic:
-                            - latestRevision: true
-                              weight: 100
                           transport: Auto
                       template:
                         revisionSuffix: myrevision2
@@ -1987,7 +3037,9 @@ properties:
 
         self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
             JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("properties.configuration.activeRevisionsMode", "Labels"),
             JMESPathCheck("properties.configuration.ingress.external", True),
+            # JMESPathCheck("properties.configuration.ingress.traffic[0].label", "label1"),
             JMESPathCheck("properties.configuration.ingress.ipSecurityRestrictions[0].name", "name"),
             JMESPathCheck("properties.configuration.ingress.ipSecurityRestrictions[0].ipAddressRange", "1.1.1.1/10"),
             JMESPathCheck("properties.configuration.ingress.ipSecurityRestrictions[0].action", "Allow"),
@@ -2258,9 +3310,26 @@ class ContainerappOtherPropertyTests(ScenarioTest):
     def __init__(self, *arg, **kwargs):
         super().__init__(*arg, random_config_dir=True, **kwargs)
 
+    @live_only() # Pass lively, failed in playback mode because in the playback mode the cloud is AzureCloud, not AzureChinaCloud
+    @AllowLargeResponse(8192)
+    @ResourceGroupPreparer(location="chinaeast3")
+    def test_containerapp_up_mooncake(self, resource_group):
+        ca_name = self.create_random_name(prefix='containerapp', length=24)
+        image_name = "mcr.microsoft.com/k8se/quickstart:latest"
+        self.cmd('az containerapp up -n {} -g {} --image {} -l chinaeast3'.format(ca_name, resource_group, image_name))
+        self.cmd('az containerapp show -n {} -g {}'.format(ca_name, resource_group), checks=[
+            JMESPathCheck('properties.provisioningState', "Succeeded"),
+            JMESPathCheck("properties.template.containers[0].image", image_name),
+        ])
+
+        self.cmd('az containerapp env list -g {}'.format(resource_group), checks=[
+            JMESPathCheck('length(@)', 1),
+        ])
+
     @AllowLargeResponse(8192)
     @ResourceGroupPreparer(location="westus")
-    def test_containerapp_get_customdomainverificationid_e2e(self, resource_group):
+    @SubnetPreparer(location="centralus", delegations='Microsoft.App/environments', service_endpoints="Microsoft.Storage.Global")
+    def test_containerapp_get_customdomainverificationid_e2e(self, resource_group, subnet_id, vnet_name, subnet_name):
         self.cmd('configure --defaults location={}'.format(TEST_LOCATION))
 
         env_name = self.create_random_name(prefix='containerapp-env', length=24)
@@ -2300,9 +3369,9 @@ class ContainerappOtherPropertyTests(ScenarioTest):
 
         self.cmd(
             'containerapp env create -g {} -n {} --logs-workspace-id {} --logs-workspace-key {} '
-            '--dns-suffix {} --certificate-file "{}" --certificate-password {}'
+            '--dns-suffix {} --certificate-file "{}" --certificate-password {} -s {}'
             .format(resource_group, env_name, logs_workspace_id, logs_workspace_key,
-                    hostname_1, pfx_file, pfx_password))
+                    hostname_1, pfx_file, pfx_password, subnet_id))
 
         self.cmd(f'containerapp env show -n {env_name} -g {resource_group}', checks=[
             JMESPathCheck('name', env_name),
@@ -2322,3 +3391,443 @@ class ContainerappOtherPropertyTests(ScenarioTest):
         self.cmd(f'containerapp create -g {resource_group} -n {app} --image {image} --ingress external --target-port 80 --environment {env} --termination-grace-period {terminationGracePeriodSeconds}')
 
         self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[JMESPathCheck("properties.template.terminationGracePeriodSeconds", terminationGracePeriodSeconds)])
+
+    @AllowLargeResponse(8192)
+    @ResourceGroupPreparer(location="northeurope")
+    def test_containerapp_max_inactive_revisions(self, resource_group):
+        self.cmd('configure --defaults location={}'.format(TEST_LOCATION))
+
+        app = self.create_random_name(prefix='aca', length=24)
+        image = "mcr.microsoft.com/k8se/quickstart:latest"
+
+        env = prepare_containerapp_env_for_app_e2e_tests(self)
+
+        self.cmd(f'containerapp create -g {resource_group} -n {app} --image {image} --ingress external --target-port 80 --environment {env} --cpu 0.5 --memory 1Gi')
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[JMESPathCheck("properties.configuration.maxInactiveRevisions", 100)])
+
+        maxInactiveRevisions = 99
+        self.cmd(f'containerapp create -g {resource_group} -n {app} --image {image} --ingress external --target-port 80 --environment {env} --max-inactive-revisions {maxInactiveRevisions}')
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[JMESPathCheck("properties.configuration.maxInactiveRevisions", maxInactiveRevisions)])
+
+        maxInactiveRevisions = 50
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --cpu 0.5 --memory 1Gi --max-inactive-revisions {maxInactiveRevisions}')
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[JMESPathCheck("properties.configuration.maxInactiveRevisions", maxInactiveRevisions)])
+
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --cpu 0.25 --memory 0.5Gi')
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[JMESPathCheck("properties.configuration.maxInactiveRevisions", maxInactiveRevisions)])
+
+    @AllowLargeResponse(8192)
+    @ResourceGroupPreparer(location="centraluseuap")
+    def test_containerapp_kind_functionapp(self, resource_group):
+        self.cmd('configure --defaults location={}'.format(TEST_LOCATION))
+
+        app = self.create_random_name(prefix='aca', length=24)
+        image = "mcr.microsoft.com/k8se/quickstart:latest"
+
+        env = prepare_containerapp_env_for_app_e2e_tests(self)
+
+        self.cmd(f'containerapp create -g {resource_group} -n {app} --image {image} --ingress external --target-port 80 --environment {env} --cpu 0.5 --memory 1Gi', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("kind", None)
+        ])
+
+        self.cmd(f'containerapp create -g {resource_group} -n {app} --image {image} --ingress external --target-port 80 --environment {env} --kind functionapp', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("kind", "functionapp")
+        ])
+
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --cpu 0.25 --memory 0.5Gi', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("kind", "functionapp")
+        ])
+
+    @AllowLargeResponse(8192)
+    @ResourceGroupPreparer(location="eastus2")
+    @LogAnalyticsWorkspacePreparer(location="eastus", get_shared_key=True)
+    def test_containerapp_up_kind_functionapp(self, resource_group, laworkspace_customer_id, laworkspace_shared_key):
+        self.cmd('configure --defaults location={}'.format(TEST_LOCATION))
+
+        app = self.create_random_name(prefix='aca-up', length=24)
+        image = "mcr.microsoft.com/k8se/quickstart:latest"
+
+        # Pre-create environment to avoid issues with containerapp up creating it
+        env = prepare_containerapp_env_for_app_e2e_tests(self)
+
+        # Test containerapp up without kind parameter - should have no kind set
+        self.cmd(f'containerapp up -g {resource_group} -n {app} --image {image} --ingress external --target-port 80 --environment {env}')
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("kind", None)
+        ])
+
+        self.cmd(f'containerapp delete -g {resource_group} -n {app} --yes')
+
+        # Test containerapp up with kind parameter - should have kind set to functionapp
+        self.cmd(f'containerapp up -g {resource_group} -n {app} --image {image} --ingress external --target-port 80 --kind functionapp --environment {env}')
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("kind", "functionapp")
+        ])
+
+        # Test containerapp up again (update scenario) - should preserve the kind
+        self.cmd(f'containerapp up -g {resource_group} -n {app} --image {image} --ingress external --target-port 80 --environment {env}')
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
+            JMESPathCheck("properties.provisioningState", "Succeeded"),
+            JMESPathCheck("kind", "functionapp")
+        ])
+
+class ContainerappRuntimeTests(ScenarioTest):
+    def __init__(self, *arg, **kwargs):
+        super().__init__(*arg, random_config_dir=True, **kwargs)
+
+    @AllowLargeResponse(8192)
+    @ResourceGroupPreparer(location="northcentralus")
+    def test_containerapp_runtime_java_metrics_create(self, resource_group):
+        self.cmd('configure --defaults location={}'.format(TEST_LOCATION))
+
+        app = self.create_random_name(prefix='aca', length=24)
+        image = "mcr.microsoft.com/azurespringapps/samples/hello-world:0.0.1"
+
+        env = prepare_containerapp_env_for_app_e2e_tests(self)
+
+        def create_containerapp_with_runtime_java_metrics_args_and_check(args, expect_failure=False, checks=[]):
+            self.cmd(f'containerapp create -g {resource_group} -n {app} --image {image} --environment {env} {args}', expect_failure=expect_failure)
+            if not expect_failure:
+                self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=checks)
+
+                # Delete container app
+                self.cmd(f'containerapp delete  -g {resource_group} -n {app} --yes')
+
+        # Create container app without runtime settings
+        create_containerapp_with_runtime_java_metrics_args_and_check('', checks=[
+                JMESPathCheck('properties.provisioningState', "Succeeded"),
+                JMESPathCheck("properties.configuration.runtime", None)
+            ])
+
+        # Create container app with runtime=generic, it should not have runtime settings
+        create_containerapp_with_runtime_java_metrics_args_and_check('--runtime=generic', checks=[
+                JMESPathCheck('properties.provisioningState', "Succeeded"),
+                JMESPathCheck("properties.configuration.runtime", None)
+            ])
+
+        # Create container app with runtime=java, it should have default java runtime settings
+        create_containerapp_with_runtime_java_metrics_args_and_check('--runtime=java', checks=[
+                JMESPathCheck('properties.provisioningState', "Succeeded"),
+                JMESPathCheck("properties.configuration.runtime.java.enableMetrics", True)
+            ])
+
+        # Create container app with runtime=java and disable java metrics
+        create_containerapp_with_runtime_java_metrics_args_and_check('--runtime=java --enable-java-metrics=false', checks=[
+                JMESPathCheck('properties.provisioningState', "Succeeded"),
+                JMESPathCheck("properties.configuration.runtime.java.enableMetrics", False)
+            ])
+
+        # Create container app with runtime=java and enable java metrics
+        create_containerapp_with_runtime_java_metrics_args_and_check('--runtime=java --enable-java-metrics', checks=[
+                JMESPathCheck('properties.provisioningState', "Succeeded"),
+                JMESPathCheck("properties.configuration.runtime.java.enableMetrics", True)
+            ])
+
+        # Create container app with enable java metrics without setting runtime explicitly
+        create_containerapp_with_runtime_java_metrics_args_and_check('--runtime=java --enable-java-metrics', checks=[
+                JMESPathCheck('properties.provisioningState', "Succeeded"),
+                JMESPathCheck("properties.configuration.runtime.java.enableMetrics", True)
+            ])
+
+        # Unmatched runtime, runtime should be java when enable-java-metrics is set
+        create_containerapp_with_runtime_java_metrics_args_and_check('--runtime=generic --enable-java-metrics', expect_failure=True)
+
+    @AllowLargeResponse(8192)
+    @ResourceGroupPreparer(location="northcentralus")
+    def test_containerapp_runtime_java_metrics_update(self, resource_group):
+        self.cmd('configure --defaults location={}'.format(TEST_LOCATION))
+
+        app = self.create_random_name(prefix='aca', length=24)
+        image = "mcr.microsoft.com/azurespringapps/samples/hello-world:0.0.1"
+
+        env = prepare_containerapp_env_for_app_e2e_tests(self)
+
+        # Create container app without enabling java metrics
+        self.cmd(f'containerapp create -g {resource_group} -n {app} --image {image} --environment {env}')
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
+                JMESPathCheck('properties.provisioningState', "Succeeded"),
+                JMESPathCheck("properties.configuration.runtime", None)
+            ])
+
+        # Update contaier app without runtime settings, it should keep the same runtime settings
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --cpu 0.5 --memory 1Gi', checks=[
+                JMESPathCheck('properties.provisioningState', "Succeeded"),
+                JMESPathCheck("properties.configuration.runtime", None)
+            ])
+
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --enable-java-metrics', checks=[
+                JMESPathCheck('properties.provisioningState', "Succeeded"),
+                JMESPathCheck("properties.configuration.runtime.java.enableMetrics", True)
+            ])
+
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --cpu 0.25 --memory 0.5Gi', checks=[
+                JMESPathCheck('properties.provisioningState', "Succeeded"),
+                JMESPathCheck("properties.configuration.runtime.java.enableMetrics", True)
+            ])
+
+        # Update container app with runtime=generic, it should erase runtime settings
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --runtime=generic', checks=[
+                JMESPathCheck('properties.provisioningState', "Succeeded"),
+                JMESPathCheck("properties.configuration.runtime", None)
+            ])
+
+        # Update container app with runtime=java, it should setup default java runtime settings if not set before
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --runtime=java', checks=[
+                JMESPathCheck('properties.provisioningState', "Succeeded"),
+                JMESPathCheck("properties.configuration.runtime.java.enableMetrics", True)
+            ])
+
+        # Update container app with only runtime=java will keep the previous settings if set before
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --runtime=java', checks=[
+                JMESPathCheck('properties.provisioningState', "Succeeded"),
+                JMESPathCheck("properties.configuration.runtime.java.enableMetrics", True)
+            ])
+
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --runtime=java --enable-java-metrics', checks=[
+                JMESPathCheck('properties.provisioningState', "Succeeded"),
+                JMESPathCheck("properties.configuration.runtime.java.enableMetrics", True)
+            ])
+
+        # Update container app with runtime=java, it should keep the same runtime settings
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --runtime=java', checks=[
+                JMESPathCheck('properties.provisioningState', "Succeeded"),
+                JMESPathCheck("properties.configuration.runtime.java.enableMetrics", True)
+            ])
+
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --runtime=java --enable-java-metrics=false', checks=[
+                JMESPathCheck('properties.provisioningState', "Succeeded"),
+                JMESPathCheck("properties.configuration.runtime.java.enableMetrics", False)
+            ])
+
+        # Update container app with only runtime=java will keep the previous settings if set before
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --runtime=java', checks=[
+                JMESPathCheck('properties.provisioningState', "Succeeded"),
+                JMESPathCheck("properties.configuration.runtime.java.enableMetrics", False)
+            ])
+
+        # It will imply runtime=java when enable-java-metrics is set
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --enable-java-metrics', checks=[
+                JMESPathCheck('properties.provisioningState', "Succeeded"),
+                JMESPathCheck("properties.configuration.runtime.java.enableMetrics", True)
+            ])
+
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --enable-java-metrics=false', checks=[
+                JMESPathCheck('properties.provisioningState', "Succeeded"),
+                JMESPathCheck("properties.configuration.runtime.java.enableMetrics", False)
+            ])
+
+        # Update container app failed with wrong runtime
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --runtime=generic --enable-java-metrics',
+                 expect_failure=True)
+
+        # Delete container app
+        self.cmd(f'containerapp delete  -g {resource_group} -n {app} --yes')
+
+    @AllowLargeResponse(8192)
+    @ResourceGroupPreparer(location="northcentralus")
+    def test_containerapp_runtime_java_create(self, resource_group):
+        self.cmd('configure --defaults location={}'.format(TEST_LOCATION))
+
+        app = self.create_random_name(prefix='aca', length=24)
+        image = "mcr.microsoft.com/azurespringapps/samples/hello-world:0.0.1"
+
+        env = prepare_containerapp_env_for_app_e2e_tests(self)
+
+        def create_containerapp_with_runtime_java_agent_args_and_check(args, expect_failure=False, checks=[]):
+            self.cmd(f'containerapp create -g {resource_group} -n {app} --image {image} --environment {env} {args}',
+                     expect_failure=expect_failure)
+            if not expect_failure:
+                self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=checks)
+
+                # Delete container app
+                self.cmd(f'containerapp delete  -g {resource_group} -n {app} --yes')
+
+        create_containerapp_with_runtime_java_agent_args_and_check('', checks=[
+            JMESPathCheck('properties.provisioningState', "Succeeded"),
+            JMESPathCheck("properties.configuration.runtime", None)
+        ])
+
+        # Create container app with runtime=java, it should have default java runtime settings
+        create_containerapp_with_runtime_java_agent_args_and_check('--runtime=java', checks=[
+            JMESPathCheck('properties.provisioningState', "Succeeded"),
+            JMESPathCheck("properties.configuration.runtime.java.enableMetrics", True),
+        ])
+
+        # Create container app with runtime=java and enable java agent
+        create_containerapp_with_runtime_java_agent_args_and_check('--runtime=java --enable-java-agent', checks=[
+            JMESPathCheck('properties.provisioningState', "Succeeded"),
+            JMESPathCheck("properties.configuration.runtime.java.enableMetrics", True),
+            JMESPathCheck("properties.configuration.runtime.java.javaAgent.enabled", True)
+        ])
+
+        # Create container app with runtime=java and enable java metrics
+        create_containerapp_with_runtime_java_agent_args_and_check('--runtime=java --enable-java-metrics', checks=[
+            JMESPathCheck('properties.provisioningState', "Succeeded"),
+            JMESPathCheck("properties.configuration.runtime.java.enableMetrics", True),
+            JMESPathCheck("properties.configuration.runtime.java.javaAgent.enabled", True)
+        ])
+
+        # Create container app with runtime=java and disable java agent
+        create_containerapp_with_runtime_java_agent_args_and_check('--runtime=java --enable-java-agent=false',checks=[
+           JMESPathCheck('properties.provisioningState', "Succeeded"),
+            JMESPathCheck("properties.configuration.runtime.java.enableMetrics", True),
+            JMESPathCheck("properties.configuration.runtime.java.javaAgent.enabled", False)
+        ])
+
+        # Create container app with runtime=java and disable java metrics
+        create_containerapp_with_runtime_java_agent_args_and_check('--runtime=java --enable-java-metrics=false', checks=[
+            JMESPathCheck('properties.provisioningState', "Succeeded"),
+            JMESPathCheck("properties.configuration.runtime.java.enableMetrics", False),
+            JMESPathCheck("properties.configuration.runtime.java.javaAgent.enabled", False)
+        ])
+
+        # Create container app with runtime=java and enable java metrics and disable java agent
+        create_containerapp_with_runtime_java_agent_args_and_check('--runtime=java --enable-java-metrics=true --enable-java-agent=false',checks=[
+             JMESPathCheck('properties.provisioningState', "Succeeded"),
+             JMESPathCheck("properties.configuration.runtime.java.enableMetrics", True),
+             JMESPathCheck("properties.configuration.runtime.java.javaAgent.enabled", False)
+         ])
+
+        # Create container app with runtime=java and disable java metrics and enable java agent
+        create_containerapp_with_runtime_java_agent_args_and_check('--runtime=java --enable-java-metrics=false --enable-java-agent=true', checks=[
+            JMESPathCheck('properties.provisioningState', "Succeeded"),
+            JMESPathCheck("properties.configuration.runtime.java.enableMetrics", False),
+            JMESPathCheck("properties.configuration.runtime.java.javaAgent.enabled", True)
+        ])
+
+        # Create container app with runtime=java and enable java metrics and enable java agent
+        create_containerapp_with_runtime_java_agent_args_and_check('--runtime=java --enable-java-metrics=true --enable-java-agent=true', checks=[
+            JMESPathCheck('properties.provisioningState', "Succeeded"),
+            JMESPathCheck("properties.configuration.runtime.java.enableMetrics", True),
+            JMESPathCheck("properties.configuration.runtime.java.javaAgent.enabled", True)
+        ])
+
+        # Create container app with runtime=java and disable java metrics and disable java agent
+        create_containerapp_with_runtime_java_agent_args_and_check('--runtime=java --enable-java-metrics=false --enable-java-agent=false', checks=[
+            JMESPathCheck('properties.provisioningState', "Succeeded"),
+            JMESPathCheck("properties.configuration.runtime.java.enableMetrics", False),
+            JMESPathCheck("properties.configuration.runtime.java.javaAgent.enabled", False)
+        ])
+
+        # Unmatched runtime, runtime should be java when enable-java-agent is set
+        create_containerapp_with_runtime_java_agent_args_and_check('--runtime=generic --enable-java-agent',
+                                                                     expect_failure=True)
+
+        # Unmatched runtime, runtime should be java when enable-java-metrics is set
+        create_containerapp_with_runtime_java_agent_args_and_check('--runtime=generic --enable-java-metrics',
+                                                                   expect_failure=True)
+
+        # Unmatched runtime, runtime should be java when enable-java-metrics and enable-java-agent are set
+        create_containerapp_with_runtime_java_agent_args_and_check('--runtime=generic --enable-java-metrics --enable-java-agent',
+                                                                   expect_failure=True)
+
+    @AllowLargeResponse(8192)
+    @ResourceGroupPreparer(location="northcentralus")
+    def test_containerapp_runtime_java_update(self, resource_group):
+        self.cmd('configure --defaults location={}'.format(TEST_LOCATION))
+
+        app = self.create_random_name(prefix='aca', length=24)
+        image = "mcr.microsoft.com/azurespringapps/samples/hello-world:0.0.1"
+
+        env = prepare_containerapp_env_for_app_e2e_tests(self)
+
+        # Create container app without enabling java metrics
+        self.cmd(f'containerapp create -g {resource_group} -n {app} --image {image} --environment {env}')
+        self.cmd(f'containerapp show -g {resource_group} -n {app}', checks=[
+            JMESPathCheck('properties.provisioningState', "Succeeded"),
+            JMESPathCheck("properties.configuration.runtime", None)
+        ])
+
+        # Update contaier app without runtime settings, it should keep the same runtime settings
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --cpu 0.5 --memory 1Gi', checks=[
+            JMESPathCheck('properties.provisioningState', "Succeeded"),
+            JMESPathCheck("properties.configuration.runtime", None)
+        ])
+
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --enable-java-metrics --enable-java-agent', checks=[
+            JMESPathCheck('properties.provisioningState', "Succeeded"),
+            JMESPathCheck("properties.configuration.runtime.java.enableMetrics", True),
+            JMESPathCheck("properties.configuration.runtime.java.javaAgent.enabled", True)
+        ])
+
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --cpu 0.25 --memory 0.5Gi', checks=[
+            JMESPathCheck('properties.provisioningState', "Succeeded"),
+            JMESPathCheck("properties.configuration.runtime.java.enableMetrics", True),
+            JMESPathCheck("properties.configuration.runtime.java.javaAgent.enabled", True)
+        ])
+
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --enable-java-agent=false', checks=[
+            JMESPathCheck('properties.provisioningState', "Succeeded"),
+            JMESPathCheck("properties.configuration.runtime.java.enableMetrics", True),
+            JMESPathCheck("properties.configuration.runtime.java.javaAgent.enabled", False)
+        ])
+
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --enable-java-metrics=false', checks=[
+            JMESPathCheck('properties.provisioningState', "Succeeded"),
+            JMESPathCheck("properties.configuration.runtime.java.enableMetrics", False),
+            JMESPathCheck("properties.configuration.runtime.java.javaAgent.enabled", False)
+        ])
+
+        # Update container app with runtime=generic, it should erase runtime settings
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --runtime=generic', checks=[
+            JMESPathCheck('properties.provisioningState', "Succeeded"),
+            JMESPathCheck("properties.configuration.runtime", None)
+        ])
+
+        # Update container app with runtime=java, it should setup default java runtime settings if not set before
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --runtime=java', checks=[
+            JMESPathCheck('properties.provisioningState', "Succeeded"),
+            JMESPathCheck("properties.configuration.runtime.java.enableMetrics", True),
+            JMESPathCheckNotExists("properties.configuration.runtime.java.javaAgent")
+        ])
+
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --runtime=java --enable-java-metrics', checks=[
+            JMESPathCheck('properties.provisioningState', "Succeeded"),
+            JMESPathCheck("properties.configuration.runtime.java.enableMetrics", True),
+            JMESPathCheckNotExists("properties.configuration.runtime.java.javaAgent")
+        ])
+
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --runtime=java --enable-java-agent', checks=[
+            JMESPathCheck('properties.provisioningState', "Succeeded"),
+            JMESPathCheck("properties.configuration.runtime.java.enableMetrics", True),
+            JMESPathCheck("properties.configuration.runtime.java.javaAgent.enabled", True)
+        ])
+
+        # Update container app with runtime=java, it should keep the same runtime settings
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --runtime=java', checks=[
+            JMESPathCheck('properties.provisioningState', "Succeeded"),
+            JMESPathCheck("properties.configuration.runtime.java.enableMetrics", True),
+            JMESPathCheck("properties.configuration.runtime.java.javaAgent.enabled", True)
+        ])
+
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --runtime=java --enable-java-metrics=false',
+                 checks=[
+                     JMESPathCheck('properties.provisioningState', "Succeeded"),
+                     JMESPathCheck("properties.configuration.runtime.java.enableMetrics", False),
+                     JMESPathCheck("properties.configuration.runtime.java.javaAgent.enabled", True)
+                 ])
+
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --runtime=java', checks=[
+            JMESPathCheck('properties.provisioningState', "Succeeded"),
+            JMESPathCheck("properties.configuration.runtime.java.enableMetrics", False),
+            JMESPathCheck("properties.configuration.runtime.java.javaAgent.enabled", True)
+        ])
+
+        # It will imply runtime=java when enable-java-metrics is set
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --enable-java-metrics', checks=[
+            JMESPathCheck('properties.provisioningState', "Succeeded"),
+            JMESPathCheck("properties.configuration.runtime.java.enableMetrics", True),
+            JMESPathCheck("properties.configuration.runtime.java.javaAgent.enabled", True)
+        ])
+
+        # Update container app failed with wrong runtime
+        self.cmd(f'containerapp update -g {resource_group} -n {app} --runtime=generic --enable-java-metrics',
+                 expect_failure=True)
+
+        # Delete container app
+        self.cmd(f'containerapp delete  -g {resource_group} -n {app} --yes')

@@ -23,9 +23,9 @@ class List(AAZCommand):
     """
 
     _aaz_info = {
-        "version": "2023-10-01-preview",
+        "version": "2026-05-01-preview",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.networkcloud/kubernetesclusters/{}/agentpools", "2023-10-01-preview"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.networkcloud/kubernetesclusters/{}/agentpools", "2026-05-01-preview"],
         ]
     }
 
@@ -47,7 +47,7 @@ class List(AAZCommand):
 
         _args_schema = cls._args_schema
         _args_schema.kubernetes_cluster_name = AAZStrArg(
-            options=["--kubernetes-cluster-name"],
+            options=["--kc-name", "--kubernetes-cluster-name"],
             help="The name of the Kubernetes cluster.",
             required=True,
             fmt=AAZStrArgFormat(
@@ -56,6 +56,14 @@ class List(AAZCommand):
         )
         _args_schema.resource_group = AAZResourceGroupNameArg(
             required=True,
+        )
+        _args_schema.skip_token = AAZStrArg(
+            options=["--skip-token"],
+            help="The opaque token that the server returns to indicate where to continue listing resources from. This is used for paging through large result sets.",
+        )
+        _args_schema.top = AAZIntArg(
+            options=["--top"],
+            help="The maximum number of resources to return from the operation. Example: '$top=10'.",
         )
         return cls._args_schema
 
@@ -125,7 +133,13 @@ class List(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-10-01-preview",
+                    "$skipToken", self.ctx.args.skip_token,
+                ),
+                **self.serialize_query_param(
+                    "$top", self.ctx.args.top,
+                ),
+                **self.serialize_query_param(
+                    "api-version", "2026-05-01-preview",
                     required=True,
                 ),
             }
@@ -161,12 +175,17 @@ class List(AAZCommand):
             _schema_on_200.next_link = AAZStrType(
                 serialized_name="nextLink",
             )
-            _schema_on_200.value = AAZListType()
+            _schema_on_200.value = AAZListType(
+                flags={"required": True},
+            )
 
             value = cls._schema_on_200.value
             value.Element = AAZObjectType()
 
             _element = cls._schema_on_200.value.Element
+            _element.etag = AAZStrType(
+                flags={"read_only": True},
+            )
             _element.extended_location = AAZObjectType(
                 serialized_name="extendedLocation",
             )
@@ -332,8 +351,14 @@ class List(AAZCommand):
             _ListHelper._build_schema_kubernetes_label_read(taints.Element)
 
             upgrade_settings = cls._schema_on_200.value.Element.properties.upgrade_settings
+            upgrade_settings.drain_timeout = AAZIntType(
+                serialized_name="drainTimeout",
+            )
             upgrade_settings.max_surge = AAZStrType(
                 serialized_name="maxSurge",
+            )
+            upgrade_settings.max_unavailable = AAZStrType(
+                serialized_name="maxUnavailable",
             )
 
             system_data = cls._schema_on_200.value.Element.system_data

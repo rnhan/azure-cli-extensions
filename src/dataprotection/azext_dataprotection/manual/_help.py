@@ -25,6 +25,16 @@ helps['dataprotection backup-instance initialize'] = """
         text: az dataprotection backup-instance initialize --datasource-type AzureDisk -l southeastasia --policy-id {disk_policy_id} --datasource-id {disk_id}
 """
 
+helps['dataprotection backup-instance update'] = """
+    type: command
+    short-summary: Update properties associated with a backup instance.
+    examples:
+      - name: Update backed up containers for a vaulted blob backup instance
+        text: az dataprotection backup-instance update --backup-instance-name MyDisk1 --vaulted-blob-container-list {backup_configuration} -g MyResourceGroup --vault-name MyVault
+      - name: Update backed up namespaces for an aks backup instance
+        text: az dataprotection backup-instance update --backup-instance-name MyAKSCluster1 --aks-backup-configuration {aks_backup_configuration} -g MyResourceGroup --vault-name MyVault
+"""
+
 helps['dataprotection backup-instance update-policy'] = """
     type: command
     short-summary: Update backup policy associated with backup instance.
@@ -59,6 +69,8 @@ helps['dataprotection backup-policy get-default-policy-template'] = """
     examples:
       - name: Get default policy template for Azure Disk
         text: az dataprotection backup-policy get-default-policy-template --datasource-type AzureDisk
+      - name: Get default policy template for Azure Data Lake Storage
+        text: az dataprotection backup-policy get-default-policy-template --datasource-type AzureDataLakeStorage
 """
 
 helps['dataprotection backup-policy trigger'] = """
@@ -101,13 +113,17 @@ helps['dataprotection backup-policy retention-rule set'] = """
     type: command
     short-summary: Add new retention rule or update existing retention rule.
     examples:
-      - name: Add daily retention rule
+      - name: Add retention rule
         text: az dataprotection backup-policy retention-rule set --lifecycles dailylifecycle.json --name Daily --policy policy.json
+      - name: Add AzureBlob OperationalStore default retention rule
+        text: az dataprotection backup-policy retention-rule set --lifecycles oplifecycle.json --name Default_OperationalStore --policy policy.json
+      - name: Add AzureBlob VaultStore default retention rule
+        text: az dataprotection backup-policy retention-rule set --lifecycles vaultlifecycle.json --name Default --policy policy.json
 """
 
 helps['dataprotection backup-policy retention-rule remove'] = """
     type: command
-    short-summary: remove existing retention rule in a backup policy
+    short-summary: Remove existing retention rule in a backup policy. The Default retention rule is reserved and cannot be removed; on AzureBlob, Default_OperationalStore is removable.
     examples:
       - name: Remove retention rule
         text: az dataprotection backup-policy retention-rule remove --name Daily --policy policy.json
@@ -170,8 +186,17 @@ helps['dataprotection backup-instance restore initialize-for-item-recovery'] = "
     type: command
     short-summary: Initialize restore request object to recover specified items of backed up data in a backup vault.
     examples:
-      - name: initialize restore request for azure blob backup instance
+      - name: Initialize restore request for azure blob backup instance
         text: az dataprotection backup-instance restore initialize-for-item-recovery --datasource-type AzureBlob --restore-location centraluseuap --source-datastore OperationalStore --backup-instance-id {backup_instance_id}  --point-in-time 2021-05-26T15:00:00 --container-list container1 container2
+      - name: Initialize item-level restore request for azure data lake storage with prefix patterns and rename
+        text: |
+          az dataprotection backup-instance restore initialize-for-item-recovery \\
+            --datasource-type AzureDataLakeStorage \\
+            --restore-location centraluseuap \\
+            --source-datastore VaultStore \\
+            --recovery-point-id {recovery_point_id} \\
+            --target-resource-id {storage_account_id} \\
+            --vaulted-blob-prefix-pattern '{"containers":[{"name":"container1","prefixmatch":["a","b"],"renameto":"container1renamed"},{"name":"container2","renameto":"container2renamed"}]}'
 """
 
 helps['dataprotection resource-guard list-protected-operations'] = """
@@ -184,15 +209,24 @@ helps['dataprotection resource-guard list-protected-operations'] = """
 
 helps['dataprotection backup-instance initialize-backupconfig'] = """
     type: command
-    short-summary: Initialize JSON request body for initializing and configuring backup of an AzureKubernetesService resource.
+    short-summary: Initialize JSON request body for initializing and configuring backup for AzureKubernetesService or AzureBlobs (for vaulted backups) resources. The generated JSON is meant for use with other CLI commands, and may not work as an input for non-CLI scenarios without modification.
     examples:
-      - name: Initialize backup configuration
+      - name: Initialize backup configuration for AzureKubernetesService
         text: az dataprotection backup-instance initialize-backupconfig --datasource-type AzureKubernetesService --label-selectors key=val foo=bar --excluded-namespaces excludeNS1 excludeNS2
+      - name: Initialize backup configuration for AzureBlob
+        text: az dataprotection backup-instance initialize-backupconfig --datasource-type "AzureBlob" --include-all-containers --storage-account-rg "sampleRG" --storage-account-name "samplestorage"
+      - name: Initialize backup configuration for AzureDataLakeStorage
+        text: az dataprotection backup-instance initialize-backupconfig --datasource-type "AzureDataLakeStorage" --container-list container1 container2 --storage-account-rg "sampleRG" --storage-account-name "samplestorage"
+      - name: Initialize backup configuration for AzureBlob with auto-protection
+        text: az dataprotection backup-instance initialize-backupconfig --datasource-type AzureBlob --auto-protection true
+      - name: Initialize backup configuration for AzureDataLakeStorage with auto-protection and exclusion prefixes
+        text: az dataprotection backup-instance initialize-backupconfig --datasource-type AzureDataLakeStorage --auto-protection true --exclusion-prefixes "logs-" "temp-"
+
 """
 
 helps['dataprotection backup-instance initialize-restoreconfig'] = """
     type: command
-    short-summary: Initialize JSON request body for initializing and configuring restore of an AzureKubernetesService resource.
+    short-summary: Initialize JSON request body for initializing and configuring restore of an AzureKubernetesService resource. The generated JSON is meant for use with other CLI commands, and may not work as an input for non-CLI scenarios without modification.
     examples:
       - name: Initialize restore configuration
         text: az dataprotection backup-instance initialize-restoreconfig --datasource-type AzureKubernetesService
@@ -204,4 +238,128 @@ helps['dataprotection backup-instance validate-for-backup'] = """
     examples:
       - name: Validate for backup
         text: az dataprotection backup-instance validate-for-backup -g sarath-rg --vault-name sarath-vault --backup-instance backup_instance.json
+"""
+
+helps['dataprotection backup-instance validate-for-update'] = """
+    type: command
+    short-summary: Validate whether update for backup instance will be successful or not.
+    examples:
+      - name: Validate for modify backup
+        text: az dataprotection backup-instance validate-for-update -g testRG -v testVault --backup-instance-name "testdisk-testdisk-00000000-0000-0000-0000-0000000000000" --uami "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/testRG/providers/Microsoft.ManagedIdentity/userAssignedIdentities/testuami"
+"""
+
+helps['dataprotection backup-instance restore trigger'] = """
+    type: command
+    short-summary: Triggers restore for a BackupInstance.
+    examples:
+      - name: Trigger a restore operation
+        text: az dataprotection backup-instance restore trigger -g sample_rg --vault-name sample_backupvault --backup-instance-name sample_biname-fd53a211-3f3e-4c7e-ba45-81050e27c0be  --restore-request-object restorerequestobject.json
+      - name: Trigger a cross-region-restore operation
+        text: az dataprotection backup-instance restore trigger -g sample_rg --vault-name sample_backupvault --backup-instance-name sample_biname-fd53a211-3f3e-4c7e-ba45-81050e27c0be  --restore-request-object restorerequestobject.json --use-secondary-region
+"""
+
+helps['dataprotection backup-instance validate-for-restore'] = """
+    type: command
+    short-summary: Validates if Restore can be triggered for a DataSource.
+    examples:
+      - name: Validate for restore
+        text: az dataprotection backup-instance validate-for-restore -g sample_rg --vault-name sample_backupvault --backup-instance-name sample_biname-fd53a211-3f3e-4c7e-ba45-81050e27c0be --restore-request-object restorerequestobject.json
+      - name: Validate for cross-region-restore
+        text: az dataprotection backup-instance validate-for-restore -g sample_rg --vault-name sample_backupvault --backup-instance-name sample_biname-fd53a211-3f3e-4c7e-ba45-81050e27c0be --restore-request-object restorerequestobject.json --use-secondary-region
+"""
+
+helps['dataprotection backup-vault list-from-resourcegraph'] = """
+    type: command
+    short-summary: List backup vaults across subscriptions, resource groups and vaults.
+    examples:
+      - name: Fetch a specific backup vault
+        text: az dataprotection backup-vault list-from-resourcegraph --subscriptions 00000000-0000-0000-0000-000000000000 --resource-groups sample_rg --vaults sample_vault
+"""
+
+helps['dataprotection job show'] = """
+    type: command
+    short-summary: Get a job with id in a backup vault.
+    examples:
+      - name: Get Job
+        text: az dataprotection job show --job-id "00000000-0000-0000-0000-000000000000" --resource-group "BugBash1" --vault-name "BugBashVaultForCCYv11"
+"""
+
+helps['dataprotection job list'] = """
+    type: command
+    short-summary: Returns list of jobs belonging to a backup vault.
+    examples:
+      - name: Get Jobs
+        text: az dataprotection job list --resource-group "BugBash1" --vault-name "BugBashVaultForCCYv11"
+"""
+
+helps['dataprotection recovery-point list'] = """
+    type: command
+    short-summary: Returns a list of Recovery Points for a DataSource in a vault.
+    examples:
+      - name: List of Recovery Points in a Vault
+        text: az dataprotection recovery-point list --backup-instance-name "sample_biname-00000000-0000-0000-0000-000000000000" --resource-group "sample_rg" --vault-name "sample_vault"
+"""
+
+helps['dataprotection enable-backup'] = """
+    type: group
+    short-summary: Enable backup for Azure resources.
+"""
+
+helps['dataprotection enable-backup trigger'] = """
+    type: command
+    short-summary: Enable backup for an AKS cluster by setting up all required resources including backup vault, policy, storage account, extension, and trusted access.
+    long-summary: |
+        This command orchestrates all the steps required to enable backup for an AKS cluster:
+          1. Creates or reuses a backup resource group, storage account, and blob container
+          2. Installs the backup extension on the cluster (or reuses an existing one)
+          3. Creates or reuses a backup vault and backup policy
+          4. Configures trusted access and role assignments
+          5. Creates a backup instance
+
+        The --backup-configuration-file parameter accepts a JSON file (@file.json) or inline JSON string with the following optional settings:
+          - storageAccountResourceId: ARM ID of an existing storage account to use
+          - blobContainerName: Name of an existing blob container (used with storageAccountResourceId)
+          - backupResourceGroupId: ARM ID of an existing resource group for backup resources
+          - backupVaultId: ARM ID of an existing backup vault (required for Custom strategy)
+          - backupPolicyId: ARM ID of an existing backup policy (required for Custom strategy)
+          - tags: Dictionary of tags to apply to created resources (e.g., {"Owner": "team", "Env": "prod"})
+
+        Backup strategy presets (--backup-strategy):
+          - Week (default): Daily incremental backups with 7-day retention in Operational Store.
+          - Month: Daily incremental backups with 30-day retention in Operational Store.
+          - DisasterRecovery: Daily incremental backups with 7-day Operational Store + 90-day Vault Store retention. FirstOfDay backups are copied to Vault Store for cross-region restore.
+          - Custom: Bring your own vault and policy. Requires backupVaultId and backupPolicyId in --backup-configuration-file.
+    examples:
+      - name: Enable backup for an AKS cluster with default Week strategy
+        text: az dataprotection enable-backup trigger --datasource-type AzureKubernetesService --datasource-id /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.ContainerService/managedClusters/{cluster}
+      - name: Enable backup with Month strategy
+        text: az dataprotection enable-backup trigger --datasource-type AzureKubernetesService --datasource-id /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.ContainerService/managedClusters/{cluster} --backup-strategy Month
+      - name: Enable backup with Custom strategy using existing vault and policy
+        text: |
+            az dataprotection enable-backup trigger --datasource-type AzureKubernetesService \\
+              --datasource-id /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.ContainerService/managedClusters/{cluster} \\
+              --backup-strategy Custom \\
+              --backup-configuration-file @config.json
+
+            Where config.json contains:
+            {
+              "backupVaultId": "/subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.DataProtection/backupVaults/{vault}",
+              "backupPolicyId": "/subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.DataProtection/backupVaults/{vault}/backupPolicies/{policy}"
+            }
+      - name: Enable backup with resource tags for policy compliance
+        text: |
+            az dataprotection enable-backup trigger --datasource-type AzureKubernetesService \\
+              --datasource-id /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.ContainerService/managedClusters/{cluster} \\
+              --backup-configuration-file '{"tags": {"Owner": "team", "Environment": "prod", "DeleteBy": "2026-12"}}'
+      - name: Enable backup using an existing storage account
+        text: |
+            az dataprotection enable-backup trigger --datasource-type AzureKubernetesService \\
+              --datasource-id /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.ContainerService/managedClusters/{cluster} \\
+              --backup-configuration-file @config.json
+
+            Where config.json contains:
+            {
+              "storageAccountResourceId": "/subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.Storage/storageAccounts/{sa}",
+              "blobContainerName": "my-backup-container"
+            }
 """

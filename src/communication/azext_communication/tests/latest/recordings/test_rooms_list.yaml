@@ -9,35 +9,37 @@ interactions:
       Connection:
       - keep-alive
       User-Agent:
-      - AzureCli/1.7.2b1 azsdk-python-communication-rooms/1.1.0b1 Python/3.11.5 (Windows-10-10.0.22621-SP0)
+      - AzureCli/1.13.0 azsdk-python-communication-rooms/1.2.0 Python/3.10.11 (Windows-10-10.0.19045-SP0)
       x-ms-content-sha256:
       - 47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=
       x-ms-date:
-      - Mon, 16 Oct 2023 16:24:44 GMT
+      - Thu, 27 Mar 2025 07:59:23 GMT
       x-ms-return-client-request-id:
       - 'true'
     method: GET
-    uri: https://sanitized.communication.azure.com/rooms?api-version=2023-10-30-preview
+    uri: https://sanitized.communication.azure.com/rooms?api-version=2025-03-13
   response:
     body:
       string: '{"value": []}'
     headers:
-      api-deprecated-versions:
-      - 2021-04-07, 2022-02-01
       api-supported-versions:
-      - 2023-03-31-preview, 2023-06-14, 2023-10-30-preview
+      - 2023-06-14, 2023-10-30-preview, 2024-04-15, 2025-03-13
+      connection:
+      - keep-alive
       content-type:
       - application/json; charset=utf-8
       date:
-      - Mon, 16 Oct 2023 16:24:46 GMT
+      - Thu, 27 Mar 2025 07:59:23 GMT
       ms-cv:
-      - LKPSPc1Oc0u3qzJH5quCtA.0
+      - DVpENL9huUKzyyGk5fmqZA.0
       request-context:
       - appId=
+      strict-transport-security:
+      - max-age=31536000;includeSubDomains
       transfer-encoding:
       - chunked
       x-azure-ref:
-      - 0zWMtZQAAAAANvGxxw0JUS5vBaCByPaqVWVZSMzExMDAwMTE1MDI3ADlmYzdiNTE5LWE4Y2MtNGY4OS05MzVlLWM5MTQ4YWUwOWU4MQ==
+      - 20250327T075922Z-16c89bd967fzhg8vhC1MAAkxd40000000es0000000009y0q
       x-cache:
       - CONFIG_NOCACHE
     status:

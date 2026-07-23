@@ -2,7 +2,8 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
-# pylint: disable=line-too-long, consider-using-f-string, no-else-return, duplicate-string-formatting-argument, expression-not-assigned, too-many-locals, logging-fstring-interpolation, arguments-differ, abstract-method, logging-format-interpolation, broad-except
+# pylint: disable=line-too-long, unused-argument, too-many-instance-attributes, consider-using-f-string, logging-fstring-interpolation, logging-format-interpolation, no-else-return, broad-except
+
 from random import randint
 from tempfile import NamedTemporaryFile
 from urllib.parse import urlparse
@@ -17,7 +18,7 @@ from azure.cli.core.azclierror import (
     ValidationError,
     InvalidArgumentValueError,
     MutuallyExclusiveArgumentError,
-    CLIError,
+    CLIError, CLIInternalError,
 )
 from azure.cli.core.commands.client_factory import get_subscription_id
 from azure.cli.command_modules.appservice._create_util import (
@@ -46,21 +47,19 @@ from azure.cli.command_modules.containerapp._utils import (
 )
 from azure.core.exceptions import HttpResponseError
 from azure.mgmt.containerregistry import ContainerRegistryManagementClient
+from azure.mgmt.core.tools import parse_resource_id, is_valid_resource_id, resource_id
 from knack.log import get_logger
-
-from msrestazure.tools import parse_resource_id, is_valid_resource_id, resource_id
 
 from ._client_factory import handle_non_404_status_code_exception
 from ._clients import ContainerAppPreviewClient, GitHubActionClient, ContainerAppsJobClient, \
     ConnectedEnvironmentClient, ManagedEnvironmentPreviewClient
 
 from ._utils import (
-    get_pack_exec_path,
     is_docker_running,
     get_pack_exec_path, _validate_custom_loc_and_location, _validate_connected_k8s_exists, get_custom_location,
     create_extension, create_custom_location, get_cluster_extension, validate_environment_location,
     list_environment_locations, get_randomized_name_with_dash, get_randomized_name, get_connected_k8s,
-    list_cluster_extensions, list_custom_location
+    list_cluster_extensions, list_custom_location, is_cloud_supported_by_connected_env
 )
 
 from ._constants import (MAXIMUM_SECRET_LENGTH,
@@ -77,12 +76,12 @@ from ._constants import (MAXIMUM_SECRET_LENGTH,
                          DEFAULT_CONNECTED_CLUSTER_EXTENSION_NAMESPACE)
 
 from .custom import (
-    create_managed_environment,
+    create_managed_environment_logic,
     create_containerappsjob,
     containerapp_up_logic,
     list_containerapp,
     list_managed_environments,
-    create_or_update_github_action, create_connected_environment, list_connected_environments,
+    create_or_update_github_action, create_connected_environment, list_connected_environments, show_managed_environment
 )
 
 from ._cloud_build_utils import (
@@ -181,6 +180,10 @@ class ContainerAppEnvironment(Resource):
         logs_customer_id=None,
         custom_location_id=None,
         connected_cluster_id=None,
+        workload_profile_type=None,
+        workload_profile_name=None,
+        is_env_for_azml_app=None,
+        environment_mode=None
     ):
         self.resource_type = None
         super().__init__(cmd, name, resource_group, exists)
@@ -205,6 +208,11 @@ class ContainerAppEnvironment(Resource):
         self.logs_key = logs_key
         self.logs_customer_id = logs_customer_id
         self.custom_location_id = custom_location_id
+
+        self.workload_profile_type = workload_profile_type
+        self.workload_profile_name = workload_profile_name
+        self.is_env_for_azml_app = is_env_for_azml_app
+        self.environment_mode = environment_mode
 
     def set_name(self, name_or_rid):
         if is_valid_resource_id(name_or_rid):
@@ -249,7 +257,7 @@ class ContainerAppEnvironment(Resource):
                 f"Using {type(self).__name__} '{self.name}' in resource group {self.resource_group.name}"
             )  # TODO use .info()
 
-    def create(self):
+    def create(self):  # pylint: disable=arguments-differ
         register_provider_if_needed(self.cmd, LOG_ANALYTICS_RP)
         # for creating connected environment, the location infer from custom location
         if self.is_connected_environment():
@@ -265,8 +273,7 @@ class ContainerAppEnvironment(Resource):
 
         if self.location:
             self.location = validate_environment_location(self.cmd, self.location)
-
-            env = create_managed_environment(
+            env = create_managed_environment_logic(
                 self.cmd,
                 self.name,
                 location=self.location,
@@ -274,6 +281,11 @@ class ContainerAppEnvironment(Resource):
                 logs_key=self.logs_key,
                 logs_customer_id=self.logs_customer_id,
                 disable_warnings=True,
+                enable_workload_profiles=self.workload_profile_type is not None,
+                workload_profile_type=self.workload_profile_type,
+                workload_profile_name=self.workload_profile_name,
+                is_env_for_azml_app=self.is_env_for_azml_app,
+                environment_mode=self.environment_mode
             )
             self.exists = True
 
@@ -282,13 +294,16 @@ class ContainerAppEnvironment(Resource):
             res_locations = list_environment_locations(self.cmd)
             for loc in res_locations:
                 try:
-                    env = create_managed_environment(
+                    env = create_managed_environment_logic(
                         self.cmd,
                         self.name,
                         location=loc,
                         resource_group_name=self.resource_group.name,
                         logs_key=self.logs_key,
                         logs_customer_id=self.logs_customer_id,
+                        workload_profile_type=self.workload_profile_type,
+                        workload_profile_name=self.workload_profile_name,
+                        is_env_for_azml_app=self.is_env_for_azml_app,
                         disable_warnings=True,
                     )
 
@@ -345,8 +360,8 @@ class ContainerAppsJob(Resource):  # pylint: disable=too-many-instance-attribute
         self.registry_user = registry_user
         self.registry_pass = registry_pass
         self.env_vars = env_vars
-        self.trigger_type = trigger_type,
-        self.replica_timeout = replica_timeout,
+        self.trigger_type = trigger_type
+        self.replica_timeout = replica_timeout
         self.replica_retry_limit = replica_retry_limit
         self.replica_completion_count = replica_completion_count
         self.parallelism = parallelism
@@ -357,7 +372,7 @@ class ContainerAppsJob(Resource):  # pylint: disable=too-many-instance-attribute
     def _get(self):
         return ContainerAppsJobClient.show(self.cmd, self.resource_group.name, self.name)
 
-    def create(self, no_registry=False):
+    def create(self, no_registry=False):  # pylint: disable=arguments-differ
         # no_registry: don't pass in a registry during create even if the app has one (used for GH actions)
         if get_containerapps_job_if_exists(self.cmd, self.resource_group.name, self.name):
             logger.warning(
@@ -387,7 +402,7 @@ class ContainerAppsJob(Resource):  # pylint: disable=too-many-instance-attribute
         )
 
 
-class AzureContainerRegistry(Resource):
+class AzureContainerRegistry(Resource):  # pylint: disable=abstract-method
     def __init__(self, name: str, resource_group: "ResourceGroup"):  # pylint: disable=super-init-not-called
 
         self.name = name
@@ -410,6 +425,15 @@ class ContainerApp(Resource):  # pylint: disable=too-many-instance-attributes
         env_vars=None,
         workload_profile_name=None,
         ingress=None,
+        force_single_container_updates=None,
+        registry_identity=None,
+        user_assigned=None,
+        system_assigned=None,
+        revisions_mode=None,
+        target_label=None,
+        cpu=None,
+        memory=None,
+        kind=None,
     ):
 
         super().__init__(cmd, name, resource_group, exists)
@@ -419,17 +443,28 @@ class ContainerApp(Resource):  # pylint: disable=too-many-instance-attributes
         self.registry_server = registry_server
         self.registry_user = registry_user
         self.registry_pass = registry_pass
+        self.registry_identity = registry_identity
+        self.user_assigned = user_assigned
+        self.system_assigned = system_assigned
         self.env_vars = env_vars
         self.ingress = ingress
         self.workload_profile_name = workload_profile_name
+        self.force_single_container_updates = force_single_container_updates
+        self.revisions_mode = revisions_mode
+        self.target_label = target_label
+
+        self.cpu = cpu
+        self.memory = memory
+        self.kind = kind
 
         self.should_create_acr = False
         self.acr: "AzureContainerRegistry" = None
+        self.get_acr_creds = True
 
     def _get(self):
         return ContainerAppPreviewClient.show(self.cmd, self.resource_group.name, self.name)
 
-    def create(self, no_registry=False):
+    def create(self, no_registry=False):  # pylint: disable=arguments-differ
         # no_registry: don't pass in a registry during create even if the app has one (used for GH actions)
         if get_container_app_if_exists(self.cmd, self.resource_group.name, self.name):
             logger.warning(
@@ -453,8 +488,20 @@ class ContainerApp(Resource):  # pylint: disable=too-many-instance-attributes
             env_vars=self.env_vars,
             workload_profile_name=self.workload_profile_name,
             ingress=self.ingress,
-            environment_type=CONNECTED_ENVIRONMENT_TYPE if self.env.is_connected_environment() else MANAGED_ENVIRONMENT_TYPE
+            environment_type=CONNECTED_ENVIRONMENT_TYPE if self.env.is_connected_environment() else MANAGED_ENVIRONMENT_TYPE,
+            force_single_container_updates=self.force_single_container_updates,
+            registry_identity=self.registry_identity,
+            system_assigned=self.system_assigned,
+            user_assigned=self.user_assigned,
+            revisions_mode=self.revisions_mode,
+            target_label=self.target_label,
+            cpu=self.cpu,
+            memory=self.memory,
+            kind=self.kind,
         )
+
+    def set_force_single_container_updates(self, force_single_container_updates):
+        self.force_single_container_updates = force_single_container_updates
 
     def create_acr_if_needed(self):
         if self.should_create_acr:
@@ -478,10 +525,10 @@ class ContainerApp(Resource):  # pylint: disable=too-many-instance-attributes
 
         if not self.acr:
             self.acr = AzureContainerRegistry(registry_name, registry_rg)
-
-        self.registry_user, self.registry_pass, _ = _get_acr_cred(
-            self.cmd.cli_ctx, registry_name
-        )
+        if self.get_acr_creds:
+            self.registry_user, self.registry_pass, _ = _get_acr_cred(
+                self.cmd.cli_ctx, registry_name
+            )
 
     def _docker_push_to_container_registry(self, image_name, forced_acr_login=False):
         from azure.cli.command_modules.acr.custom import acr_login
@@ -495,7 +542,7 @@ class ContainerApp(Resource):  # pylint: disable=too-many-instance-attributes
                 _, stderr = process.communicate()
                 if process.returncode != 0:
                     docker_push_error = stderr.decode('utf-8')
-                    if not forced_acr_login and ".azurecr.io/" in image_name and "unauthorized: authentication required" in docker_push_error:
+                    if not forced_acr_login and ".azurecr.io/" in image_name and "unauthorized" in docker_push_error:
                         # Couldn't push to ACR because the user isn't authenticated. Let's try to login to ACR and retrigger the docker push
                         logger.warning(f"The current user isn't authenticated to the {self.acr.name} ACR instance. Triggering an ACR login and retrying to push the image...")
                         # Logic to login to ACR
@@ -516,21 +563,28 @@ class ContainerApp(Resource):  # pylint: disable=too-many-instance-attributes
         except Exception as ex:
             raise CLIError(f"Unable to run 'docker push' command to push image to the container registry: {ex}") from ex
 
-    def build_container_from_source_with_cloud_build_service(self, source, location):
+    def build_container_from_source_with_cloud_build_service(self, source, build_env_vars, location):
         logger.warning("Using the Cloud Build Service to build container image...")
 
         run_full_id = uuid.uuid4().hex
         logs_file_path = os.path.join(tempfile.gettempdir(), f"{'build{}'.format(run_full_id)[:12]}.txt")
-        logs_file = open(logs_file_path, "w")
+        logs_file = open(logs_file_path, "w", encoding="utf-8")
 
         try:
             resource_group_name = self.resource_group.name
-            return run_cloud_build(self.cmd, source, location, resource_group_name, self.env.name, run_full_id, logs_file, logs_file_path)
+            container_app_name = self.name
+
+            if not self.exists:
+                # Make sure that a container app exists before triggering the cloud build
+                logger.warning("Creating the base container app required to build")
+                self.image = "mcr.microsoft.com/k8se/quickstart:latest"
+                self.create(no_registry=True)
+            return run_cloud_build(self.cmd, source, build_env_vars, location, resource_group_name, self.env.name, container_app_name, run_full_id, logs_file, logs_file_path)
         except Exception as exception:
             logs_file.close()
             raise exception
 
-    def build_container_from_source_with_buildpack(self, image_name, source, cache_image_name):  # pylint: disable=too-many-statements
+    def build_container_from_source_with_buildpack(self, image_name, source, cache_image_name, build_env_vars):  # pylint: disable=too-many-statements
         # Ensure that Docker is running
         if not is_docker_running():
             raise ValidationError("Docker is not running. Please start Docker to use buildpacks.")
@@ -570,6 +624,17 @@ class ContainerApp(Resource):  # pylint: disable=too-many-instance-attributes
             # Run 'pack build' to produce a runnable application image for the Container App
             # Specify the image as the 'build-cache' image to ensure that the local cache is used for build layers
             command = [pack_exec_path, 'build', cache_image_name, '--builder', builder_image, '--path', source, '--tag', image_name]
+
+            # Pass the subscription ID and caller ID to the buildpack
+            sub_id = get_subscription_id(self.cmd.cli_ctx)
+            command.extend(['--env', f"BP_SUBSCRIPTION_ID={sub_id}"])
+            from azure.cli.core import __version__ as core_version
+            command.extend(['--env', f"CALLER_ID=AZURECLI/{core_version}"])
+
+            # If the user specifies environment variables, pass it to the buildpack
+            if build_env_vars:
+                for env_var in build_env_vars:
+                    command.extend(['--env', f"{env_var}"])
 
             logger.debug(f"Calling '{' '.join(command)}'")
             try:
@@ -668,7 +733,7 @@ class ContainerApp(Resource):  # pylint: disable=too-many-instance-attributes
         for k, v in old_command_kwargs.items():
             self.cmd.command_kwargs[k] = v
 
-    def run_source_to_cloud_flow(self, source, dockerfile, can_create_acr_if_needed, registry_server):
+    def run_source_to_cloud_flow(self, source, dockerfile, build_env_vars, can_create_acr_if_needed, registry_server):
         image_name = self.image if self.image is not None else self.name
         from datetime import datetime
 
@@ -705,7 +770,7 @@ class ContainerApp(Resource):  # pylint: disable=too-many-instance-attributes
             location = self.env.location
         if self.should_create_acr:
             # No container registry provided. Let's use the default container registry through Cloud Build.
-            self.image = self.build_container_from_source_with_cloud_build_service(source, location)
+            self.image = self.build_container_from_source_with_cloud_build_service(source, build_env_vars, location)
             return True
 
         if can_create_acr_if_needed:
@@ -722,7 +787,7 @@ class ContainerApp(Resource):  # pylint: disable=too-many-instance-attributes
             # Build the app with a constant 'build-cache' tag to leverage the local cache containing build layers
             # NOTE: this 'build-cache' tag will not be pushed to the user's registry, only maintained locally
             build_image_name_with_cache_tag = f"{image_name}:build-cache"
-            self.build_container_from_source_with_buildpack(image_name_with_tag, source, build_image_name_with_cache_tag)
+            self.build_container_from_source_with_buildpack(image_name_with_tag, source, build_image_name_with_cache_tag, build_env_vars)
             self.image = self.registry_server + "/" + image_name_with_tag
             return False
 
@@ -833,7 +898,7 @@ class CustomLocation(Resource):
             if "resource_group" in custom_location_dict:
                 self.resource_group_name = custom_location_dict["resource_group"]
 
-    def create(self):
+    def create(self):  # pylint: disable=arguments-differ
         register_provider_if_needed(self.cmd, EXTENDED_LOCATION_RP)
         custom_location = create_custom_location(
             cmd=self.cmd,
@@ -997,7 +1062,7 @@ def _get_ingress_and_target_port(ingress, target_port, dockerfile_content: "list
     return ingress, target_port
 
 
-def _validate_up_args(cmd, source, artifact, image, repo, registry_server):
+def _validate_up_args(cmd, source, artifact, build_env_vars, image, repo, registry_server):
     disallowed_params = ["--only-show-errors", "--output", "-o"]
     command_args = cmd.cli_ctx.data.get("safe_params", [])
     for a in disallowed_params:
@@ -1013,6 +1078,10 @@ def _validate_up_args(cmd, source, artifact, image, repo, registry_server):
             "Cannot use --source and --repo together. "
             "Can either deploy from a local directory or a Github repo"
         )
+    if build_env_vars and not source and not artifact and not repo:
+        raise RequiredArgumentMissingError(
+            "--build_env_vars must be used with --source, --artifact, or --repo together"
+        )
     _validate_source_artifact_args(source, artifact)
     if repo and registry_server and "azurecr.io" in registry_server:
         parsed = urlparse(registry_server)
@@ -1020,6 +1089,207 @@ def _validate_up_args(cmd, source, artifact, image, repo, registry_server):
         if registry_name and len(registry_name) > MAXIMUM_SECRET_LENGTH:
             raise ValidationError(f"--registry-server ACR name must be less than {MAXIMUM_SECRET_LENGTH} "
                                   "characters when using --repo")
+
+
+def _is_azml_app(model_registry, model_name, model_version):
+    # if any of the input is not None, then it is an azml app and return true
+    return model_registry is not None or model_name is not None or model_version is not None
+
+
+def _validate_azml_model_existence(cmd, model_registry, model_name, model_version):
+    model_load_class = None
+    # For now, we need to check model existence by performing GET request directly for azureml.
+    res = requests.get(f"https://api.catalog.azureml.ms/asset-gallery/v1.0/{model_registry}/models/{model_name}/version/{model_version}")
+    data = res.json()
+    error_message = safe_get(data, 'error', 'message')
+    if error_message is not None or res.status_code != 200:
+        # In case for changes in the API, we need to check if a model is truly not found or if it is a different error.
+        logger.debug(f"Model {model_name} version {model_version} is not found in Azure ML registry {model_registry}. Status Code: {res.status_code}. Error message: {error_message}.")
+        raise ValidationError(
+            f"Model {model_name} version {model_version} is not found in Azure ML registry {model_registry} in registry {model_registry}."
+        )
+    model_asset_id = safe_get(data, "assetId")
+    if model_asset_id is None or model_asset_id == "":
+        raise ValidationError(f"Failed to get model asset id for {model_name} version {model_version} in registry {model_registry}.")
+    # Get the data reference endpoint
+    import urllib.parse
+    encoded_asset_id = urllib.parse.quote_plus(model_asset_id)
+    model_detail_url = f"https://ml.azure.com/api/eastus/modelregistry/v1.0/registry/models?assetIdOrReference={encoded_asset_id}"
+    model_detail_res = requests.get(model_detail_url)
+    model_detail_data = model_detail_res.json()
+    model_detail_error_message = safe_get(model_detail_data, 'error', 'message')
+    if model_detail_error_message is not None or model_detail_res.status_code != 200:
+        raise ValidationError(
+            f"Failed to get model details for {model_name} version {model_version} in registry {model_registry} with asset ID {model_asset_id}."
+        )
+    model_reference_endpoint = safe_get(model_detail_data, "url")
+    if model_reference_endpoint is None or model_reference_endpoint == "":
+        raise ValidationError(
+            f"Failed to get model data reference uri for {model_name} version {model_version} in registry {model_registry} with asset ID {model_asset_id}."
+        )
+    model_format = safe_get(model_detail_data, "modelFormat")
+    if model_format.lower() == "mlflow":
+        if safe_get(model_detail_data, "flavors", "hftransformersv2") is not None:
+            # Prioritize using hftransformersv2 flavor if available
+            tokenizer_class_name = safe_get(model_detail_data, "flavors", "hftransformersv2", "hf_tokenizer_class")
+            pretrained_class_name = safe_get(model_detail_data, "flavors", "hftransformersv2", "hf_pretrained_class")
+            if tokenizer_class_name is None or tokenizer_class_name == "":
+                tokenizer_class_name = "AutoTokenizer"
+                logger.warning(f"Failed to get tokenizer class name for {model_name}. Attempting to use AutoTokenizer.")
+            if pretrained_class_name is None or pretrained_class_name == "":
+                pretrained_class_name = "AutoModelForCausalLM"
+                logger.warning(f"Failed to get pretrained class name for {model_name}. Attempting to use AutoModelForCausalLM.")
+            model_load_class = [f"AZURE_ML_TOKENIZER_CLASS_NAME={tokenizer_class_name}", f"AZURE_ML_PRETRAINED_MODEL_CLASS_NAME={pretrained_class_name}"]
+            config_class_name = safe_get(model_detail_data, "flavors", "hftransformersv2", "hf_config_class")
+            if config_class_name is not None and config_class_name != "":
+                model_load_class.append(f"AZURE_ML_CONFIG_CLASS_NAME={config_class_name}")
+            task_name = safe_get(model_detail_data, "flavors", "hftransformersv2", "task_type")
+            if task_name is not None and task_name != "":
+                model_load_class.append(f"AZURE_ML_PIPELINE_TASK_NAME={task_name}")
+        elif safe_get(model_detail_data, "flavors", "transformers"):
+            pipeline_tokenizer_type = safe_get(model_detail_data, "flavors", "transformers", "tokenizer_type")
+            pipeline_instance_type = safe_get(model_detail_data, "flavors", "transformers", "instance_type")
+            pipeline_model_type = safe_get(model_detail_data, "flavors", "transformers", "pipeline_model_type")
+            pipeline_task_name = safe_get(model_detail_data, "flavors", "transformers", "task")
+            model_load_class = [f"AZURE_ML_PIPELINE_INSTANCE_TYPE={pipeline_instance_type}",
+                                f"AZURE_ML_PRETRAINED_MODEL_CLASS_NAME={pipeline_model_type}",
+                                f"AZURE_ML_PIPELINE_TASK_NAME={pipeline_task_name}",
+                                f"AZURE_ML_TOKENIZER_CLASS_NAME={pipeline_tokenizer_type}"]
+            if pipeline_tokenizer_type is None or pipeline_instance_type is None or pipeline_model_type is None or pipeline_task_name is None:
+                logger.warning("Model loading class names cannot be automatically detected.")
+                model_load_class = []
+    elif model_format.lower() == "custom":
+        raise ValidationError("Custom model format is not supported yet.")
+    return model_asset_id, model_reference_endpoint, model_format, model_load_class
+
+
+def _validate_azml_args(cmd, default_mcr_img, image_name, model_registry, model_name, model_version):
+    ACA_AZML_BLESSED_MODEL = ["azureml:phi-4",
+                              "azureml:mistralai-mistral-7b-v01",
+                              "azureml:phi-3.5-mini-instruct",
+                              "azureml:gpt2-medium",
+                              "azureml:phi-4-mini-reasoning",
+                              "azureml:phi-4-reasoning"]
+    if model_registry is None and model_name is None and model_version is None:
+        return
+    if model_registry is None:
+        raise RequiredArgumentMissingError(
+            "You must specify --model-registry when deploying Foundry Models through Azure Container Apps CLI."
+        )
+    if model_name is None:
+        raise RequiredArgumentMissingError(
+            "You must specify --model-name when deploying Foundry Models through Azure Container Apps CLI."
+        )
+    if model_version is None:
+        raise RequiredArgumentMissingError(
+            "You must specify --model-version when deploying Foundry Models through Azure Container Apps CLI."
+        )
+    if image_name is None or image_name.lower() == default_mcr_img:
+        logger.warning("A default image for the model you selected will be deployed to your container app. If you would like to customize your image, you can provide your own with --image.")
+        image_name = default_mcr_img
+        # Check if model is a blessed one.
+        model_info = f"{model_registry.lower()}:{model_name.lower()}"
+        if model_info not in ACA_AZML_BLESSED_MODEL:
+            raise ValidationError(
+                f"""Model {model_name} from registry {model_registry} is currently not fully supported by our MCR image.
+Please visit https://github.com/microsoft/azure-container-apps/tree/main/templates/azml-app to download and modify the container template to get best experience.
+You can then deploy your personalized template image by running the following:
+az containerapp up --name <app_name> --image <your_image> --model-name <model_name> --model-version <model_version> --model-registry <model_registry>
+Currently supported model list: https://aka.ms/aca/serverless-gpu-regions"""
+            )
+    model_asset_id, model_reference_endpoint, model_type, model_load_class = _validate_azml_model_existence(cmd, model_registry, model_name, model_version)
+    return model_asset_id, model_reference_endpoint, model_type, model_load_class, image_name
+
+
+def _set_azml_env_vars(cmd, cli_passed_env_vars, model_asset_id, model_reference_endpoint, model_format, model_load_classes, is_azml_mcr_app):
+    # We will automatically manage the required env vars for cx if the azml app is using mcr image.
+    # If the user is using a custom image, we will only manage the essential ones.
+    essential_env_vars = [f"AZURE_ML_MODEL_TYPE={model_format.lower()}", f"AZURE_ML_MODEL_ID={model_asset_id}", f"AZURE_ML_MODEL_PATH={model_reference_endpoint}"]
+    if is_azml_mcr_app and model_format.lower() != "custom" and (model_load_classes is None or model_load_classes == []):
+        raise ValidationError("""Model is currently not fully supported by our MCR image.
+Please visit https://github.com/microsoft/azure-container-apps/tree/main/templates to download and modify the container template to get best experience.
+You can then build and deploy the modified template from local path using --local-path option or use your own docker image.
+Currently supported model list: https://aka.ms/something""")
+    required_env_vars = essential_env_vars + model_load_classes if is_azml_mcr_app else essential_env_vars
+    new_env_vars = required_env_vars
+    if cli_passed_env_vars is not None:
+        for cli_env_var in cli_passed_env_vars:
+            key, _ = cli_env_var.split("=")
+            if key not in required_env_vars:
+                new_env_vars.append(cli_env_var)
+    return new_env_vars
+
+
+def _validate_azml_env_and_create_if_needed(cmd, app, env, cli_input_environment_name, resource_group, cli_input_resource_group_name, workload_profile_name):
+    cpu = None
+    memory = None
+    if app.check_exists():
+        wp_name = app.get()["properties"]["workloadProfileName"]
+        env_name = app.get()["properties"]["environmentId"].split("/")[-1]
+        env_rg_name = parse_resource_id(app.get()["properties"]["environmentId"])["resource_group"]
+        if cli_input_environment_name and cli_input_environment_name.lower() != env_name.lower():
+            raise ValidationError(f"{app.name} in resource group {app.resource_group.name} found under {env_name}, which is different from the one specified in --environment {cli_input_environment_name}. Please specify the correct environment.")
+        if wp_name is not None:
+            env_detail = show_managed_environment(cmd, env_name, env_rg_name)
+            wps = safe_get(env_detail, "properties", "workloadProfiles")
+            for wp in wps:
+                if wp["name"].lower() == wp_name.lower() and "gpu" not in wp["workloadProfileType"].lower():
+                    raise ValidationError("Azure AI Foundry model requires a GPU workload profile. Your current app is not running with a GPU workload profile. Create a new app with correct workload profile or switch your current one to a GPU workload profile. Serverless GPU supported regions: https://aka.ms/aca/serverless-gpu-regions")
+                env = ContainerAppEnvironment(cmd, env_name, resource_group, location=safe_get(env_detail, "location"))
+        return env, None, None, None
+    else:
+        if not env.check_exists():
+            if env.location is None or env.location == "":
+                raise ValidationError("When using 'az containerapp up' to deploy a Foundry model, you must specify the location for your app.\n"
+                                      "Please specify the location of the app."
+                                      "Serverless GPU supported regions: https://aka.ms/aca/serverless-gpu-regions")
+            workload_profile_name = workload_profile_name if workload_profile_name is not None else "serverless-A100"
+            cpu = 24
+            memory = "220Gi"
+            if cli_input_environment_name:
+                logger.warning(f"Environment {cli_input_environment_name} not found in {cli_input_resource_group_name}.")
+            logger.warning(f"We will create an environment named {env.name} with serverless A100 GPU workload profile using workload profile name {workload_profile_name}.")
+            env.workload_profile_name = workload_profile_name
+            env.workload_profile_type = "Consumption-GPU-NC24-A100"
+            env.create_if_needed(app.name)
+        env_detail = show_managed_environment(cmd, env.name, env.resource_group.name)
+        wps = safe_get(env_detail, "properties", "workloadProfiles")
+        if workload_profile_name is None:
+            serverless_a100_wp_name = None
+            serverless_t4_wp_name = None
+            dedicated_nc96_a100_wp_name = None
+            dedicated_nc48_a100_wp_name = None
+            dedicated_nc24_a100_wp_name = None
+            for wp in wps:
+                if wp["workloadProfileType"].lower() == "consumption-gpu-nc24-a100":
+                    serverless_a100_wp_name = wp["name"]
+                    cpu = 24
+                    memory = "220Gi"
+                if wp["workloadProfileType"].lower() == "consumption-gpu-nc8as-t4":
+                    serverless_t4_wp_name = wp["name"]
+                    cpu = 8
+                    memory = "56Gi"
+                if wp["workloadProfileType"].lower() == "nc96-a100":
+                    dedicated_nc96_a100_wp_name = wp["name"]
+                    cpu = 96
+                    memory = "880Gi"
+                if wp["workloadProfileType"].lower() == "nc48-a100":
+                    dedicated_nc48_a100_wp_name = wp["name"]
+                    cpu = 48
+                    memory = "440Gi"
+                if wp["workloadProfileType"].lower() == "nc24-a100":
+                    dedicated_nc24_a100_wp_name = wp["name"]
+                    cpu = 24
+                    memory = "220Gi"
+            workload_profile_name = serverless_a100_wp_name or serverless_t4_wp_name or dedicated_nc96_a100_wp_name or dedicated_nc48_a100_wp_name or dedicated_nc24_a100_wp_name
+            if workload_profile_name is None or workload_profile_name == "":
+                raise ValidationError("Azure AI Foundry model requires a GPU workload profile. Your current environment does not have a GPU workload profile. Serverless GPU supported regions: https://aka.ms/aca/serverless-gpu-regions")
+            logger.warning(f"No workload profile name specified. Attempting to use {workload_profile_name}, which is the most powerful one created in the environment.")
+        else:
+            for wp in wps:
+                if wp["name"].lower() == workload_profile_name.lower() and "gpu" not in wp["workloadProfileType"].lower():
+                    raise ValidationError(f"{workload_profile_name} is a {wp['workloadProfileType']} type workload profile. Azure AI Foundry model requires a GPU workload profile. Serverless GPU supported regions: https://aka.ms/aca/serverless-gpu-regions")
+        return env, workload_profile_name, cpu, memory
 
 
 def _validate_custom_location_connected_cluster_args(cmd, env, resource_group_name, location, custom_location_id, connected_cluster_id):
@@ -1219,29 +1489,14 @@ def _get_acr_from_image(cmd, app):
         app.registry_server = app.image.split("/")[
             0
         ]  # TODO what if this conflicts with registry_server param?
+
         parsed = urlparse(app.image)
         registry_name = (parsed.netloc if parsed.scheme else parsed.path).split(".")[0]
-        if app.registry_user is None or app.registry_pass is None:
-            logger.info(
-                "No credential was provided to access Azure Container Registry. Trying to look up..."
-            )
-            try:
-                app.registry_user, app.registry_pass, registry_rg = _get_acr_cred(
-                    cmd.cli_ctx, registry_name
-                )
-                app.acr = AzureContainerRegistry(
-                    registry_name, ResourceGroup(cmd, registry_rg, None, None)
-                )
-            except Exception as ex:
-                raise RequiredArgumentMissingError(
-                    "Failed to retrieve credentials for container registry. Please provide the registry username and password"
-                ) from ex
-        else:
-            acr_rg = _get_acr_rg(app)
-            app.acr = AzureContainerRegistry(
-                name=registry_name,
-                resource_group=ResourceGroup(app.cmd, acr_rg, None, None),
-            )
+        acr_rg = _get_acr_rg(app)
+        app.acr = AzureContainerRegistry(
+            name=registry_name,
+            resource_group=ResourceGroup(cmd, acr_rg, None, None),
+        )
 
 
 def _get_registry_from_app(app, source):
@@ -1322,6 +1577,30 @@ def _get_registry_details(cmd, app: "ContainerApp", source):
     )
 
 
+def _get_registry_details_without_get_creds(cmd, app: "ContainerApp", source):
+    if app.registry_server:
+        if "azurecr.io" not in app.registry_server and source:
+            raise ValidationError(
+                "Cannot supply non-Azure registry when using --source."
+            )
+        parsed = urlparse(app.registry_server)
+        registry_name = (parsed.netloc if parsed.scheme else parsed.path).split(".")[0]
+        registry_rg = _get_acr_rg(app)
+    else:
+        registry_name, registry_rg = find_existing_acr(cmd, app)
+        if registry_name and registry_rg:
+            app.registry_server = registry_name + ACR_IMAGE_SUFFIX
+        else:
+            registry_rg = app.resource_group.name
+            registry_name = _get_default_registry_name(app)
+            app.registry_server = registry_name + ACR_IMAGE_SUFFIX
+            app.should_create_acr = True
+
+    app.acr = AzureContainerRegistry(
+        registry_name, ResourceGroup(cmd, registry_rg, None, None)
+    )
+
+
 # attempt to populate defaults for managed env, RG, ACR, etc
 def _set_up_defaults(
     cmd,
@@ -1333,7 +1612,8 @@ def _set_up_defaults(
     env: "ContainerAppEnvironment",
     app: "ContainerApp",
     custom_location: "CustomLocation",
-    extension: "Extension"
+    extension: "Extension",
+    is_registry_server_params_set=None
 ):
     # If no RG passed in and a singular app exists with the same name, get its env and rg
     _get_app_env_and_group(cmd, name, resource_group, env, location, custom_location)
@@ -1359,11 +1639,13 @@ def _set_up_defaults(
                 "Please specify which resource group your Containerapp environment is in."
             )    # get ACR details from --image, if possible
 
-    _infer_existing_connected_env(cmd, location, resource_group, env, custom_location)
+    if is_cloud_supported_by_connected_env(cmd.cli_ctx):
+        _infer_existing_connected_env(cmd, location, resource_group, env, custom_location)
 
-    _infer_existing_custom_location_or_extension(cmd, name, location, resource_group, env, custom_location, extension)
+        _infer_existing_custom_location_or_extension(cmd, name, location, resource_group, env, custom_location, extension)
 
-    _get_acr_from_image(cmd, app)
+    if not is_registry_server_params_set:
+        _get_acr_from_image(cmd, app)
 
 
 # Try to get existed connected environment
@@ -1381,7 +1663,17 @@ def _infer_existing_connected_env(
         custom_location: "CustomLocation",
 ):
     if not env.resource_type or (env.is_connected_environment() and (not env.name or not resource_group.name or not env.custom_location_id)):
-        connected_env_list = list_connected_environments(cmd=cmd, resource_group_name=resource_group.name)
+        connected_env_list = []
+        try:
+            connected_env_list = list_connected_environments(cmd=cmd, resource_group_name=resource_group.name)
+        except CLIInternalError as e:
+            string_err = str(e)
+            # If a resource group is provided but not found, we will automatically create it in a subsequent step
+            if "ResourceGroupNotFound" in string_err:
+                pass
+            else:
+                raise e
+
         env_list = []
         for e in connected_env_list:
             if env.name and env.name != e["name"]:
@@ -1402,7 +1694,7 @@ def _infer_existing_connected_env(
             env.set_name(env_list[0]["id"])
             env.custom_location_id = env_list[0]["extendedLocation"]["name"]
         if len(env_list) > 1:
-            if env.name:
+            if env.name:  # pylint: disable=no-else-raise
                 raise ValidationError(
                     f"There are multiple Connected Environments with name {env.name} on the subscription. "
                     "Please specify which resource group your Connected environment is in."
@@ -1459,6 +1751,7 @@ def _create_github_action(
     token,
     repo,
     context_path,
+    build_env_vars,
 ):
 
     sp = _get_or_create_sp(
@@ -1492,6 +1785,7 @@ def _create_github_action(
         service_principal_tenant_id=service_principal_tenant_id,
         image=app.image,
         context_path=context_path,
+        build_env_vars=build_env_vars,
         trigger_existing_workflow=True,
     )
 
@@ -1513,7 +1807,7 @@ def up_output(app: 'ContainerApp', no_dockerfile):
     if no_dockerfile and app.ingress:
         logger.warning(f"Your app is running image {app.image} and listening on port {app.target_port}")
 
-    url and logger.warning(f"Browse to your container app at: {url} \n")
+    url and logger.warning(f"Browse to your container app at: {url} \n")  # pylint: disable=expression-not-assigned
     logger.warning(
         f"Stream logs for your container with: az containerapp logs show -n {app.name} -g {app.resource_group.name} \n"
     )

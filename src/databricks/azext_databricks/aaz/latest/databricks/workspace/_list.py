@@ -25,12 +25,14 @@ class List(AAZCommand):
     """
 
     _aaz_info = {
-        "version": "2023-02-01",
+        "version": "2026-01-01",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/providers/microsoft.databricks/workspaces", "2023-02-01"],
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.databricks/workspaces", "2023-02-01"],
+            ["mgmt-plane", "/subscriptions/{}/providers/microsoft.databricks/workspaces", "2026-01-01"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.databricks/workspaces", "2026-01-01"],
         ]
     }
+
+    AZ_SUPPORT_PAGINATION = True
 
     def _handler(self, command_args):
         super()._handler(command_args)
@@ -117,7 +119,7 @@ class List(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-02-01",
+                    "api-version", "2026-01-01",
                     required=True,
                 ),
             }
@@ -182,7 +184,13 @@ class List(AAZCommand):
             )
 
             properties = cls._schema_on_200.value.Element.properties
+            properties.access_connector = AAZObjectType(
+                serialized_name="accessConnector",
+            )
             properties.authorizations = AAZListType()
+            properties.compute_mode = AAZStrType(
+                serialized_name="computeMode",
+            )
             properties.created_by = AAZObjectType(
                 serialized_name="createdBy",
             )
@@ -191,18 +199,30 @@ class List(AAZCommand):
                 serialized_name="createdDateTime",
                 flags={"read_only": True},
             )
+            properties.default_catalog = AAZObjectType(
+                serialized_name="defaultCatalog",
+            )
+            properties.default_storage_firewall = AAZStrType(
+                serialized_name="defaultStorageFirewall",
+            )
             properties.disk_encryption_set_id = AAZStrType(
                 serialized_name="diskEncryptionSetId",
                 flags={"read_only": True},
             )
             properties.encryption = AAZObjectType()
+            properties.enhanced_security_compliance = AAZObjectType(
+                serialized_name="enhancedSecurityCompliance",
+            )
+            properties.is_uc_enabled = AAZBoolType(
+                serialized_name="isUcEnabled",
+                flags={"read_only": True},
+            )
             properties.managed_disk_identity = AAZObjectType(
                 serialized_name="managedDiskIdentity",
             )
             _ListHelper._build_schema_managed_identity_configuration_read(properties.managed_disk_identity)
             properties.managed_resource_group_id = AAZStrType(
                 serialized_name="managedResourceGroupId",
-                flags={"required": True},
             )
             properties.parameters = AAZObjectType()
             properties.private_endpoint_connections = AAZListType(
@@ -239,6 +259,18 @@ class List(AAZCommand):
                 flags={"read_only": True},
             )
 
+            access_connector = cls._schema_on_200.value.Element.properties.access_connector
+            access_connector.id = AAZStrType(
+                flags={"required": True},
+            )
+            access_connector.identity_type = AAZStrType(
+                serialized_name="identityType",
+                flags={"required": True},
+            )
+            access_connector.user_assigned_identity_id = AAZStrType(
+                serialized_name="userAssignedIdentityId",
+            )
+
             authorizations = cls._schema_on_200.value.Element.properties.authorizations
             authorizations.Element = AAZObjectType()
 
@@ -250,6 +282,14 @@ class List(AAZCommand):
             _element.role_definition_id = AAZStrType(
                 serialized_name="roleDefinitionId",
                 flags={"required": True},
+            )
+
+            default_catalog = cls._schema_on_200.value.Element.properties.default_catalog
+            default_catalog.initial_name = AAZStrType(
+                serialized_name="initialName",
+            )
+            default_catalog.initial_type = AAZStrType(
+                serialized_name="initialType",
             )
 
             encryption = cls._schema_on_200.value.Element.properties.encryption
@@ -315,6 +355,32 @@ class List(AAZCommand):
                 flags={"required": True},
             )
 
+            enhanced_security_compliance = cls._schema_on_200.value.Element.properties.enhanced_security_compliance
+            enhanced_security_compliance.automatic_cluster_update = AAZObjectType(
+                serialized_name="automaticClusterUpdate",
+            )
+            enhanced_security_compliance.compliance_security_profile = AAZObjectType(
+                serialized_name="complianceSecurityProfile",
+            )
+            enhanced_security_compliance.enhanced_security_monitoring = AAZObjectType(
+                serialized_name="enhancedSecurityMonitoring",
+            )
+
+            automatic_cluster_update = cls._schema_on_200.value.Element.properties.enhanced_security_compliance.automatic_cluster_update
+            automatic_cluster_update.value = AAZStrType()
+
+            compliance_security_profile = cls._schema_on_200.value.Element.properties.enhanced_security_compliance.compliance_security_profile
+            compliance_security_profile.compliance_standards = AAZListType(
+                serialized_name="complianceStandards",
+            )
+            compliance_security_profile.value = AAZStrType()
+
+            compliance_standards = cls._schema_on_200.value.Element.properties.enhanced_security_compliance.compliance_security_profile.compliance_standards
+            compliance_standards.Element = AAZStrType()
+
+            enhanced_security_monitoring = cls._schema_on_200.value.Element.properties.enhanced_security_compliance.enhanced_security_monitoring
+            enhanced_security_monitoring.value = AAZStrType()
+
             parameters = cls._schema_on_200.value.Element.properties.parameters
             parameters.aml_workspace_id = AAZObjectType(
                 serialized_name="amlWorkspaceId",
@@ -335,7 +401,6 @@ class List(AAZCommand):
             parameters.enable_no_public_ip = AAZObjectType(
                 serialized_name="enableNoPublicIp",
             )
-            _ListHelper._build_schema_workspace_custom_boolean_parameter_read(parameters.enable_no_public_ip)
             parameters.encryption = AAZObjectType()
             parameters.load_balancer_backend_pool_name = AAZObjectType(
                 serialized_name="loadBalancerBackendPoolName",
@@ -363,6 +428,7 @@ class List(AAZCommand):
             _ListHelper._build_schema_workspace_custom_boolean_parameter_read(parameters.require_infrastructure_encryption)
             parameters.resource_tags = AAZObjectType(
                 serialized_name="resourceTags",
+                flags={"read_only": True},
             )
             parameters.storage_account_name = AAZObjectType(
                 serialized_name="storageAccountName",
@@ -376,6 +442,14 @@ class List(AAZCommand):
                 serialized_name="vnetAddressPrefix",
             )
             _ListHelper._build_schema_workspace_custom_string_parameter_read(parameters.vnet_address_prefix)
+
+            enable_no_public_ip = cls._schema_on_200.value.Element.properties.parameters.enable_no_public_ip
+            enable_no_public_ip.type = AAZStrType(
+                flags={"read_only": True},
+            )
+            enable_no_public_ip.value = AAZBoolType(
+                flags={"required": True},
+            )
 
             encryption = cls._schema_on_200.value.Element.properties.parameters.encryption
             encryption.type = AAZStrType(
@@ -396,6 +470,9 @@ class List(AAZCommand):
             resource_tags = cls._schema_on_200.value.Element.properties.parameters.resource_tags
             resource_tags.type = AAZStrType(
                 flags={"read_only": True},
+            )
+            resource_tags.value = AAZFreeFormDictType(
+                flags={"required": True},
             )
 
             private_endpoint_connections = cls._schema_on_200.value.Element.properties.private_endpoint_connections
@@ -519,7 +596,7 @@ class List(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-02-01",
+                    "api-version", "2026-01-01",
                     required=True,
                 ),
             }
@@ -584,7 +661,13 @@ class List(AAZCommand):
             )
 
             properties = cls._schema_on_200.value.Element.properties
+            properties.access_connector = AAZObjectType(
+                serialized_name="accessConnector",
+            )
             properties.authorizations = AAZListType()
+            properties.compute_mode = AAZStrType(
+                serialized_name="computeMode",
+            )
             properties.created_by = AAZObjectType(
                 serialized_name="createdBy",
             )
@@ -593,18 +676,30 @@ class List(AAZCommand):
                 serialized_name="createdDateTime",
                 flags={"read_only": True},
             )
+            properties.default_catalog = AAZObjectType(
+                serialized_name="defaultCatalog",
+            )
+            properties.default_storage_firewall = AAZStrType(
+                serialized_name="defaultStorageFirewall",
+            )
             properties.disk_encryption_set_id = AAZStrType(
                 serialized_name="diskEncryptionSetId",
                 flags={"read_only": True},
             )
             properties.encryption = AAZObjectType()
+            properties.enhanced_security_compliance = AAZObjectType(
+                serialized_name="enhancedSecurityCompliance",
+            )
+            properties.is_uc_enabled = AAZBoolType(
+                serialized_name="isUcEnabled",
+                flags={"read_only": True},
+            )
             properties.managed_disk_identity = AAZObjectType(
                 serialized_name="managedDiskIdentity",
             )
             _ListHelper._build_schema_managed_identity_configuration_read(properties.managed_disk_identity)
             properties.managed_resource_group_id = AAZStrType(
                 serialized_name="managedResourceGroupId",
-                flags={"required": True},
             )
             properties.parameters = AAZObjectType()
             properties.private_endpoint_connections = AAZListType(
@@ -641,6 +736,18 @@ class List(AAZCommand):
                 flags={"read_only": True},
             )
 
+            access_connector = cls._schema_on_200.value.Element.properties.access_connector
+            access_connector.id = AAZStrType(
+                flags={"required": True},
+            )
+            access_connector.identity_type = AAZStrType(
+                serialized_name="identityType",
+                flags={"required": True},
+            )
+            access_connector.user_assigned_identity_id = AAZStrType(
+                serialized_name="userAssignedIdentityId",
+            )
+
             authorizations = cls._schema_on_200.value.Element.properties.authorizations
             authorizations.Element = AAZObjectType()
 
@@ -652,6 +759,14 @@ class List(AAZCommand):
             _element.role_definition_id = AAZStrType(
                 serialized_name="roleDefinitionId",
                 flags={"required": True},
+            )
+
+            default_catalog = cls._schema_on_200.value.Element.properties.default_catalog
+            default_catalog.initial_name = AAZStrType(
+                serialized_name="initialName",
+            )
+            default_catalog.initial_type = AAZStrType(
+                serialized_name="initialType",
             )
 
             encryption = cls._schema_on_200.value.Element.properties.encryption
@@ -717,6 +832,32 @@ class List(AAZCommand):
                 flags={"required": True},
             )
 
+            enhanced_security_compliance = cls._schema_on_200.value.Element.properties.enhanced_security_compliance
+            enhanced_security_compliance.automatic_cluster_update = AAZObjectType(
+                serialized_name="automaticClusterUpdate",
+            )
+            enhanced_security_compliance.compliance_security_profile = AAZObjectType(
+                serialized_name="complianceSecurityProfile",
+            )
+            enhanced_security_compliance.enhanced_security_monitoring = AAZObjectType(
+                serialized_name="enhancedSecurityMonitoring",
+            )
+
+            automatic_cluster_update = cls._schema_on_200.value.Element.properties.enhanced_security_compliance.automatic_cluster_update
+            automatic_cluster_update.value = AAZStrType()
+
+            compliance_security_profile = cls._schema_on_200.value.Element.properties.enhanced_security_compliance.compliance_security_profile
+            compliance_security_profile.compliance_standards = AAZListType(
+                serialized_name="complianceStandards",
+            )
+            compliance_security_profile.value = AAZStrType()
+
+            compliance_standards = cls._schema_on_200.value.Element.properties.enhanced_security_compliance.compliance_security_profile.compliance_standards
+            compliance_standards.Element = AAZStrType()
+
+            enhanced_security_monitoring = cls._schema_on_200.value.Element.properties.enhanced_security_compliance.enhanced_security_monitoring
+            enhanced_security_monitoring.value = AAZStrType()
+
             parameters = cls._schema_on_200.value.Element.properties.parameters
             parameters.aml_workspace_id = AAZObjectType(
                 serialized_name="amlWorkspaceId",
@@ -737,7 +878,6 @@ class List(AAZCommand):
             parameters.enable_no_public_ip = AAZObjectType(
                 serialized_name="enableNoPublicIp",
             )
-            _ListHelper._build_schema_workspace_custom_boolean_parameter_read(parameters.enable_no_public_ip)
             parameters.encryption = AAZObjectType()
             parameters.load_balancer_backend_pool_name = AAZObjectType(
                 serialized_name="loadBalancerBackendPoolName",
@@ -765,6 +905,7 @@ class List(AAZCommand):
             _ListHelper._build_schema_workspace_custom_boolean_parameter_read(parameters.require_infrastructure_encryption)
             parameters.resource_tags = AAZObjectType(
                 serialized_name="resourceTags",
+                flags={"read_only": True},
             )
             parameters.storage_account_name = AAZObjectType(
                 serialized_name="storageAccountName",
@@ -778,6 +919,14 @@ class List(AAZCommand):
                 serialized_name="vnetAddressPrefix",
             )
             _ListHelper._build_schema_workspace_custom_string_parameter_read(parameters.vnet_address_prefix)
+
+            enable_no_public_ip = cls._schema_on_200.value.Element.properties.parameters.enable_no_public_ip
+            enable_no_public_ip.type = AAZStrType(
+                flags={"read_only": True},
+            )
+            enable_no_public_ip.value = AAZBoolType(
+                flags={"required": True},
+            )
 
             encryption = cls._schema_on_200.value.Element.properties.parameters.encryption
             encryption.type = AAZStrType(
@@ -798,6 +947,9 @@ class List(AAZCommand):
             resource_tags = cls._schema_on_200.value.Element.properties.parameters.resource_tags
             resource_tags.type = AAZStrType(
                 flags={"read_only": True},
+            )
+            resource_tags.value = AAZFreeFormDictType(
+                flags={"required": True},
             )
 
             private_endpoint_connections = cls._schema_on_200.value.Element.properties.private_endpoint_connections

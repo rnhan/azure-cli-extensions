@@ -5,6 +5,7 @@
 
 # pylint: disable=line-too-long
 # pylint: disable=too-many-statements
+# pylint: disable=too-many-locals
 from azure.cli.core.commands import CliCommandType
 from azext_cosmosdb_preview._client_factory import (
     cf_cassandra_cluster,
@@ -15,6 +16,8 @@ from azext_cosmosdb_preview._client_factory import (
     cf_db_accounts,
     cf_gremlin_resources,
     cf_table_resources,
+    cf_cassandra_resources,
+    cf_mongo_mi_resources,
     cf_restorable_sql_containers,
     cf_restorable_mongodb_collections,
     cf_restorable_gremlin_databases,
@@ -24,7 +27,15 @@ from azext_cosmosdb_preview._client_factory import (
     cf_restorable_table_resources,
     cf_restorable_database_accounts,
     cf_data_transfer_job,
-    cf_mongo_cluster_job
+    cf_mongo_clusters,
+    cf_mongo_cluster_firewall_rules,
+    cf_fleet,
+    cf_fleetspace,
+    cf_fleetspace_account,
+    cf_fleet_analytics,
+    cf_softdeleted_database_accounts,
+    cf_softdeleted_sql_databases,
+    cf_softdeleted_sql_containers
 )
 
 
@@ -48,6 +59,22 @@ def load_command_table(self, _):
     cosmosdb_sql_sdk = CliCommandType(
         operations_tmpl='azure.mgmt.cosmosdb.operations#SqlResourcesOperations.{}',
         client_factory=cf_sql_resources)
+
+    cosmosdb_rbac_table_sdk = CliCommandType(
+        operations_tmpl='azext_cosmosdb_preview.vendored_sdks.azure_mgmt_cosmosdb.operations#TableResourcesOperations.{}',
+        client_factory=cf_table_resources)
+
+    cosmosdb_rbac_gremlin_sdk = CliCommandType(
+        operations_tmpl='azext_cosmosdb_preview.vendored_sdks.azure_mgmt_cosmosdb.operations#GremlinResourcesOperations.{}',
+        client_factory=cf_gremlin_resources)
+
+    cosmosdb_rbac_cassandra_sdk = CliCommandType(
+        operations_tmpl='azext_cosmosdb_preview.vendored_sdks.azure_mgmt_cosmosdb.operations#CassandraResourcesOperations.{}',
+        client_factory=cf_cassandra_resources)
+
+    cosmosdb_rbac_mongo_mi_sdk = CliCommandType(
+        operations_tmpl='azext_cosmosdb_preview.vendored_sdks.azure_mgmt_cosmosdb.operations#MongoMIResourcesOperations.{}',
+        client_factory=cf_mongo_mi_resources)
 
     with self.command_group('managed-cassandra cluster', cosmosdb_managed_cassandra_cluster_sdk, client_factory=cf_cassandra_cluster) as g:
         g.custom_command('create', 'cli_cosmosdb_managed_cassandra_cluster_create', supports_no_wait=True)
@@ -93,6 +120,70 @@ def load_command_table(self, _):
         g.custom_command('create', 'cli_cosmosdb_sql_container_create')
         g.custom_command('update', 'cli_cosmosdb_sql_container_update')
 
+    with self.command_group('cosmosdb table role definition', cosmosdb_rbac_table_sdk, client_factory=cf_table_resources) as g:
+        g.custom_command('create', 'cli_cosmosdb_table_role_definition_create')
+        g.custom_command('update', 'cli_cosmosdb_table_role_definition_update')
+        g.custom_command('exists', 'cli_cosmosdb_table_role_definition_exists')
+        g.command('list', 'list_table_role_definitions')
+        g.show_command('show', 'get_table_role_definition')
+        g.command('delete', 'begin_delete_table_role_definition', confirmation=True)
+
+    with self.command_group('cosmosdb table role assignment', cosmosdb_rbac_table_sdk, client_factory=cf_table_resources) as g:
+        g.custom_command('create', 'cli_cosmosdb_table_role_assignment_create')
+        g.custom_command('update', 'cli_cosmosdb_table_role_assignment_update')
+        g.custom_command('exists', 'cli_cosmosdb_table_role_assignment_exists')
+        g.command('list', 'list_table_role_assignments')
+        g.show_command('show', 'get_table_role_assignment')
+        g.command('delete', 'begin_delete_table_role_assignment', confirmation=True)
+
+    with self.command_group('cosmosdb gremlin role definition', cosmosdb_rbac_gremlin_sdk, client_factory=cf_gremlin_resources) as g:
+        g.custom_command('create', 'cli_cosmosdb_gremlin_role_definition_create')
+        g.custom_command('update', 'cli_cosmosdb_gremlin_role_definition_update')
+        g.custom_command('exists', 'cli_cosmosdb_gremlin_role_definition_exists')
+        g.command('list', 'list_gremlin_role_definitions')
+        g.show_command('show', 'get_gremlin_role_definition')
+        g.command('delete', 'begin_delete_gremlin_role_definition', confirmation=True)
+
+    with self.command_group('cosmosdb gremlin role assignment', cosmosdb_rbac_gremlin_sdk, client_factory=cf_gremlin_resources) as g:
+        g.custom_command('create', 'cli_cosmosdb_gremlin_role_assignment_create')
+        g.custom_command('update', 'cli_cosmosdb_gremlin_role_assignment_update')
+        g.custom_command('exists', 'cli_cosmosdb_gremlin_role_assignment_exists')
+        g.command('list', 'list_gremlin_role_assignments')
+        g.show_command('show', 'get_gremlin_role_assignment')
+        g.command('delete', 'begin_delete_gremlin_role_assignment', confirmation=True)
+
+    with self.command_group('cosmosdb cassandra role definition', cosmosdb_rbac_cassandra_sdk, client_factory=cf_cassandra_resources) as g:
+        g.custom_command('create', 'cli_cosmosdb_cassandra_role_definition_create')
+        g.custom_command('update', 'cli_cosmosdb_cassandra_role_definition_update')
+        g.custom_command('exists', 'cli_cosmosdb_cassandra_role_definition_exists')
+        g.command('list', 'list_cassandra_role_definitions')
+        g.show_command('show', 'get_cassandra_role_definition')
+        g.command('delete', 'begin_delete_cassandra_role_definition', confirmation=True)
+
+    with self.command_group('cosmosdb cassandra role assignment', cosmosdb_rbac_cassandra_sdk, client_factory=cf_cassandra_resources) as g:
+        g.custom_command('create', 'cli_cosmosdb_cassandra_role_assignment_create')
+        g.custom_command('update', 'cli_cosmosdb_cassandra_role_assignment_update')
+        g.custom_command('exists', 'cli_cosmosdb_cassandra_role_assignment_exists')
+        g.command('list', 'list_cassandra_role_assignments')
+        g.show_command('show', 'get_cassandra_role_assignment')
+        g.command('delete', 'begin_delete_cassandra_role_assignment', confirmation=True)
+
+    with self.command_group('cosmosdb mongomi role definition', cosmosdb_rbac_mongo_mi_sdk, client_factory=cf_mongo_mi_resources) as g:
+        g.custom_command('create', 'cli_cosmosdb_mongomi_role_definition_create')
+        g.custom_command('update', 'cli_cosmosdb_mongomi_role_definition_update')
+        g.custom_command('exists', 'cli_cosmosdb_mongomi_role_definition_exists')
+        g.command('list', 'list_mongo_mi_role_definitions')
+        g.show_command('show', 'get_mongo_mi_role_definition')
+        g.command('delete', 'begin_delete_mongo_mi_role_definition', confirmation=True)
+
+    with self.command_group('cosmosdb mongomi role assignment', cosmosdb_rbac_mongo_mi_sdk, client_factory=cf_mongo_mi_resources) as g:
+        g.custom_command('create', 'cli_cosmosdb_mongomi_role_assignment_create')
+        g.custom_command('update', 'cli_cosmosdb_mongomi_role_assignment_update')
+        g.custom_command('exists', 'cli_cosmosdb_mongomi_role_assignment_exists')
+        g.command('list', 'list_mongo_mi_role_assignments')
+        g.show_command('show', 'get_mongo_mi_role_assignment')
+        g.command('delete', 'begin_delete_mongo_mi_role_assignment', confirmation=True)
+
     # restorable accounts api sdk
     cosmosdb_sdk = CliCommandType(
         operations_tmpl='azext_cosmosdb_preview.vendored_sdks.azure_mgmt_cosmosdb.operations#DatabaseAccountsOperations.{}',
@@ -133,6 +224,19 @@ def load_command_table(self, _):
         operations_tmpl='azure.mgmt.cosmosdb.operations#RestorableDatabaseAccountsOperations.{}',
         client_factory=cf_restorable_database_accounts)
 
+    # Soft-deleted resources SDK types
+    cosmosdb_softdeleted_accounts_sdk = CliCommandType(
+        operations_tmpl='azext_cosmosdb_preview.vendored_sdks.azure_mgmt_cosmosdb.operations#SoftDeletedDatabaseAccountsOperations.{}',
+        client_factory=cf_softdeleted_database_accounts)
+
+    cosmosdb_softdeleted_sql_databases_sdk = CliCommandType(
+        operations_tmpl='azext_cosmosdb_preview.vendored_sdks.azure_mgmt_cosmosdb.operations#SoftDeletedSqlDatabasesOperations.{}',
+        client_factory=cf_softdeleted_sql_databases)
+
+    cosmosdb_softdeleted_sql_containers_sdk = CliCommandType(
+        operations_tmpl='azext_cosmosdb_preview.vendored_sdks.azure_mgmt_cosmosdb.operations#SoftDeletedSqlContainersOperations.{}',
+        client_factory=cf_softdeleted_sql_containers)
+
     # define commands
     # Restorable apis for sql,mongodb,gremlin and table
     # Provisioning/migrate Continuous 7 days accounts
@@ -142,6 +246,9 @@ def load_command_table(self, _):
         g.custom_command('update', 'cli_cosmosdb_update')
         g.custom_command('list', 'cli_cosmosdb_list')
         g.show_command('show', 'get')
+
+    with self.command_group('cosmosdb keys', cosmosdb_sdk, client_factory=cf_db_accounts) as g:
+        g.custom_command('regenerate', 'cli_cosmosdb_keys_regenerate')
 
     with self.command_group('cosmosdb sql restorable-container', cosmosdb_restorable_sql_containers_sdk, client_factory=cf_restorable_sql_containers, is_preview=True) as g:
         g.command('list', 'list')
@@ -211,6 +318,7 @@ def load_command_table(self, _):
         g.command('pause', 'pause')
         g.command('resume', 'resume')
         g.command('cancel', 'cancel')
+        g.command('complete', 'complete')
 
     # Merge partitions for Sql containers
     cosmosdb_sql_sdk = CliCommandType(
@@ -231,6 +339,12 @@ def load_command_table(self, _):
     # Retrieve partition throughput for Sql containers
     with self.command_group('cosmosdb sql container', cosmosdb_sql_sdk, client_factory=cf_sql_resources) as g:
         g.custom_command('retrieve-partition-throughput', 'cli_begin_retrieve_sql_container_partition_throughput', is_preview=True)
+
+    # Get and update offer throughput for Sql containers
+    with self.command_group('cosmosdb sql container throughput', cosmosdb_sql_sdk, client_factory=cf_sql_resources) as g:
+        g.show_command('show', 'get_sql_container_throughput')
+        g.custom_command('update', 'cli_cosmosdb_sql_container_throughput_update')
+        g.custom_command('migrate', 'cli_cosmosdb_sql_container_throughput_migrate')
 
     # Merge partitions for Sql databases
     with self.command_group('cosmosdb sql database', cosmosdb_sql_sdk, client_factory=cf_sql_resources) as g:
@@ -273,22 +387,110 @@ def load_command_table(self, _):
     with self.command_group('cosmosdb table', cosmosdb_table_sdk, client_factory=cf_table_resources) as g:
         g.custom_command('restore', 'cli_cosmosdb_table_restore', is_preview=True)
 
+    # Soft-deleted Account commands
+    with self.command_group('cosmosdb softdeleted-account',
+                            cosmosdb_softdeleted_accounts_sdk,
+                            client_factory=cf_softdeleted_database_accounts,
+                            is_preview=True) as g:
+        g.custom_command('list', 'cli_cosmosdb_sql_softdeleted_account_list')
+        g.custom_show_command('show', 'cli_cosmosdb_sql_softdeleted_account_show')
+        g.custom_command('delete', 'cli_cosmosdb_sql_softdeleted_account_delete', confirmation=True)
+        g.custom_command('recover', 'cli_cosmosdb_sql_softdeleted_account_recover')
+
+    # Soft-deleted Database commands
+    with self.command_group('cosmosdb sql softdeleted-database',
+                            cosmosdb_softdeleted_sql_databases_sdk,
+                            client_factory=cf_softdeleted_sql_databases,
+                            is_preview=True) as g:
+        g.custom_command('list', 'cli_cosmosdb_sql_softdeleted_database_list')
+        g.custom_show_command('show', 'cli_cosmosdb_sql_softdeleted_database_show')
+        g.custom_command('delete', 'cli_cosmosdb_sql_softdeleted_database_delete', confirmation=True)
+        g.custom_command('recover', 'cli_cosmosdb_sql_softdeleted_database_recover')
+
+    # Soft-deleted Collection commands
+    with self.command_group('cosmosdb sql softdeleted-container',
+                            cosmosdb_softdeleted_sql_containers_sdk,
+                            client_factory=cf_softdeleted_sql_containers,
+                            is_preview=True) as g:
+        g.custom_command('list', 'cli_cosmosdb_sql_softdeleted_container_list')
+        g.custom_show_command('show', 'cli_cosmosdb_sql_softdeleted_container_show')
+        g.custom_command('delete', 'cli_cosmosdb_sql_softdeleted_container_delete', confirmation=True)
+        g.custom_command('recover', 'cli_cosmosdb_sql_softdeleted_container_recover')
+
+    setup_mongocluster_commands(self)
+
+    setup_fleet_commands(self)
+
+
+def setup_mongocluster_commands(self):
     # Mongo cluster operations
     cosmosdb_mongocluster_sdk = CliCommandType(
-        operations_tmpl='azext_cosmosdb_preview.vendored_sdks.azure_mgmt_cosmosdb.operations.#MongoClustersOperations.{}',
-        client_factory=cf_mongo_cluster_job)
+        operations_tmpl='azext_cosmosdb_preview.vendored_sdks.azure_mgmt_mongocluster.operations.#MongoClustersOperations.{}',
+        client_factory=cf_mongo_clusters)
+
+    # Mongo cluster firewall rule operations
+    cosmosdb_mongocluster_firewall_rule_sdk = CliCommandType(
+        operations_tmpl='azext_cosmosdb_preview.vendored_sdks.azure_mgmt_mongocluster.operations.#FirewallRulesOperations.{}',
+        client_factory=cf_mongo_cluster_firewall_rules)
 
     # Mongo Cluster create operations
-    with self.command_group('cosmosdb mongocluster', cosmosdb_mongocluster_sdk, client_factory=cf_mongo_cluster_job, is_preview=True) as g:
+    with self.command_group('cosmosdb mongocluster', cosmosdb_mongocluster_sdk, client_factory=cf_mongo_clusters, is_preview=True) as g:
         g.custom_command('create', 'cli_cosmosdb_mongocluster_create', is_preview=True)
         g.custom_command('update', 'cli_cosmosdb_mongocluster_update', is_preview=True)
         g.custom_command('list', 'cli_cosmosdb_mongocluster_list', is_preview=True)
         g.custom_show_command('show', 'cli_cosmosdb_mongocluster_get', is_preview=True)
         g.custom_command('delete', 'cli_cosmosdb_mongocluster_delete', confirmation=True)
 
-    with self.command_group('cosmosdb mongocluster firewall rule', cosmosdb_mongocluster_sdk, client_factory=cf_mongo_cluster_job, is_preview=True) as g:
+    with self.command_group('cosmosdb mongocluster firewall rule', cosmosdb_mongocluster_firewall_rule_sdk, client_factory=cf_mongo_cluster_firewall_rules, is_preview=True) as g:
         g.custom_command('create', 'cli_cosmosdb_mongocluster_firewall_rule_create', is_preview=True)
         g.custom_command('update', 'cli_cosmosdb_mongocluster_firewall_rule_update', is_preview=True)
         g.custom_command('list', 'cli_cosmosdb_mongocluster_firewall_rule_list', is_preview=True)
         g.custom_show_command('show', 'cli_cosmosdb_mongocluster_firewall_rule_get', is_preview=True)
         g.custom_command('delete', 'cli_cosmosdb_mongocluster_firewall_rule_delete', confirmation=True)
+
+
+def setup_fleet_commands(self):
+    # Fleet operations
+    cosmosdb_fleet_sdk = CliCommandType(
+        operations_tmpl='azext_cosmosdb_preview.vendored_sdks.azure_mgmt_cosmosdb.operations#FleetOperations.{}',
+        client_factory=cf_fleet)
+
+    # Fleetspace operations
+    cosmosdb_fleetspace_sdk = CliCommandType(
+        operations_tmpl='azext_cosmosdb_preview.vendored_sdks.azure_mgmt_cosmosdb.operations#FleetspaceOperations.{}',
+        client_factory=cf_fleetspace)
+
+    # Fleetspace account operations
+    cosmosdb_fleetspace_account_sdk = CliCommandType(
+        operations_tmpl='azext_cosmosdb_preview.vendored_sdks.azure_mgmt_cosmosdb.operations#FleetspaceAccountOperations.{}',
+        client_factory=cf_fleetspace_account)
+
+    # Fleet analytics operations
+    cosmosdb_fleet_analytics_sdk = CliCommandType(
+        operations_tmpl='azext_cosmosdb_preview.vendored_sdks.azure_mgmt_cosmosdb.operations#FleetAnalyticsOperations.{}',
+        client_factory=cf_fleet_analytics)
+
+    with self.command_group('cosmosdb fleet', cosmosdb_fleet_sdk, client_factory=cf_fleet, is_preview=True) as g:
+        g.custom_command('create', 'cli_cosmosdb_fleet_create')
+        g.custom_command('list', 'cli_list_cosmosdb_fleets')
+        g.show_command('show', 'get')
+        g.command('delete', 'begin_delete', confirmation=True)
+
+    with self.command_group('cosmosdb fleet analytics', cosmosdb_fleet_analytics_sdk, client_factory=cf_fleet_analytics, is_preview=True) as g:
+        g.custom_command('create', 'cli_cosmosdb_fleet_analytics_create')
+        g.command('list', 'list')
+        g.show_command('show', 'get')
+        g.command('delete', 'begin_delete', confirmation=True)
+
+    with self.command_group('cosmosdb fleetspace', cosmosdb_fleetspace_sdk, client_factory=cf_fleetspace, is_preview=True) as g:
+        g.custom_command('create', 'cli_cosmosdb_fleetspace_create')
+        g.command('list', 'list')
+        g.show_command('show', 'get')
+        g.custom_command('update', 'cli_cosmosdb_fleetspace_update')
+        g.command('delete', 'begin_delete', confirmation=True)
+
+    with self.command_group('cosmosdb fleetspace account', cosmosdb_fleetspace_account_sdk, client_factory=cf_fleetspace_account, is_preview=True) as g:
+        g.custom_command('create', 'cli_cosmosdb_fleetspace_account_create')
+        g.command('list', 'list')
+        g.show_command('show', 'get')
+        g.command('delete', 'begin_delete', confirmation=True)

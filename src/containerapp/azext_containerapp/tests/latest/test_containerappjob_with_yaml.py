@@ -7,7 +7,7 @@ import os
 import time
 
 from azure.cli.command_modules.containerapp._utils import format_location
-from msrestazure.tools import parse_resource_id
+from azure.mgmt.core.tools import parse_resource_id
 
 from azure.cli.testsdk.scenario_tests import AllowLargeResponse
 from azure.cli.testsdk import (ScenarioTest, ResourceGroupPreparer, JMESPathCheck)
@@ -17,7 +17,10 @@ from .utils import create_containerapp_env, prepare_containerapp_env_for_app_e2e
 TEST_DIR = os.path.abspath(os.path.join(os.path.abspath(__file__), '..'))
 
 
-class ContainerAppJobsExecutionsTest(ScenarioTest):
+class ContainerAppJobsExecutionsLocationNotInStageTest(ScenarioTest):
+    def __init__(self, *arg, **kwargs):
+        super().__init__(*arg, random_config_dir=True, **kwargs)
+
     @AllowLargeResponse(8192)
     @ResourceGroupPreparer(location="northcentralus")
     def test_containerappjob_create_with_yaml(self, resource_group):
@@ -33,11 +36,11 @@ class ContainerAppJobsExecutionsTest(ScenarioTest):
         share = self.create_random_name(prefix='share', length=24)
 
         self.cmd(
-            f'az storage account create --resource-group {resource_group}  --name {storage} --location {TEST_LOCATION} --kind StorageV2 --sku Standard_LRS --enable-large-file-share --output none')
+            f'az storage account create --resource-group {resource_group}  --name {storage} --location {location} --kind StorageV2 --sku Standard_LRS --enable-large-file-share --output none')
         self.cmd(
             f'az storage share-rm create --resource-group {resource_group}  --storage-account {storage} --name {share} --quota 1024 --enabled-protocols SMB --output none')
 
-        create_containerapp_env(self, env, resource_group)
+        create_containerapp_env(self, env, resource_group, location)
         containerapp_env = self.cmd('containerapp env show -g {} -n {}'.format(resource_group, env)).get_output_in_json()
 
         account_key = self.cmd(f'az storage account keys list -g {resource_group} -n {storage} --query "[0].value" '
@@ -51,7 +54,7 @@ class ContainerAppJobsExecutionsTest(ScenarioTest):
 
         # test job create with yaml
         containerappjob_yaml_text = f"""
-            location: {TEST_LOCATION}
+            location: {location}
             properties:
                 environmentId: {containerapp_env["id"]}
                 configuration:
@@ -64,7 +67,9 @@ class ContainerAppJobsExecutionsTest(ScenarioTest):
                     replicaRetryLimit: 1
                     replicaTimeout: 100
                     scheduleTriggerConfig: null
-                    secrets: null
+                    secrets:
+                    - name: secret1
+                      value: 1
                     triggerType: Manual
                 template:
                     containers:
@@ -138,6 +143,7 @@ class ContainerAppJobsExecutionsTest(ScenarioTest):
             JMESPathCheck("properties.configuration.triggerType", "Manual", case_sensitive=False),
             JMESPathCheck('properties.configuration.replicaTimeout', 100),
             JMESPathCheck('properties.configuration.replicaRetryLimit', 1),
+            JMESPathCheck("length(properties.configuration.secrets)", 1),
             JMESPathCheck('properties.template.containers[0].image', "mcr.microsoft.com/k8se/quickstart-jobs:latest"),
             JMESPathCheck('properties.template.containers[0].resources.cpu', "0.5"),
             JMESPathCheck('properties.template.containers[0].resources.memory', "1Gi"),
@@ -161,7 +167,7 @@ class ContainerAppJobsExecutionsTest(ScenarioTest):
 
         # test container app job update with yaml
         containerappjob_yaml_text = f"""
-            location: {TEST_LOCATION}
+            location: {location}
             properties:
                 environmentId: {containerapp_env["id"]}
                 configuration:
@@ -174,7 +180,10 @@ class ContainerAppJobsExecutionsTest(ScenarioTest):
                     replicaRetryLimit: 1
                     replicaTimeout: 200
                     scheduleTriggerConfig: null
-                    secrets: null
+                    secrets:
+                    - name: secret1
+                    - name: secret2
+                      value: 123
                     triggerType: Manual
                 template:
                     containers:
@@ -225,6 +234,7 @@ class ContainerAppJobsExecutionsTest(ScenarioTest):
             JMESPathCheck("properties.configuration.triggerType", "Manual", case_sensitive=False),
             JMESPathCheck('properties.configuration.replicaTimeout', 200),
             JMESPathCheck('properties.configuration.replicaRetryLimit', 1),
+            JMESPathCheck("length(properties.configuration.secrets)", 2),
             JMESPathCheck('properties.template.containers[0].image', "mcr.microsoft.com/k8se/quickstart-jobs:latest"),
             JMESPathCheck('properties.template.containers[0].resources.cpu', "0.75"),
             JMESPathCheck('properties.template.containers[0].resources.memory', "1.5Gi"),
@@ -235,6 +245,16 @@ class ContainerAppJobsExecutionsTest(ScenarioTest):
             JMESPathCheck('properties.template.containers[0].volumeMounts[0].subPath', 'sub2'),
             JMESPathCheck('properties.template.containers[0].volumeMounts[0].mountPath', '/mnt/data'),
             JMESPathCheck('properties.template.containers[0].volumeMounts[0].volumeName', 'azure-files-volume'),
+        ])
+
+        self.cmd(f'containerapp job secret show -g {resource_group} -n {job} --secret-name secret1', checks=[
+            JMESPathCheck("name", 'secret1'),
+            JMESPathCheck("value", '1'),
+        ])
+
+        self.cmd(f'containerapp job secret show -g {resource_group} -n {job} --secret-name secret2', checks=[
+            JMESPathCheck("name", 'secret2'),
+            JMESPathCheck("value", '123'),
         ])
 
         # wait for provisioning state of job to be succeeded before updating
@@ -283,7 +303,7 @@ class ContainerAppJobsExecutionsTest(ScenarioTest):
 
         # test job create with yaml
         containerappjob_yaml_text = f"""
-            location: {TEST_LOCATION}
+            location: {location}
             properties:
                 environmentId: {containerapp_env["id"]}
                 configuration:
@@ -382,7 +402,7 @@ class ContainerAppJobsExecutionsTest(ScenarioTest):
 
         # test container app job update with yaml
         containerappjob_yaml_text = f"""
-            location: {TEST_LOCATION}
+            location: {location}
             properties:
                 environmentId: {containerapp_env["id"]}
                 configuration:
@@ -430,6 +450,11 @@ class ContainerAppJobsExecutionsTest(ScenarioTest):
             JMESPathCheck('properties.configuration.eventTriggerConfig.scale.rules[0].auth[0].secretRef', "personal-access-token"),
         ])
         clean_up_test_file(containerappjob_file_name)
+
+
+class ContainerAppJobsExecutionsTest(ScenarioTest):
+    def __init__(self, *arg, **kwargs):
+        super().__init__(*arg, random_config_dir=True, **kwargs)
 
     @AllowLargeResponse(8192)
     @ResourceGroupPreparer(location="northcentralus")

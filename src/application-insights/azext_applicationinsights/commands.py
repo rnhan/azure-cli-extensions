@@ -4,14 +4,11 @@
 # --------------------------------------------------------------------------------------------
 
 # pylint: disable=line-too-long
-# pylint: disable=too-many-statements
+# pylint: disable=too-many-statements, too-many-locals
 
 from azure.cli.core.commands import CliCommandType
 
 from azext_applicationinsights._client_factory import (
-    cf_events,
-    cf_metrics,
-    cf_query,
     cf_components,
     cf_export_configuration,
     cf_web_test
@@ -19,21 +16,6 @@ from azext_applicationinsights._client_factory import (
 
 
 def load_command_table(self, _):
-
-    metrics_sdk = CliCommandType(
-        operations_tmpl='azext_applicationinsights.vendored_sdks.applicationinsights.operations.metrics_operations#MetricsOperations.{}',
-        client_factory=cf_metrics
-    )
-
-    events_sdk = CliCommandType(
-        operations_tmpl='azext_applicationinsights.vendored_sdks.applicationinsights.operations.events_operations#EventsOperations.{}',
-        client_factory=cf_events
-    )
-
-    query_sdk = CliCommandType(
-        operations_tmpl='azext_applicationinsights.vendored_sdks.applicationinsights.operations.query_operations#QueryOperations.{}',
-        client_factory=cf_query
-    )
 
     components_sdk = CliCommandType(
         operations_tmpl='azext_applicationinsights.vendored_sdks.mgmt_applicationinsights.operations.components_operations#ComponentsOperations.{}',
@@ -85,14 +67,14 @@ def load_command_table(self, _):
         self.command_table['monitor app-insights api-key show'] = APIKeyShow(loader=self)
         self.command_table['monitor app-insights api-key delete'] = APIKeyDelete(loader=self)
 
-    with self.command_group('monitor app-insights metrics', metrics_sdk) as g:
+    with self.command_group('monitor app-insights metrics') as g:
         g.custom_show_command('show', 'get_metric')
         g.custom_command('get-metadata', 'get_metrics_metadata')
 
-    with self.command_group('monitor app-insights events', events_sdk) as g:
+    with self.command_group('monitor app-insights events') as g:
         g.custom_show_command('show', 'get_events')
 
-    with self.command_group('monitor app-insights', query_sdk) as g:
+    with self.command_group('monitor app-insights') as g:
         g.custom_command('query', 'execute_query')
 
     with self.command_group('monitor app-insights component linked-storage'):
@@ -107,6 +89,13 @@ def load_command_table(self, _):
         self.command_table['monitor app-insights component continues-export show'] = ExportConfigurationShow(loader=self)
         self.command_table['monitor app-insights component continues-export list'] = ExportConfigurationList(loader=self)
         self.command_table['monitor app-insights component continues-export delete'] = ExportConfigurationDelete(loader=self)
+
+    with self.command_group('monitor app-insights workbook'):
+        from .custom import WorkbookCreate, WorkbookUpdate, IdentityAssign, IdentityRemove
+        self.command_table['monitor app-insights workbook create'] = WorkbookCreate(loader=self)
+        self.command_table['monitor app-insights workbook update'] = WorkbookUpdate(loader=self)
+        self.command_table['monitor app-insights workbook identity assign'] = IdentityAssign(loader=self)
+        self.command_table['monitor app-insights workbook identity remove'] = IdentityRemove(loader=self)
 
     with self.command_group('monitor app-insights component continues-export', command_type=export_configurations_sdk, custom_command_type=export_configurations_custom_sdk) as g:
         g.custom_command('create', 'create_export_configuration')

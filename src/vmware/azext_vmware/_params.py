@@ -31,6 +31,9 @@ def load_arguments(self, _):
     with self.argument_context('vmware private-cloud disable-cmk-encryption') as c:
         c.argument('yes', help='Delete without confirmation.')
 
+    with self.argument_context('vmware private-cloud delete-vcf-license') as c:
+        c.argument('yes', help='Delete without confirmation.')
+
     with self.argument_context('vmware private-cloud add-cmk-encryption') as c:
         c.argument('enc_kv_key_name', help='The name of the encryption key vault key.')
         c.argument('enc_kv_url', help='The URL of the encryption key vault.')
@@ -106,3 +109,4 @@ def load_arguments(self, _):
         c.argument('out', nargs='*', help='Standard output stream from the powershell execution.')
         c.argument('named_outputs', action=ScriptExecutionNamedOutputAction, nargs='*', help='User-defined dictionary.')
         c.argument('script_cmdlet_id', help='A reference to the script cmdlet resource if user is running a AVS script.')
+        c.argument('yes', help='Create without confirmation.')

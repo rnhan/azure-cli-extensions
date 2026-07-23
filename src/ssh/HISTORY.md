@@ -1,5 +1,35 @@
 Release History
 ===============
+2.0.9
+-----
+* Migrate code from Azure SDK to AAZ based commands for compute operations (VM)
+
+2.0.8
+-----
+* Add Entra ID SSH Login support for all clouds
+
+2.0.7
+-----
+* Upgrade Azure Arc SSH Proxy Version to latest (1.3.033291)
+* [Bug Fix] Ensure connection will not crash if logs contain non utf-8 characters
+
+2.0.6
+-----
+* Remove msrestazure dependency
+
+2.0.5
+-----
+* Remove ctypes dependency from RDP feature
+
+2.0.4
+-----
+* Install Arc SSH Proxy from MAR
+
+2.0.3
+-----
+* [Bug Fix] Ensure that certificate validity value is always an integer when retrieving relay information for connecting to Arc Machines.
+* Add support to ARM64 clients when connecting to Arc Machines. Connect proxy now available for ARM64 architecture.
+
 2.0.2
 -----
 * [Bug Fix] Fix logic that checks for the OS of the target machine to avoid "cannot unpack non-iterable NoneType object" error

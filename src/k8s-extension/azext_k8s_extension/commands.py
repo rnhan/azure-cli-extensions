@@ -4,7 +4,7 @@
 # --------------------------------------------------------------------------------------------
 
 # pylint: disable=line-too-long
-from azure.cli.core.commands import CliCommandType, client_factory
+from azure.cli.core.commands import CliCommandType
 from ._client_factory import (cf_k8s_extension, cf_k8s_extension_operation, cf_k8s_extension_types)
 from ._format import k8s_extension_list_table_format, k8s_extension_show_table_format, k8s_extension_types_list_table_format, k8s_extension_type_versions_list_table_format, k8s_extension_type_show_table_format, k8s_extension_type_version_show_table_format
 from . import consts
@@ -23,6 +23,7 @@ def load_command_table(self, _):
         g.custom_command('list', 'list_k8s_extension', table_transformer=k8s_extension_list_table_format)
         g.custom_show_command('show', 'show_k8s_extension', table_transformer=k8s_extension_show_table_format)
         g.custom_command('update', 'update_k8s_extension', supports_no_wait=True)
+        g.custom_command('troubleshoot', 'troubleshoot_extension', is_preview=True)
 
     # Subgroup - k8s-extension extension-types
     k8s_cluster_extension_type_sdk = CliCommandType(

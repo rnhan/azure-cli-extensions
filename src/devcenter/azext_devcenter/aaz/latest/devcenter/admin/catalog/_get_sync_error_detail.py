@@ -22,9 +22,9 @@ class GetSyncErrorDetail(AAZCommand):
     """
 
     _aaz_info = {
-        "version": "2023-10-01-preview",
+        "version": "2025-10-01-preview",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.devcenter/devcenters/{}/catalogs/{}/getsyncerrordetails", "2023-10-01-preview"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.devcenter/devcenters/{}/catalogs/{}/getsyncerrordetails", "2025-10-01-preview"],
         ]
     }
 
@@ -57,7 +57,7 @@ class GetSyncErrorDetail(AAZCommand):
         )
         _args_schema.dev_center_name = AAZStrArg(
             options=["-d", "--dev-center", "--dev-center-name"],
-            help="The name of the dev center.",
+            help="The name of the dev center. Use `az configure -d dev-center=<dev_center_name>` to configure a default.",
             required=True,
             id_part="name",
             fmt=AAZStrArgFormat(
@@ -112,7 +112,7 @@ class GetSyncErrorDetail(AAZCommand):
 
         @property
         def error_format(self):
-            return "ODataV4Format"
+            return "MgmtErrorFormat"
 
         @property
         def url_parameters(self):
@@ -140,7 +140,7 @@ class GetSyncErrorDetail(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-10-01-preview",
+                    "api-version", "2025-10-01-preview",
                     required=True,
                 ),
             }
@@ -181,6 +181,7 @@ class GetSyncErrorDetail(AAZCommand):
             )
             _schema_on_200.operation_error = AAZObjectType(
                 serialized_name="operationError",
+                flags={"read_only": True},
             )
             _GetSyncErrorDetailHelper._build_schema_catalog_error_details_read(_schema_on_200.operation_error)
 
@@ -226,7 +227,9 @@ class _GetSyncErrorDetailHelper:
             _schema.message = cls._schema_catalog_error_details_read.message
             return
 
-        cls._schema_catalog_error_details_read = _schema_catalog_error_details_read = AAZObjectType()
+        cls._schema_catalog_error_details_read = _schema_catalog_error_details_read = AAZObjectType(
+            flags={"read_only": True}
+        )
 
         catalog_error_details_read = _schema_catalog_error_details_read
         catalog_error_details_read.code = AAZStrType()

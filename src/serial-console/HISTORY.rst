@@ -1,5 +1,28 @@
 Release History
 ===============
+1.0.0b4
+++++++
+* Migrate code from Azure SDK to AAZ based commands for compute operations (VM)
+
+1.0.0b3
+++++++
+* Fixed an issue where admin commands were not being sent when the VM was using a custom boot diagnostics storage account.
+
+1.0.0b2
+++++++
+* Changed to 2024 API version, fixes Disable API to track "properties". Essentially return to 2018 format
+
+1.0.0b1
+++++++
+* Migrated to a new authentication flow to enhance overall security
+
+0.1.8
+++++++
+* Changed first message flow, fixed typo
+
+0.1.7
+++++++
+* Preparation for the new websocket authentication mechanism
 
 0.1.6
 ++++++

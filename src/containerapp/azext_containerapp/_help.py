@@ -11,23 +11,6 @@ helps['containerapp'] = """
     short-summary: Manage Azure Container Apps.
 """
 
-helps['containerapp list-usages'] = """
-    type: command
-    short-summary: List usages of subscription level quotas in specific region.
-    examples:
-    - name: List usages of  quotas in specific region.
-      text: |
-          az containerapp list-usages -l eastus
-"""
-
-helps['containerapp env list-usages'] = """
-    type: command
-    short-summary: List usages of quotas for specific managed environment.
-    examples:
-    - name: List usages of quotas for specific managed environment.
-      text: |
-          az containerapp env list-usages -n MyEnv -g MyResourceGroup
-"""
 
 helps['containerapp env dapr-component resiliency'] = """
     type: group
@@ -98,6 +81,61 @@ helps['containerapp env dapr-component resiliency list'] = """
            --dapr-component-name MyDaprComponentName --environment MyEnvironment
 """
 
+# Identity Commands
+helps['containerapp env identity'] = """
+    type: group
+    short-summary: Commands to manage environment managed identities.
+"""
+
+helps['containerapp env identity assign'] = """
+    type: command
+    short-summary: Assign managed identity to a managed environment.
+    long-summary: Managed identities can be user-assigned or system-assigned.
+    examples:
+    - name: Assign system identity.
+      text: |
+          az containerapp env identity assign -n my-env -g MyResourceGroup --system-assigned
+    - name: Assign user identity.
+      text: |
+          az containerapp env identity assign -n my-env -g MyResourceGroup --user-assigned myUserIdentityName
+    - name: Assign user identity (from a different resource group than the managed environment).
+      text: |
+          az containerapp env identity assign -n my-env -g MyResourceGroup --user-assigned myUserIdentityResourceId
+    - name: Assign system and user identity.
+      text: |
+          az containerapp env identity assign -n my-env -g MyResourceGroup --system-assigned --user-assigned myUserIdentityResourceId
+"""
+
+helps['containerapp env identity remove'] = """
+    type: command
+    short-summary: Remove a managed identity from a managed environment.
+    examples:
+    - name: Remove system identity.
+      text: |
+          az containerapp env identity remove -n my-env -g MyResourceGroup --system-assigned
+    - name: Remove user identity.
+      text: |
+          az containerapp env identity remove -n my-env -g MyResourceGroup --user-assigned myUserIdentityName
+    - name: Remove system and user identity (from a different resource group than the containerapp).
+      text: |
+          az containerapp env identity remove -n my-env -g MyResourceGroup --system-assigned --user-assigned myUserIdentityResourceId
+    - name: Remove all user identities.
+      text: |
+          az containerapp env identity remove -n my-env -g MyResourceGroup --user-assigned
+    - name: Remove system identity and all user identities.
+      text: |
+          az containerapp env identity remove -n my-env -g MyResourceGroup --system-assigned --user-assigned
+"""
+
+helps['containerapp env identity show'] = """
+    type: command
+    short-summary: Show managed identities of a managed environment.
+    examples:
+    - name: Show managed identities.
+      text: |
+          az containerapp env identity show -n my-env -g MyResourceGroup
+"""
+
 helps['containerapp up'] = """
     type: command
     short-summary: Create or update a container app as well as any associated resources (ACR, resource group, container apps environment, GitHub Actions, etc.)
@@ -120,18 +158,12 @@ helps['containerapp up'] = """
     - name: Create a container app from an image in a registry on a connected environment
       text: |
           az containerapp up -n my-containerapp --image myregistry.azurecr.io/myImage:myTag --environment MyConnectedEnvironmentId
-"""
-
-helps['containerapp show-custom-domain-verification-id'] = """
-    type: command
-    short-summary: Show the verification id for binding app or environment custom domains
-    examples:
-    - name: Get the verification id, which needs to be added as a TXT record for app custom domain to verify domain ownership
+    - name: Create a container app and deploy a model from Azure AI Foundry
       text: |
-          az containerapp show-custom-domain-verification-id
-    - name: Get the verification id, which needs to be added as a TXT record for custom environment DNS suffix to verify domain ownership
+            az containerapp up -n my-containerapp -l westus3 --model-registry azureml --model-name Phi-4 --model-version 7
+    - name: Create an Azure Functions on Container Apps (kind=functionapp)
       text: |
-          az containerapp show-custom-domain-verification-id
+            az containerapp up -n my-containerapp --image my-app:v1.0 --kind functionapp
 """
 
 helps['containerapp replica count'] = """
@@ -144,6 +176,135 @@ helps['containerapp replica count'] = """
     - name: Count replicas of the latest revision
       text: |
           az containerapp replica count -n my-containerapp -g MyResourceGroup
+"""
+
+helps['containerapp function'] = """
+    type: group
+    short-summary: Commands related to Azure Functions on Container Apps.
+"""
+
+helps['containerapp function list'] = """
+    type: command
+    short-summary: List all functions in an Azure Functions on Container Apps.
+    long-summary: |
+        --revision is required only if the app is not in single revision mode.
+        Run to check activerevisionmode: az containerapp show -n my-containerapp -g MyResourceGroup --query properties.configuration.activeRevisionsMode
+    examples:
+    - name: List all functions in an Azure Functions on Container Apps. (single active revision mode)
+      text: |
+          az containerapp function list -n my-containerapp -g MyResourceGroup
+    - name: List all functions in an Azure Functions on Container Apps for a specific revision.
+      text: |
+          az containerapp function list -n my-containerapp -g MyResourceGroup --revision MyRevision
+"""
+
+helps['containerapp function show'] = """
+    type: command
+    short-summary: Get details of a function in an Azure Functions on Container Apps.
+    long-summary: |
+        --revision is required only if the app is not in single revision mode.
+        Run to check activerevisionmode: az containerapp show -n my-containerapp -g MyResourceGroup --query properties.configuration.activeRevisionsMode
+    examples:
+    - name: Show details of a function in an Azure Functions on Container Apps. (single active revision mode)
+      text: |
+          az containerapp function show -n my-containerapp -g MyResourceGroup --function-name MyFunction
+    - name: Show details of a function in an Azure Functions on Container Apps for a specific revision.
+      text: |
+          az containerapp function show -n my-containerapp -g MyResourceGroup --function-name MyFunction --revision MyRevision
+"""
+
+helps['containerapp function keys'] = """
+    type: group
+    short-summary: Commands for keys management in an Azure Functions on Container Apps.
+"""
+
+helps['containerapp function keys show'] = """
+    type: command
+    short-summary: Show specific function key in an Azure Functions on Container Apps.
+    examples:
+    - name: Show a function key for a specific function in an Azure Functions on Container Apps.
+      text: |
+          az containerapp function keys show -n my-containerapp -g MyResourceGroup --key-type functionKey --key-name default --function-name MyFunctionName
+    - name: Show a host key for an Azure Functions on Container Apps.
+      text: |
+          az containerapp function keys show -n my-containerapp -g MyResourceGroup --key-type hostKey --key-name default
+    - name: Show a master key for an Azure Functions on Container Apps.
+      text: |
+          az containerapp function keys show -n my-containerapp -g MyResourceGroup --key-type masterKey --key-name _master
+    - name: Show a system key for an Azure Functions on Container Apps.
+      text: |
+          az containerapp function keys show -n my-containerapp -g MyResourceGroup --key-type systemKey --key-name MyKeyName
+"""
+
+helps['containerapp function keys list'] = """
+    type: command
+    short-summary: List function keys in an Azure Functions on Container Apps.
+    examples:
+    - name: List function keys for a specific function in an Azure Functions on Container Apps.
+      text: |
+          az containerapp function keys list -n my-containerapp -g MyResourceGroup --key-type functionKey --function-name MyFunctionName
+    - name: List host keys for an Azure Functions on Container Apps.
+      text: |
+          az containerapp function keys list -n my-containerapp -g MyResourceGroup --key-type hostKey
+    - name: List master keys for an Azure Functions on Container Apps.
+      text: |
+          az containerapp function keys list -n my-containerapp -g MyResourceGroup --key-type masterKey
+    - name: List system keys for an Azure Functions on Container Apps.
+      text: |
+          az containerapp function keys list -n my-containerapp -g MyResourceGroup --key-type systemKey
+"""
+
+helps['containerapp function keys set'] = """
+    type: command
+    short-summary: Create or update specific function key in an Azure Functions on Container Apps.
+    examples:
+    - name: Create or update a function key for a specific function in an Azure Functions on Container Apps.
+      text: |
+          az containerapp function keys set -n my-containerapp -g MyResourceGroup --key-type functionKey --key-name default --key-value MyKeyValue --function-name MyFunctionName
+    - name: Create or update a host key for an Azure Functions on Container Apps.
+      text: |
+          az containerapp function keys set -n my-containerapp -g MyResourceGroup --key-type hostKey --key-name default --key-value MyKeyValue
+    - name: Create or update the master key for an Azure Functions on Container Apps.
+      text: |
+          az containerapp function keys set -n my-containerapp -g MyResourceGroup --key-type masterKey --key-name _master --key-value MyKeyValue
+    - name: Create or update a system key for an Azure Functions on Container Apps.
+      text: |
+          az containerapp function keys set -n my-containerapp -g MyResourceGroup --key-type systemKey --key-name MyKeyName --key-value MyKeyValue
+"""
+
+helps['containerapp function invocations'] = """
+    type: group
+    short-summary: Commands to get function invocation data and traces from Application Insights.
+"""
+
+helps['containerapp function invocations summary'] = """
+    type: command
+    short-summary: Get function invocation summary from Application Insights.
+    examples:
+    - name: Get invocation summary for a function with default timespan (30 days)
+      text: |
+          az containerapp function invocations summary -n my-containerapp -g MyResourceGroup --function-name MyFunction
+    - name: Get invocation summary for a function with specific timespan
+      text: |
+          az containerapp function invocations summary -n my-containerapp -g MyResourceGroup --function-name MyFunction --timespan 7d
+    - name: Get invocation summary for a function in a specific revision
+      text: |
+          az containerapp function invocations summary -n my-containerapp -g MyResourceGroup --function-name MyFunction --revision MyRevision
+"""
+
+helps['containerapp function invocations traces'] = """
+    type: command
+    short-summary: Get function invocation traces from Application Insights.
+    examples:
+    - name: Get invocation traces for a function with default timespan (30 days)
+      text: |
+          az containerapp function invocations traces -n my-containerapp -g MyResourceGroup --function-name MyFunction
+    - name: Get invocation traces for a function with specific timespan
+      text: |
+          az containerapp function invocations traces -n my-containerapp -g MyResourceGroup --function-name MyFunction --timespan 24h
+    - name: Get invocation traces for a function in a specific revision
+      text: |
+          az containerapp function invocations traces -n my-containerapp -g MyResourceGroup --function-name MyFunction --revision MyRevision
 """
 
 # Environment Commands
@@ -170,20 +331,18 @@ helps['containerapp env create'] = """
               --logs-workspace-id myLogsWorkspaceID \\
               --logs-workspace-key myLogsWorkspaceKey \\
               --location eastus2
-    - name: Create an environment with workload profiles enabled.
+    - name: Create an environment with workload profiles enabled (default mode).
       text: |
           az containerapp env create -n MyContainerappEnvironment -g MyResourceGroup \\
-              --location eastus2 --enable-workload-profiles
-    - name: Create an environment without workload profiles enabled.
+              --location eastus2 --environment-mode WorkloadProfiles
+    - name: Create an environment in consumption-only mode (no workload profiles).
       text: |
           az containerapp env create -n MyContainerappEnvironment -g MyResourceGroup \\
-              --location eastus2 --enable-workload-profiles false
-"""
-
-helps['containerapp service'] = """
-    type: group
-    short-summary: Commands to manage services available within the environment.
-    deprecate_info: This command group is deprecated. Use 'az containerapp add-on' instead.
+              --location eastus2 --environment-mode ConsumptionOnly
+    - name: Create an environment with system assigned and user assigned identity.
+      text: |
+          az containerapp env create -n MyContainerappEnvironment -g MyResourceGroup \\
+              --location eastus2 --mi-system-assigned --mi-user-assigned MyUserIdentityResourceId
 """
 
 helps['containerapp add-on'] = """
@@ -191,89 +350,9 @@ helps['containerapp add-on'] = """
     short-summary: Commands to manage add-ons available within the environment.
 """
 
-helps['containerapp service list'] = """
-    type: command
-    short-summary: List all services within the environment.
-"""
-
 helps['containerapp add-on list'] = """
     type: command
     short-summary: List all add-ons within the environment.
-"""
-
-helps['containerapp service redis'] = """
-    type: group
-    short-summary: Commands to manage the redis service for the Container Apps environment.
-"""
-
-helps['containerapp service postgres'] = """
-    type: group
-    short-summary: Commands to manage the postgres service for the Container Apps environment.
-"""
-
-helps['containerapp service kafka'] = """
-    type: group
-    short-summary: Commands to manage the kafka service for the Container Apps environment.
-"""
-
-helps['containerapp service mariadb'] = """
-    type: group
-    short-summary: Commands to manage the mariadb service for the Container Apps environment.
-"""
-
-helps['containerapp service qdrant'] = """
-    type: group
-    short-summary: Commands to manage the qdrant service for the Container Apps environment.
-"""
-
-helps['containerapp service redis create'] = """
-    type: command
-    short-summary: Command to create the redis service.
-"""
-
-helps['containerapp service postgres create'] = """
-    type: command
-    short-summary: Command to create the postgres service.
-"""
-
-helps['containerapp service kafka create'] = """
-    type: command
-    short-summary: Command to create the kafka service.
-"""
-
-helps['containerapp service mariadb create'] = """
-    type: command
-    short-summary: Command to create the mariadb service.
-"""
-
-helps['containerapp service qdrant create'] = """
-    type: command
-    short-summary: Command to create the qdrant service.
-"""
-
-helps['containerapp service redis delete'] = """
-    type: command
-    short-summary: Command to delete the redis service.
-"""
-
-helps['containerapp service postgres delete'] = """
-    type: command
-    short-summary: Command to delete the postgres service.
-"""
-
-helps['containerapp service kafka delete'] = """
-    type: command
-    short-summary: Command to delete the kafka service.
-"""
-
-helps['containerapp service mariadb delete'] = """
-    type: command
-    short-summary: Command to delete the mariadb service.
-"""
-
-helps['containerapp service qdrant delete'] = """
-    type: command
-    short-summary: Command to delete the qdrant service.
 """
 
 helps['containerapp resiliency'] = """
@@ -373,6 +452,16 @@ helps['containerapp add-on qdrant'] = """
     short-summary: Commands to manage the qdrant add-on for the Container Apps environment.
 """
 
+helps['containerapp add-on weaviate'] = """
+    type: group
+    short-summary: Commands to manage the weaviate add-on for the Container Apps environment.
+"""
+
+helps['containerapp add-on milvus'] = """
+    type: group
+    short-summary: Commands to manage the milvus add-on for the Container Apps environment.
+"""
+
 helps['containerapp add-on redis create'] = """
     type: command
     short-summary: Command to create the redis add-on.
@@ -398,6 +487,16 @@ helps['containerapp add-on qdrant create'] = """
     short-summary: Command to create the qdrant add-on.
 """
 
+helps['containerapp add-on weaviate create'] = """
+    type: command
+    short-summary: Command to create the weaviate add-on.
+"""
+
+helps['containerapp add-on milvus create'] = """
+    type: command
+    short-summary: Command to create the milvus add-on.
+"""
+
 helps['containerapp add-on redis delete'] = """
     type: command
     short-summary: Command to delete the redis add-on.
@@ -421,6 +520,16 @@ helps['containerapp add-on mariadb delete'] = """
 helps['containerapp add-on qdrant delete'] = """
     type: command
     short-summary: Command to delete the qdrant add-on.
+"""
+
+helps['containerapp add-on weaviate delete'] = """
+    type: command
+    short-summary: Command to delete the weaviate service.
+"""
+
+helps['containerapp add-on milvus delete'] = """
+    type: command
+    short-summary: Command to delete the milvus service.
 """
 
 helps['containerapp env update'] = """
@@ -477,7 +586,7 @@ helps['containerapp job create'] = """
     - name: Create a container apps job with Trigger Type as Manual.
       text: |
           az containerapp job create -n MyContainerappsjob -g MyResourceGroup \\
-              --environment MyContainerappEnv
+              --environment MyContainerappEnv \\
               --trigger-type Manual \\
               --replica-timeout 5 \\
               --replica-retry-limit 2 \\
@@ -488,7 +597,7 @@ helps['containerapp job create'] = """
     - name: Create a container apps job with Trigger Type as Schedule.
       text: |
           az containerapp job create -n MyContainerappsjob -g MyResourceGroup \\
-              --environment MyContainerappEnv
+              --environment MyContainerappEnv \\
               --trigger-type Schedule \\
               --replica-timeout 5 \\
               --replica-retry-limit 2 \\
@@ -499,7 +608,7 @@ helps['containerapp job create'] = """
     - name: Create a container apps job with Trigger Type as Event.
       text: |
           az containerapp job create -n MyContainerappsjob -g MyResourceGroup \\
-              --environment MyContainerappEnv
+              --environment MyContainerappEnv \\
               --trigger-type Event \\
               --replica-timeout 5 \\
               --replica-retry-limit 2 \\
@@ -508,11 +617,11 @@ helps['containerapp job create'] = """
               --polling-interval 30 \\
               --min-executions 0 \\
               --max-executions 1 \\
-              --scale-rule-name queueJob \\
+              --scale-rule-name queue \\
               --scale-rule-type azure-queue \\
               --scale-rule-metadata "accountName=mystorageaccountname" \\
                                     "cloud=AzurePublicCloud" \\
-                                    "queueLength": "5" "queueName": "foo" \\
+                                    "queueLength=5" "queueName=foo" \\
               --scale-rule-auth "connection=my-connection-string-secret-name" \\
               --image imageName
 """
@@ -583,6 +692,21 @@ helps['containerapp env certificate create'] = """
           az containerapp env certificate create -g MyResourceGroup --name MyEnvironment --certificate-name MyCertificate --hostname MyHostname --validation-method CNAME
 """
 
+helps['containerapp env certificate upload'] = """
+    type: command
+    short-summary: Add or update a certificate.
+    examples:
+    - name: Add or update a certificate.
+      text: |
+          az containerapp env certificate upload -g MyResourceGroup --name MyEnvironment --certificate-file MyFilepath
+    - name: Add or update a certificate with a user-provided certificate name.
+      text: |
+          az containerapp env certificate upload -g MyResourceGroup --name MyEnvironment --certificate-file MyFilepath --certificate-name MyCertificateName
+    - name: Add or update a certificate from azure key vault using managed identity.
+      text: |
+          az containerapp env certificate upload -g MyResourceGroup --name MyEnvironment --akv-url akvSecretUrl --identity system
+"""
+
 helps['containerapp env certificate list'] = """
     type: command
     short-summary: List certificates for an environment.
@@ -650,6 +774,14 @@ helps['containerapp github-action add'] = """
           --service-principal-tenant-id 00000000-0000-0000-0000-00000000
           --service-principal-client-secret ClientSecret
           --token MyAccessToken
+    - name: Add GitHub Actions, using Azure Container Registry and personal access token, configure image build via build environment variables.
+      text: az containerapp github-action add -g MyResourceGroup -n my-containerapp --repo-url https://github.com/userid/repo --branch main
+          --registry-url myregistryurl.azurecr.io
+          --service-principal-client-id 00000000-0000-0000-0000-00000000
+          --service-principal-tenant-id 00000000-0000-0000-0000-00000000
+          --service-principal-client-secret ClientSecret
+          --token MyAccessToken
+          --build-env-vars BP_JVM_VERSION=21 BP_MAVEN_VERSION=4
     - name: Add GitHub Actions, using Azure Container Registry and log in to GitHub flow to retrieve personal access token.
       text: az containerapp github-action add -g MyResourceGroup -n my-containerapp --repo-url https://github.com/userid/repo --branch main
           --registry-url myregistryurl.azurecr.io
@@ -717,6 +849,12 @@ examples:
   - name: Configure the app to listen to the forward headers X-FORWARDED-HOST and X-FORWARDED-PROTO.
     text: |
         az containerapp auth update -g myResourceGroup --name my-containerapp --proxy-convention Standard
+  - name: Configure the blob storage token store using default system assigned managed identity to authenticate.
+    text: |
+        az containerapp auth update -g myResourceGroup --name my-containerapp --token-store true --blob-container-uri https://storageAccount1.blob.core.windows.net/container1
+  - name: Configure the blob storage token store using user assigned managed identity to authenticate.
+    text: |
+        az containerapp auth update -g myResourceGroup --name my-containerapp --token-store true --blob-container-uri https://storageAccount1.blob.core.windows.net/container1 --blob-container-identity managedIdentityResourceId
 """
 
 helps['containerapp env workload-profile set'] = """
@@ -726,6 +864,18 @@ helps['containerapp env workload-profile set'] = """
     - name: Create or update an existing workload profile in a Container Apps environment
       text: |
           az containerapp env workload-profile set -g MyResourceGroup -n MyEnvironment --workload-profile-name my-wlp --workload-profile-type D4 --min-nodes 1 --max-nodes 2
+"""
+
+helps['containerapp env storage set'] = """
+    type: command
+    short-summary: Create or update a storage.
+    examples:
+    - name: Create a azure file storage.
+      text: |
+          az containerapp env storage set -g MyResourceGroup -n MyEnv --storage-name MyStorageName --access-mode ReadOnly --azure-file-account-key MyAccountKey --azure-file-account-name MyAccountName --azure-file-share-name MyShareName
+    - name: Create a nfs azure file storage.
+      text: |
+          az containerapp env storage set -g MyResourceGroup -n MyEnv --storage-name MyStorageName --storage-type NfsAzureFile --access-mode ReadOnly --server MyNfsServer.file.core.windows.net --file-share /MyNfsServer/MyShareName
 """
 
 # Compose commands
@@ -852,8 +1002,19 @@ helps['containerapp create'] = """
               --scale-rule-type azure-queue \\
               --scale-rule-metadata "accountName=mystorageaccountname" \\
                                     "cloud=AzurePublicCloud" \\
-                                    "queueLength": "5" "queueName": "foo" \\
+                                    "queueLength=5" "queueName=foo" \\
               --scale-rule-auth "connection=my-connection-string-secret-name"
+    - name: Create a container app with a custom scale rule using identity to authenticate
+      text: |
+          az containerapp create -n my-containerapp -g MyResourceGroup \\
+              --image my-queue-processor --environment MyContainerappEnv \\
+              --user-assigned myUserIdentityResourceId --min-replicas 4 --max-replicas 8 \\
+              --scale-rule-name queue-based-autoscaling \\
+              --scale-rule-type azure-queue \\
+              --scale-rule-metadata "accountName=mystorageaccountname" \\
+                                    "cloud=AzurePublicCloud" \\
+                                    "queueLength=5" "queueName=foo" \\
+              --scale-rule-identity myUserIdentityResourceId
     - name: Create a container app with secrets and mounts them in a volume.
       text: |
           az containerapp create -n my-containerapp -g MyResourceGroup \\
@@ -877,6 +1038,21 @@ helps['containerapp create'] = """
           --environment MyContainerappEnv --registry-server MyRegistryServer \\
           --registry-user MyRegistryUser --registry-pass MyRegistryPass \\
           --source .
+    - name: Create a container app with java metrics enabled
+      text: |
+          az containerapp create -n my-containerapp -g MyResourceGroup \\
+              --image my-app:v1.0 --environment MyContainerappEnv \\
+              --enable-java-metrics
+    - name: Create a container app with java agent enabled
+      text: |
+          az containerapp create -n my-containerapp -g MyResourceGroup \\
+              --image my-app:v1.0 --environment MyContainerappEnv \\
+              --enable-java-agent
+    - name: Create an Azure Functions on Container Apps (kind=functionapp)
+      text: |
+          az containerapp create -n my-containerapp -g MyResourceGroup \\
+              --image my-app:v1.0 --environment MyContainerappEnv \\
+              --kind functionapp
 """
 
 # containerapp update for preview
@@ -908,6 +1084,18 @@ helps['containerapp update'] = """
     - name: Update a Container App from the provided application source
       text: |
           az containerapp update -n my-containerapp -g MyResourceGroup --source .
+    - name: Update a container app with java metrics enabled
+      text: |
+          az containerapp update -n my-containerapp -g MyResourceGroup \\
+              --enable-java-metrics
+    - name: Update a container app with java agent enabled
+      text: |
+          az containerapp update -n my-containerapp -g MyResourceGroup \\
+              --enable-java-agent
+    - name: Update a container app to erase java enhancement capabilities, like java metrics, java agent, etc.
+      text: |
+          az containerapp update -n my-containerapp -g MyResourceGroup \\
+              --runtime generic
 """
 
 # containerapp list for preview
@@ -924,6 +1112,9 @@ helps['containerapp list'] = """
     - name: List container apps by environment type.
       text: |
           az containerapp list --environment-type connected
+    - name: List Azure Functions on Container Apps only.
+      text: |
+          az containerapp list --kind functionapp
 """
 
 # Connected Environment Commands
@@ -970,6 +1161,23 @@ helps['containerapp connected-env list'] = """
     - name: List connected environments by resource group.
       text: |
           az containerapp connected-env list -g MyResourceGroup
+"""
+
+helps['containerapp arc'] = """
+    type: group
+    short-summary: Install prerequisites for Kubernetes cluster on Arc
+"""
+
+helps['containerapp arc setup-core-dns'] = """
+    type: command
+    short-summary: Setup CoreDNS for Kubernetes cluster on Arc
+    examples:
+    - name: Setup CoreDNS for Aks on Azure Local on Arc
+      text: |
+          az containerapp arc setup-core-dns --distro AksAzureLocal
+    - name: Setup CoreDNS for Aks on Azure Local on Arc by specifying the kubeconfig and kubecontext.
+      text: |
+          az containerapp arc setup-core-dns --distro AksAzureLocal --kube-config /path/to/kubeconfig --kube-context kubeContextName
 """
 
 helps['containerapp connected-env dapr-component'] = """
@@ -1114,7 +1322,7 @@ helps['containerapp job create'] = """
     - name: Create a container apps job with Trigger Type as Manual.
       text: |
           az containerapp job create -n MyContainerappsjob -g MyResourceGroup \\
-              --environment MyContainerappEnv
+              --environment MyContainerappEnv \\
               --trigger-type Manual \\
               --replica-timeout 5 \\
               --replica-retry-limit 2 \\
@@ -1125,7 +1333,7 @@ helps['containerapp job create'] = """
     - name: Create a container apps job with Trigger Type as Schedule.
       text: |
           az containerapp job create -n MyContainerappsjob -g MyResourceGroup \\
-              --environment MyContainerappEnv
+              --environment MyContainerappEnv \\
               --trigger-type Schedule \\
               --replica-timeout 5 \\
               --replica-retry-limit 2 \\
@@ -1136,7 +1344,7 @@ helps['containerapp job create'] = """
     - name: Create a container apps job with Trigger Type as Event.
       text: |
           az containerapp job create -n MyContainerappsjob -g MyResourceGroup \\
-              --environment MyContainerappEnv
+              --environment MyContainerappEnv \\
               --trigger-type Event \\
               --replica-timeout 5 \\
               --replica-retry-limit 2 \\
@@ -1149,8 +1357,27 @@ helps['containerapp job create'] = """
               --scale-rule-type azure-queue \\
               --scale-rule-metadata "accountName=mystorageaccountname" \\
                                     "cloud=AzurePublicCloud" \\
-                                    "queueLength": "5" "queueName": "foo" \\
+                                    "queueLength=5" "queueName=foo" \\
               --scale-rule-auth "connection=my-connection-string-secret-name" \\
+              --image imageName
+    - name: Create container app job with Trigger Type as Event using identity to authenticate
+      text: |
+          az containerapp job create -n MyContainerappsjob -g MyResourceGroup \\
+              --environment MyContainerappEnv
+              --trigger-type Event \\
+              --replica-timeout 5 \\
+              --replica-retry-limit 2 \\
+              --replica-completion-count 1 \\
+              --parallelism 1 \\
+              --polling-interval 30 \\
+              --min-executions 0 \\
+              --max-executions 1 \\
+              --scale-rule-name azure-queue \\
+              --scale-rule-type azure-queue \\
+              --scale-rule-metadata "accountName=mystorageaccountname" \\
+                                    "cloud=AzurePublicCloud" \\
+                                    "queueLength=5" "queueName=foo" \\
+              --scale-rule-identity myUserIdentityResourceId \\
               --image imageName
     - name: Create a container apps job hosted on a Connected Environment.
       text: |
@@ -1164,4 +1391,1087 @@ helps['containerapp job create'] = """
               --parallelism 1 \\
               --image imageName \\
               --workload-profile-name my-wlp
+"""
+
+# Java Components Commands
+helps['containerapp env java-component'] = """
+    type: group
+    short-summary: Commands to manage Java components within the environment.
+"""
+
+helps['containerapp env java-component list'] = """
+    type: command
+    short-summary: List all Java components within the environment.
+    examples:
+    - name: List all Java components within an environment.
+      text: |
+          az containerapp env java-component list -g MyResourceGroup --environment MyEnvironment
+"""
+
+helps['containerapp env java-component spring-cloud-config'] = """
+    type: group
+    short-summary: Commands to manage the Config Server for Spring for the Container Apps environment.
+    deprecate_info: This command group is deprecated. Use 'az containerapp env java-component config-server-for-spring' instead.
+"""
+
+helps['containerapp env java-component spring-cloud-config create'] = """
+    type: command
+    short-summary: Command to create the Spring Cloud Config.
+    examples:
+    - name: Create a Spring Cloud Config.
+      text: |
+          az containerapp env java-component spring-cloud-config create -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --set-configurations PropertyName1=Value1 PropertyName2=Value2
+"""
+
+helps['containerapp env java-component spring-cloud-config delete'] = """
+    type: command
+    short-summary: Command to delete the Spring Cloud Config.
+    examples:
+    - name: Delete a Spring Cloud Config.
+      text: |
+          az containerapp env java-component spring-cloud-config delete -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment
+"""
+
+helps['containerapp env java-component spring-cloud-config show'] = """
+    type: command
+    short-summary: Command to show the Spring Cloud Config.
+    examples:
+    - name: Show a Spring Cloud Config.
+      text: |
+          az containerapp env java-component spring-cloud-config show -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment
+"""
+
+helps['containerapp env java-component spring-cloud-config update'] = """
+    type: command
+    short-summary: Command to update the Spring Cloud Config.
+    examples:
+    - name: Delete all configurations of the Spring Cloud Config.
+      text: |
+          az containerapp env java-component spring-cloud-config update -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --remove-all-configurations
+    - name: Update a Spring Cloud Config with custom configurations.
+      text: |
+          az containerapp env java-component spring-cloud-config update -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --set-configurations PropertyName1=Value1 PropertyName2=Value2
+"""
+
+helps['containerapp env java-component config-server-for-spring'] = """
+    type: group
+    short-summary: Commands to manage the Config Server for Spring for the Container Apps environment.
+"""
+
+helps['containerapp env java-component config-server-for-spring create'] = """
+    type: command
+    short-summary: Command to create the Config Server for Spring.
+    examples:
+    - name: Create a Config Server for Spring.
+      text: |
+          az containerapp env java-component config-server-for-spring create -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --set-configurations PropertyName1=Value1 PropertyName2=Value2
+    - name: Create a Config Server for Spring with multiple replicas.
+      text: |
+          az containerapp env java-component config-server-for-spring create -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --min-replicas 2 --max-replicas 2
+"""
+
+helps['containerapp env java-component config-server-for-spring delete'] = """
+    type: command
+    short-summary: Command to delete the Config Server for Spring.
+    examples:
+    - name: Delete a Config Server for Spring.
+      text: |
+          az containerapp env java-component config-server-for-spring delete -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment
+"""
+
+helps['containerapp env java-component config-server-for-spring show'] = """
+    type: command
+    short-summary: Command to show the Config Server for Spring.
+    examples:
+    - name: Show a Config Server for Spring.
+      text: |
+          az containerapp env java-component config-server-for-spring show -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment
+"""
+
+helps['containerapp env java-component config-server-for-spring update'] = """
+    type: command
+    short-summary: Command to update the Config Server for Spring.
+    examples:
+    - name: Update a Config Server for Spring with custom configurations.
+      text: |
+          az containerapp env java-component config-server-for-spring update -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --set-configurations PropertyName1=Value1 PropertyName2=Value2
+    - name: Replace all configurations of the Config Server for Spring.
+      text: |
+          az containerapp env java-component config-server-for-spring update -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --replace-configurations PropertyName1=Value1 PropertyName2=Value2
+    - name: Delete configurations of the Config Server for Spring.
+      text: |
+          az containerapp env java-component config-server-for-spring update -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --remove-configurations PropertyName1 PropertyName2
+    - name: Delete all configurations of the Config Server for Spring.
+      text: |
+          az containerapp env java-component config-server-for-spring update -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --remove-all-configurations
+"""
+
+helps['containerapp env java-component spring-cloud-eureka'] = """
+    type: group
+    short-summary: Commands to manage the Spring Cloud Eureka for the Container Apps environment.
+    deprecate_info: This command group is deprecated. Use 'az containerapp env java-component eureka-server-for-spring' instead.
+"""
+
+helps['containerapp env java-component spring-cloud-eureka create'] = """
+    type: command
+    short-summary: Command to create the Spring Cloud Eureka.
+    examples:
+    - name: Create a Spring Cloud Eureka with default configuration.
+      text: |
+          az containerapp env java-component spring-cloud-eureka create -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment
+    - name: Create a Spring Cloud Eureka with custom configurations.
+      text: |
+          az containerapp env java-component spring-cloud-eureka create -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --set-configurations PropertyName1=Value1 PropertyName2=Value2
+"""
+
+helps['containerapp env java-component spring-cloud-eureka delete'] = """
+    type: command
+    short-summary: Command to delete the Spring Cloud Eureka.
+    examples:
+    - name: Delete a Spring Cloud Eureka.
+      text: |
+          az containerapp env java-component spring-cloud-eureka delete -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment
+"""
+
+helps['containerapp env java-component spring-cloud-eureka show'] = """
+    type: command
+    short-summary: Command to show the Spring Cloud Eureka.
+    examples:
+    - name: Show a Spring Cloud Eureka.
+      text: |
+          az containerapp env java-component spring-cloud-eureka show -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment
+"""
+
+helps['containerapp env java-component spring-cloud-eureka update'] = """
+    type: command
+    short-summary: Command to update the Spring Cloud Eureka.
+    examples:
+    - name: Delete all configurations of the Spring Cloud Eureka.
+      text: |
+          az containerapp env java-component spring-cloud-eureka update -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --remove-all-configurations
+    - name: Update a Spring Cloud Eureka with custom configurations.
+      text: |
+          az containerapp env java-component spring-cloud-eureka update -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --set-configurations PropertyName1=Value1 PropertyName2=Value2
+"""
+
+helps['containerapp env java-component eureka-server-for-spring'] = """
+    type: group
+    short-summary: Commands to manage the Eureka Server for Spring for the Container Apps environment.
+"""
+
+helps['containerapp env java-component eureka-server-for-spring create'] = """
+    type: command
+    short-summary: Command to create the Eureka Server for Spring.
+    examples:
+    - name: Create an Eureka Server for Spring with default configuration.
+      text: |
+          az containerapp env java-component eureka-server-for-spring create -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment
+    - name: Create an Eureka Server for Spring with custom configurations.
+      text: |
+          az containerapp env java-component eureka-server-for-spring create -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --set-configurations PropertyName1=Value1 PropertyName2=Value2
+"""
+
+helps['containerapp env java-component eureka-server-for-spring delete'] = """
+    type: command
+    short-summary: Command to delete the Eureka Server for Spring.
+    examples:
+    - name: Delete an Eureka Server for Spring.
+      text: |
+          az containerapp env java-component eureka-server-for-spring delete -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment
+"""
+
+helps['containerapp env java-component eureka-server-for-spring show'] = """
+    type: command
+    short-summary: Command to show the Eureka Server for Spring.
+    examples:
+    - name: Show an Eureka Server for Spring.
+      text: |
+          az containerapp env java-component eureka-server-for-spring show -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment
+"""
+
+helps['containerapp env java-component eureka-server-for-spring update'] = """
+    type: command
+    short-summary: Command to update the Eureka Server for Spring.
+    examples:
+    - name: Update an Eureka Server for Spring with custom configurations.
+      text: |
+          az containerapp env java-component eureka-server-for-spring update -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --set-configurations PropertyName1=Value1 PropertyName2=Value2
+    - name: Replace all configurations of the Eureka Server for Spring.
+      text: |
+          az containerapp env java-component eureka-server-for-spring update -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --replace-configurations PropertyName1=Value1 PropertyName2=Value2
+    - name: Delete configurations of the Eureka Server for Spring.
+      text: |
+          az containerapp env java-component eureka-server-for-spring update -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --remove-configurations PropertyName1 PropertyName2
+    - name: Delete all configurations of the Eureka Server for Spring.
+      text: |
+          az containerapp env java-component eureka-server-for-spring update -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --remove-all-configurations
+"""
+
+helps['containerapp env java-component admin-for-spring'] = """
+    type: group
+    short-summary: Commands to manage the Admin for Spring for the Container Apps environment.
+"""
+
+helps['containerapp env java-component admin-for-spring create'] = """
+    type: command
+    short-summary: Command to create the Admin for Spring.
+    examples:
+    - name: Create an Admin for Spring with default configuration.
+      text: |
+          az containerapp env java-component admin-for-spring create -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment
+    - name: Create an Admin for Spring with custom configurations.
+      text: |
+          az containerapp env java-component admin-for-spring create -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --set-configurations PropertyName1=Value1 PropertyName2=Value2
+    - name: Create an Admin for Spring with multiple replicas.
+      text: |
+          az containerapp env java-component admin-for-spring create -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --min-replicas 2 --max-replicas 2
+"""
+
+helps['containerapp env java-component admin-for-spring delete'] = """
+    type: command
+    short-summary: Command to delete the Admin for Spring.
+    examples:
+    - name: Delete an Admin for Spring.
+      text: |
+          az containerapp env java-component admin-for-spring delete -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment
+"""
+
+helps['containerapp env java-component admin-for-spring show'] = """
+    type: command
+    short-summary: Command to show the Admin for Spring.
+    examples:
+    - name: Show an Admin for Spring.
+      text: |
+          az containerapp env java-component admin-for-spring show -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment
+"""
+
+helps['containerapp env java-component admin-for-spring update'] = """
+    type: command
+    short-summary: Command to update the Admin for Spring.
+    examples:
+    - name: Update an Admin for Spring with custom configurations.
+      text: |
+          az containerapp env java-component admin-for-spring update -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --set-configurations PropertyName1=Value1 PropertyName2=Value2
+    - name: Replace all configurations of the Admin for Spring.
+      text: |
+          az containerapp env java-component admin-for-spring update -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --replace-configurations PropertyName1=Value1 PropertyName2=Value2
+    - name: Delete configurations of the Admin for Spring.
+      text: |
+          az containerapp env java-component admin-for-spring update -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --remove-configurations PropertyName1 PropertyName2
+    - name: Delete all configurations of the Admin for Spring.
+      text: |
+          az containerapp env java-component admin-for-spring update -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --remove-all-configurations
+"""
+
+helps['containerapp env java-component nacos'] = """
+    type: group
+    short-summary: Commands to manage the Nacos for the Container Apps environment.
+"""
+
+helps['containerapp env java-component nacos create'] = """
+    type: command
+    short-summary: Command to create the Nacos.
+    examples:
+    - name: Create a Nacos with default configuration.
+      text: |
+          az containerapp env java-component nacos create -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment
+    - name: Create a Nacos with custom configurations.
+      text: |
+          az containerapp env java-component nacos create -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --set-configurations PropertyName1=Value1 PropertyName2=Value2
+"""
+
+helps['containerapp env java-component nacos delete'] = """
+    type: command
+    short-summary: Command to delete the Nacos.
+    examples:
+    - name: Delete a Nacos.
+      text: |
+          az containerapp env java-component nacos delete -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment
+"""
+
+helps['containerapp env java-component nacos show'] = """
+    type: command
+    short-summary: Command to show the Nacos.
+    examples:
+    - name: Show an Nacos.
+      text: |
+          az containerapp env java-component nacos show -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment
+"""
+
+helps['containerapp env java-component nacos update'] = """
+    type: command
+    short-summary: Command to update the Nacos.
+    examples:
+    - name: Update an Nacos with custom configurations.
+      text: |
+          az containerapp env java-component nacos update -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --set-configurations PropertyName1=Value1 PropertyName2=Value2
+    - name: Replace all configurations of the nacos.
+      text: |
+          az containerapp env java-component nacos update -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --replace-configurations PropertyName1=Value1 PropertyName2=Value2
+    - name: Delete configurations of the nacos.
+      text: |
+          az containerapp env java-component nacos update -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --remove-configurations PropertyName1 PropertyName2
+    - name: Delete all configurations of the nacos.
+      text: |
+          az containerapp env java-component nacos update -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --remove-all-configurations
+"""
+
+helps['containerapp env java-component gateway-for-spring'] = """
+    type: group
+    short-summary: Commands to manage the Gateway for Spring for the Container Apps environment.
+"""
+
+helps['containerapp env java-component gateway-for-spring create'] = """
+    type: command
+    short-summary: Command to create the Gateway for Spring.
+    examples:
+    - name: Create a Gateway for Spring with default configuration.
+      text: |
+          az containerapp env java-component gateway-for-spring create -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --route-yaml MyRouteYamlFilePath
+    - name: Create a Gateway for Spring with custom configurations.
+      text: |
+          az containerapp env java-component gateway-for-spring create -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --route-yaml MyRouteYamlFilePath \\
+              --set-configurations PropertyName1=Value1 PropertyName2=Value2
+    - name: Create a Gateway for Spring with multiple replicas.
+      text: |
+          az containerapp env java-component gateway-for-spring create -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --route-yaml MyRouteYamlFilePath \\
+              --min-replicas 2 --max-replicas 2
+"""
+
+helps['containerapp env java-component gateway-for-spring delete'] = """
+    type: command
+    short-summary: Command to delete the Gateway for Spring.
+    examples:
+    - name: Delete a Gateway for Spring.
+      text: |
+          az containerapp env java-component gateway-for-spring delete -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment
+"""
+
+helps['containerapp env java-component gateway-for-spring show'] = """
+    type: command
+    short-summary: Command to show the Gateway for Spring.
+    examples:
+    - name: Show Gateway for Spring.
+      text: |
+          az containerapp env java-component gateway-for-spring show -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment
+"""
+
+helps['containerapp env java-component gateway-for-spring update'] = """
+    type: command
+    short-summary: Command to update the Gateway for Spring.
+    examples:
+    - name: Update a Gateway for Spring with new routes.
+      text: |
+          az containerapp env java-component gateway-for-spring update -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --route-yaml MyRouteYamlFilePath
+    - name: Update a Gateway for Spring with custom configurations.
+      text: |
+          az containerapp env java-component gateway-for-spring update -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --set-configurations PropertyName1=Value1 PropertyName2=Value2
+    - name: Replace all configurations of the Gateway for Spring.
+      text: |
+          az containerapp env java-component gateway-for-spring update -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --replace-configurations PropertyName1=Value1 PropertyName2=Value2
+    - name: Delete configurations of the Gateway for Spring.
+      text: |
+          az containerapp env java-component gateway-for-spring update -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --remove-configurations PropertyName1 PropertyName2
+    - name: Delete all configurations of the Gateway for Spring.
+      text: |
+          az containerapp env java-component gateway-for-spring update -g MyResourceGroup \\
+              -n MyJavaComponentName \\
+              --environment MyEnvironment \\
+              --remove-all-configurations
+"""
+
+# Container Apps Telemetry Commands
+
+helps['containerapp env telemetry'] = """
+    type: group
+    short-summary: Commands to manage telemetry settings for the container apps environment.
+"""
+
+helps['containerapp env telemetry data-dog'] = """
+    type: group
+    short-summary: Commands to manage data dog settings for the container apps environment.
+"""
+
+helps['containerapp env telemetry app-insights'] = """
+    type: group
+    short-summary: Commands to manage app insights settings for the container apps environment.
+"""
+
+helps['containerapp env telemetry data-dog set'] = """
+    type: command
+    short-summary: Create or update container apps environment telemetry data dog settings.
+    examples:
+    - name: Create or update container apps environment telemetry data dog settings.
+      text: |
+          az containerapp env telemetry data-dog set -n MyContainerappEnvironment -g MyResourceGroup \\
+              --site dataDogSite --key dataDogKey --enable-open-telemetry-traces true --enable-open-telemetry-metrics true
+"""
+
+helps['containerapp env telemetry data-dog show'] = """
+    type: command
+    short-summary: Show container apps environment telemetry data dog settings.
+    examples:
+    - name: Show container apps environment telemetry data dog settings.
+      text: |
+          az containerapp env telemetry data-dog show -n MyContainerappEnvironment -g MyResourceGroup
+"""
+
+helps['containerapp env telemetry app-insights set'] = """
+    type: command
+    short-summary: Create or update container apps environment telemetry app insights settings.
+    examples:
+    - name: Create or update container apps environment telemetry app insights settings.
+      text: |
+          az containerapp env telemetry app-insights set -n MyContainerappEnvironment -g MyResourceGroup \\
+              --connection-string connectionString --enable-open-telemetry-traces true --enable-open-telemetry-logs true
+"""
+
+helps['containerapp env telemetry app-insights show'] = """
+    type: command
+    short-summary: Show container apps environment telemetry app insights settings.
+    examples:
+    - name: Show container apps environment telemetry app insights settings.
+      text: |
+          az containerapp env telemetry app-insights show -n MyContainerappEnvironment -g MyResourceGroup
+"""
+
+helps['containerapp env telemetry data-dog delete'] = """
+    type: command
+    short-summary: Delete container apps environment telemetry data dog settings.
+    examples:
+    - name: Delete container apps environment telemetry data dog settings.
+      text: |
+          az containerapp env telemetry data-dog delete -n MyContainerappEnvironment -g MyResourceGroup
+"""
+
+helps['containerapp env telemetry app-insights delete'] = """
+    type: command
+    short-summary: Delete container apps environment telemetry app insights settings.
+    examples:
+    - name: Delete container apps environment telemetry app insights settings.
+      text: |
+          az containerapp env telemetry app-insights delete -n MyContainerappEnvironment -g MyResourceGroup
+"""
+
+helps['containerapp env telemetry otlp'] = """
+    type: group
+    short-summary: Commands to manage otlp settings for the container apps environment.
+"""
+
+helps['containerapp env telemetry otlp add'] = """
+    type: command
+    short-summary: Add container apps environment telemetry otlp settings.
+    examples:
+    - name: Add container apps environment telemetry otlp settings.
+      text: |
+          az containerapp env telemetry otlp add -n MyContainerappEnvironment -g MyResourceGroup \\
+              --otlp-name otlpName --endpoint otlpEndpoint --insecure false --headers api-key=apiKey \\
+              --enable-open-telemetry-traces true --enable-open-telemetry-logs true --enable-open-telemetry-metrics true
+"""
+
+helps['containerapp env telemetry otlp update'] = """
+    type: command
+    short-summary: Update container apps environment telemetry otlp settings.
+    examples:
+    - name: Update container apps environment telemetry otlp settings.
+      text: |
+          az containerapp env telemetry otlp update -n MyContainerappEnvironment -g MyResourceGroup \\
+              --otlp-name otlpName --endpoint otlpEndpoint --insecure false --headers api-key=apiKey \\
+              --enable-open-telemetry-traces true --enable-open-telemetry-logs true --enable-open-telemetry-metrics true
+"""
+
+helps['containerapp env telemetry otlp remove'] = """
+    type: command
+    short-summary: Remove container apps environment telemetry otlp settings.
+    examples:
+    - name: Remove container apps environment telemetry otlp settings.
+      text: |
+          az containerapp env telemetry otlp remove -n MyContainerappEnvironment -g MyResourceGroup \\
+              --otlp-name otlpName
+"""
+
+helps['containerapp env telemetry otlp show'] = """
+    type: command
+    short-summary: Show container apps environment telemetry otlp settings.
+    examples:
+    - name: Show container apps environment telemetry otlp settings.
+      text: |
+          az containerapp env telemetry otlp show -n MyContainerappEnvironment -g MyResourceGroup \\
+              --otlp-name otlpName
+"""
+
+helps['containerapp env telemetry otlp list'] = """
+    type: command
+    short-summary: List container apps environment telemetry otlp settings.
+    examples:
+    - name: List container apps environment telemetry otlp settings.
+      text: |
+          az containerapp env telemetry otlp list -n MyContainerappEnvironment -g MyResourceGroup
+"""
+
+helps['containerapp job logs'] = """
+    type: group
+    short-summary: Show container app job logs
+"""
+
+helps['containerapp job logs show'] = """
+    type: command
+    short-summary: Show past logs and/or print logs in real time (with the --follow parameter). Note that the logs are only taken from one execution, replica, and container.
+    examples:
+    - name: Fetch the past 20 lines of logs from a job and return
+      text: |
+          az containerapp job logs show -n my-containerappjob -g MyResourceGroup --container MyContainer
+    - name: Fetch 30 lines of past logs logs from a job and print logs as they come in
+      text: |
+          az containerapp job logs show -n my-containerappjob -g MyResourceGroup --container MyContainer --follow --tail 30
+    - name: Fetch logs for a particular execution, replica, and container
+      text: |
+          az containerapp job logs show -n my-containerappjob -g MyResourceGroup --execution MyExecution --replica MyReplica --container MyContainer
+"""
+
+helps['containerapp job replica'] = """
+    type: group
+    short-summary: Manage container app replicas
+"""
+
+helps['containerapp job replica list'] = """
+    type: command
+    short-summary: List a container app job execution's replica
+    examples:
+    - name: List a container app job's replicas in a particular execution
+      text: |
+          az containerapp job replica list -n my-containerappjob -g MyResourceGroup --execution MyExecution
+"""
+
+# SessionPool Commands
+helps['containerapp sessionpool'] = """
+    type: group
+    short-summary: Commands to manage session pools.
+"""
+
+helps['containerapp sessionpool create'] = """
+    type: command
+    short-summary: Create or update a Session pool.
+    examples:
+    - name: Create or update a Session Pool with container type PythonLTS default settings.
+      text: |
+          az containerapp sessionpool create -n mysessionpool -g MyResourceGroup \\
+              --location eastasia
+    - name: Create or update a Session Pool with container type Shell default settings.
+      text: |
+          az containerapp sessionpool create -n mysessionpool -g MyResourceGroup \\
+              --container-type Shell --location westus3
+    - name: Create or update a Session Pool with container type PythonLTS, with max concurrent sessions is 30, ready session instances 20.
+      text: |
+          az containerapp sessionpool create -n mysessionpool -g MyResourceGroup \\
+              --container-type PythonLTS --max-sessions 30 --ready-sessions 20 \\
+              --location eastasia
+    - name: Create or update a Session Pool with container type CustomContainer with default quickstart image.
+      text: |
+          az containerapp sessionpool create -n mysessionpool -g MyResourceGroup \\
+              --container-type CustomContainer --environment MyEnvironment \\
+              --cpu 0.5 --memory 1Gi --target-port 80 --location eastasia --image mcr.microsoft.com/k8se/quickstart:latest
+    - name: Create or update a Session Pool with container type CustomContainer that has secrets and environment variables.
+      text: |
+          az containerapp sessionpool create -n mysessionpool -g MyResourceGroup \\
+              --container-type CustomContainer --environment MyEnvironment \\
+              --cpu 0.5 --memory 1Gi --target-port 80 --image MyImage \\
+              --env-vars GREETING="Hello, world" SECRETENV=secretref:anothersecret \\
+              --secrets mysecret=secretvalue1 anothersecret="secret value 2" --location eastasia
+    - name: Create or update a Session Pool with container type CustomContainer that from private registry
+      text: |
+          az containerapp sessionpool create -n mysessionpool -g MyResourceGroup \\
+              --container-type CustomContainer --environment MyEnvironment --image MyImage \\
+              --cpu 0.5 --memory 1Gi --target-port 80 --registry-server myregistry.azurecr.io \\
+              --registry-username myregistry --registry-password $REGISTRY_PASSWORD \\
+              --location eastasia
+    - name: Create or update a Session Pool with container type CustomContainer and Managed Identity to authenticate Azure container registry
+      text: |
+          az containerapp sessionpool create -n mysessionpool -g MyResourceGroup \\
+              --container-type CustomContainer --environment MyEnvironment --image MyImage \\
+              --cpu 0.5 --memory 1Gi --target-port 80 --registry-server myregistry.azurecr.io \\
+              --registry-identity  MyUserIdentityResourceId \\
+              --location eastasia
+    - name: Create or update a Session Pool with container type CustomContainer with system assigned and user assigned identity.
+      text: |
+          az containerapp sessionpool create -n mysessionpool -g MyResourceGroup \\
+              --container-type CustomContainer --environment MyEnvironment --image MyImage \\
+              --cpu 0.5 --memory 1Gi --target-port 80 \\
+              --mi-system-assigned --mi-user-assigned MyUserIdentityResourceId \\
+              --location eastasia
+    - name: Create or update a Session Pool with container type CustomContainer with cooldown period 360s
+      text: |
+          az containerapp sessionpool create -n mysessionpool -g MyResourceGroup \\
+              --environment MyEnvironment --cpu 0.5 --memory 1Gi --target-port 80 --container-type CustomContainer \\
+              --cooldown-period 360 --location eastasia
+    - name: Create or update a Session Pool with container type CustomContainer with container probes
+      text: |
+          az containerapp sessionpool create -n mysessionpool -g MyResourceGroup \\
+              --environment MyEnvironment --cpu 0.5 --memory 1Gi --target-port 80 --container-type CustomContainer \\
+              --probe-yaml config.yaml --location eastasia
+"""
+
+helps['containerapp sessionpool update'] = """
+    type: command
+    short-summary: Update a Session pool.
+    examples:
+    - name: Update a session pool's max concurrent sessions configuration and image.
+      text: |
+          az containerapp sessionpool update -n mysessionpool -g MyResourceGroup --max-sessions 20 --image MyNewImage
+    - name: Update the container probes of a CustomContainer type session pool.
+      text: |
+          az containerapp sessionpool update -n mysessionpool -g MyResourceGroup --probe-yaml config.yaml
+"""
+
+helps['containerapp sessionpool delete'] = """
+    type: command
+    short-summary: Delete a session pool.
+    examples:
+    - name: Delete a session pool.
+      text: az containerapp sessionpool delete -n mysessionpool -g MyResourceGroup
+"""
+
+helps['containerapp sessionpool show'] = """
+    type: command
+    short-summary: Show details of a Session Pool.
+    examples:
+    - name: Show the details of a Session Pool.
+      text: |
+          az containerapp sessionpool show -n mysessionpool -g MyResourceGroup
+"""
+
+helps['containerapp sessionpool list'] = """
+    type: command
+    short-summary: List Session Pools by subscription or resource group.
+    examples:
+    - name: List Session Pools in the current subscription.
+      text: |
+          az containerapp sessionpool list
+    - name: List Session Pools by resource group.
+      text: |
+          az containerapp sessionpool list -g MyResourceGroup
+"""
+
+# Session Commands
+helps['containerapp session'] = """
+    type: group
+    short-summary: Commands to manage sessions.To learn more about individual commands under each subgroup run containerapp session [subgroup name] --help.
+"""
+
+helps['containerapp session stop'] = """
+    type: command
+    short-summary: Stop a custom container session.
+    examples:
+    - name: Stop a custom container session.
+      text: |
+          az containerapp session stop -n MySessionPool -g MyResourceGroup --identifier MySession
+"""
+
+# code interpreter commands
+helps['containerapp session code-interpreter'] = """
+    type: group
+    short-summary: Commands to interact with and manage code interpreter sessions.
+"""
+
+helps['containerapp session code-interpreter execute'] = """
+    type: command
+    short-summary: Execute code in a code interpreter session.
+    examples:
+    - name: Execute a simple hello world.
+      text: |
+          az containerapp session code-interpreter execute -n MySessionPool -g MyResourceGroup --identifier MySession \\
+              --code 'print("'"Hello world"'")' --timeout-in-seconds 30 --session-pool-location eastasia
+"""
+
+helps['containerapp session code-interpreter upload-file'] = """
+    type: command
+    short-summary: Upload a file to a code interpreter session .
+    examples:
+    - name: Upload a file to a session.
+      text: |
+          az containerapp session code-interpreter upload-file -n MySessionPool -g MyResourceGroup --identifier MySession \\
+              --filepath example.txt --path my-directory
+"""
+
+helps['containerapp session code-interpreter show-file-content'] = """
+    type: command
+    short-summary: Show the content a file uploaded to a code interpreter session.
+    examples:
+    - name: Show content of file.
+      text: az containerapp session code-interpreter show-file-content -n MySessionPool -g MyResourceGroup --identifier MySession \\
+              --filename example.txt --path my-directory
+"""
+
+helps['containerapp session code-interpreter show-file-metadata'] = """
+    type: command
+    short-summary: Shows the meta-data content a file uploaded to a code interpreter session.
+    examples:
+    - name: Show the meta-data details of a file uploaded to a session.
+      text: az containerapp session code-interpreter show-file-metadata -n MySessionPool -g MyResourceGroup --identifier MySession \\
+              --filename example.txt --path my-directory
+"""
+
+helps['containerapp session code-interpreter delete-file'] = """
+    type: command
+    short-summary: Delete a file uploaded to a code interpreter session.
+    examples:
+    - name: Delete a file .
+      text: az containerapp session code-interpreter delete-file -n MySessionPool -g MyResourceGroup --identifier MySession \\
+              --filename example.txt --path my-directory
+"""
+
+helps['containerapp session code-interpreter list-files'] = """
+    type: command
+    short-summary: List files uploaded to a code interpreter session
+    examples:
+    - name: List files uploaded in a code-interpreter session.
+      text: |
+          az containerapp session code-interpreter list-files -n MySessionPool -g MyResourceGroup --identifier MySession --path my-directory
+"""
+
+helps['containerapp java'] = """
+    type: group
+    short-summary: Commands to manage Java workloads.
+"""
+
+# Java Logging logger Commands
+helps['containerapp java logger'] = """
+    type: group
+    short-summary: Dynamically change log level for Java workloads.
+"""
+
+# Java Logging logger Commands
+helps['containerapp java logger set'] = """
+    type: command
+    short-summary: Create or update logger for Java workloads.
+    examples:
+    - name: Create root logger with debug level.
+      text: |
+          az containerapp java logger set --logger-name root --logger-level debug -n my-containerapp -g MyResourceGroup
+    - name: Update root logger with debug level.
+      text: |
+          az containerapp java logger set --logger-name root --logger-level info -n my-containerapp -g MyResourceGroup
+"""
+
+helps['containerapp java logger show'] = """
+    type: command
+    short-summary: Display logger setting for Java workloads.
+    examples:
+    - name: Display all logger settings for Java workloads.
+      text: |
+          az containerapp java logger show --all -n my-containerapp -g MyResourceGroup
+    - name: Display specific logger with name for Java workloads.
+      text: |
+          az containerapp java logger show --logger-name root -n my-containerapp -g MyResourceGroup
+"""
+
+helps['containerapp java logger delete'] = """
+    type: command
+    short-summary: Delete logger for Java workloads.
+    examples:
+    - name: Delete all logger settings for Java workloads.
+      text: |
+          az containerapp java logger delete --all -n my-containerapp -g MyResourceGroup
+    - name: Delete specific logger with name for Java workloads.
+      text: |
+          az containerapp java logger delete --logger-name root -n my-containerapp -g MyResourceGroup
+"""
+
+# DotNet Components Commands
+helps['containerapp env dotnet-component'] = """
+    type: group
+    short-summary: Commands to manage DotNet components within the environment.
+"""
+
+helps['containerapp env dotnet-component list'] = """
+    type: command
+    short-summary: Command to list DotNet components within the environment.
+    examples:
+    - name: List all DotNet components within an environment.
+      text: |
+          az containerapp env dotnet-component list -g MyResourceGroup --environment MyEnvironment
+"""
+
+helps['containerapp env dotnet-component create'] = """
+    type: command
+    short-summary: Command to create DotNet component to enable Aspire Dashboard. Supported DotNet component type is Aspire Dashboard.
+    examples:
+    - name: Create a DotNet component to enable Aspire Dashboard.
+      text: |
+          az containerapp env dotnet-component create -g MyResourceGroup \\
+              -n MyDotNetComponentName \\
+              --environment MyEnvironment \\
+              --type AspireDashboard
+"""
+
+helps['containerapp env dotnet-component delete'] = """
+    type: command
+    short-summary: Command to delete DotNet component to disable Aspire Dashboard.
+    examples:
+    - name: Delete DotNet component.
+      text: |
+          az containerapp env dotnet-component delete -g MyResourceGroup \\
+              -n MyDotNetComponentName \\
+              --environment MyEnvironment
+"""
+
+helps['containerapp env dotnet-component show'] = """
+    type: command
+    short-summary: Command to show DotNet component in environment.
+    examples:
+    - name: Show the details of an environment.
+      text: |
+          az containerapp env dotnet-component show -n MyDotNetComponentName --environment MyContainerappEnvironment -g MyResourceGroup
+"""
+
+helps['containerapp registry set'] = """
+    type: command
+    short-summary: Add or update a container registry's details.
+    examples:
+    - name: Configure a container app to use a registry.
+      text: |
+          az containerapp registry set -n my-containerapp -g MyResourceGroup \\
+              --server MyExistingContainerappRegistry.azurecr.io --username MyRegistryUsername --password MyRegistryPassword
+    - name: Configure a container app to use environment system assigned managed identity to authenticate Azure container registry.
+      text: |
+          az containerapp registry set -n my-containerapp -g MyResourceGroup \\
+              --server MyExistingContainerappRegistry.azurecr.io --identity system-environment
+"""
+
+helps['containerapp job registry set'] = """
+    type: command
+    short-summary: Add or update a container registry's details in a Container App Job.
+    examples:
+    - name: Configure a Container App Job to use a registry.
+      text: |
+          az containerapp job registry set -n my-containerapp-job -g MyResourceGroup \\
+              --server MyContainerappJobRegistry.azurecr.io --username MyRegistryUsername --password MyRegistryPassword
+    - name: Configure a Container App Job to use environment system assigned managed identity to authenticate Azure container registry.
+      text: |
+          az containerapp job registry set -n my-containerapp-job -g MyResourceGroup \\
+              --server MyContainerappJobRegistry.azurecr.io --identity system-environment
+"""
+
+# Maintenance Config Commands
+helps['containerapp env maintenance-config'] = """
+    type: group
+    short-summary: Commands to manage Planned Maintenance for Container Apps
+"""
+
+helps['containerapp env maintenance-config add'] = """
+    type: command
+    short-summary: Add Planned Maintenance to a Container App Environment
+    examples:
+    - name: Configure a Container App Environment to use a Planned Maintenance
+      text: |
+          az containerapp env maintenance-config add --environment myEnv -g MyResourceGroup \\
+              --duration 10 --start-hour-utc 11 --weekday Sunday
+"""
+
+helps['containerapp env maintenance-config update'] = """
+    type: command
+    short-summary: Update Planned Maintenance in a Container App Environment
+    examples:
+    - name: Update the Planned Maintenance in a Container App Environment
+      text: |
+          az containerapp env maintenance-config update --environment myEnv -g MyResourceGroup \\
+              --duration 8 --start-hour-utc 12 --weekday Thursday
+"""
+
+helps['containerapp env maintenance-config list'] = """
+    type: command
+    short-summary: List Planned Maintenance in a Container App Environment
+    examples:
+    - name: List Planned Maintenance
+      text: |
+          az containerapp env maintenance-config list --environment myEnv -g MyResourceGroup
+"""
+
+helps['containerapp env maintenance-config remove'] = """
+    type: command
+    short-summary: Remove Planned Maintenance in a Container App Environment
+    examples:
+    - name: Remove Planned Maintenance
+      text: |
+          az containerapp env maintenance-config remove --environment myEnv -g MyResourceGroup
+"""
+
+helps['containerapp debug'] = """
+    type: command
+    short-summary: Open an SSH-like interactive shell within a container app debug console or execute a command inside the container and exit.
+    examples:
+    - name: Debug by connecting to a container app's debug console by replica, revision and container
+      text: |
+          az containerapp debug -n MyContainerapp -g MyResourceGroup --revision MyRevision --replica MyReplica --container MyContainer
+    - name: Debug by executing a command inside a container app and exit
+      text: |
+          az containerapp debug -n MyContainerapp -g MyResourceGroup --revision MyRevision --replica MyReplica --container MyContainer --command "echo Hello World"
+"""
+
+helps['containerapp label-history'] = """
+    type: group
+    short-summary: Show the history for one or more labels on the Container App.
+    examples:
+    - name: Show Label History
+      text: |
+          az containerapp label-history show -n my-containerapp -g MyResourceGroup --label LabelName
+"""
+
+helps['containerapp label-history list'] = """
+    type: command
+    short-summary: List the history for all labels on the Container App.
+    examples:
+    - name: List All Label History
+      text: |
+          az containerapp label-history list -n my-containerapp -g MyResourceGroup
+"""
+
+helps['containerapp label-history show'] = """
+    type: command
+    short-summary: Show the history for a specific label on the Container App.
+    examples:
+    - name: Show Label History
+      text: |
+          az containerapp label-history show -n my-containerapp -g MyResourceGroup --label LabelName
 """

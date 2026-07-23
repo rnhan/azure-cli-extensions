@@ -13,19 +13,18 @@ from azure.cli.core.aaz import *
 
 @register_command(
     "elastic-san update",
-    is_preview=True,
 )
 class Update(AAZCommand):
     """Update an Elastic SAN.
 
     :example: Update an Elastic SAN.
-        az elastic-san update -n "san_name" -g "rg" --tags '{key1710:bbbb}' --base-size-tib 25 --extended-capacity-size-tib 15
+        az elastic-san update -n "san_name" -g "rg" --tags '{key1710:bbbb}' --base-size-tib 25 --extended-capacity-size-tib 15 --auto-scale-policy-enforcement Disabled --capacity-unit-scale-up-limit-tib 18 --increase-capacity-unit-by-tib 5 --unused-size-tib 25
     """
 
     _aaz_info = {
-        "version": "2023-01-01",
+        "version": "2025-09-01",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.elasticsan/elasticsans/{}", "2023-01-01"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.elasticsan/elasticsans/{}", "2025-09-01"],
         ]
     }
 
@@ -61,6 +60,35 @@ class Update(AAZCommand):
         )
         _args_schema.resource_group = AAZResourceGroupNameArg(
             required=True,
+        )
+
+        # define Arg Group "AutoScaleProperties"
+
+        _args_schema = cls._args_schema
+        _args_schema.auto_scale_policy_enforcement = AAZStrArg(
+            options=["--auto-scale-policy", "--auto-scale-policy-enforcement"],
+            arg_group="AutoScaleProperties",
+            help="Enable or Disable scale up setting on Elastic San Appliance.",
+            nullable=True,
+            enum={"Disabled": "Disabled", "Enabled": "Enabled", "None": "None"},
+        )
+        _args_schema.capacity_unit_scale_up_limit_tib = AAZIntArg(
+            options=["--capacity-unit-scale-up", "--capacity-unit-scale-up-limit-tib"],
+            arg_group="AutoScaleProperties",
+            help="Maximum scale up size on Elastic San appliance in TiB.",
+            nullable=True,
+        )
+        _args_schema.increase_capacity_unit_by_tib = AAZIntArg(
+            options=["--increase-capacity-unit", "--increase-capacity-unit-by-tib"],
+            arg_group="AutoScaleProperties",
+            help="Unit to increase Capacity Unit on Elastic San appliance in TiB.",
+            nullable=True,
+        )
+        _args_schema.unused_size_tib = AAZIntArg(
+            options=["--unused-size-tib"],
+            arg_group="AutoScaleProperties",
+            help="Unused size on Elastic San appliance in TiB.",
+            nullable=True,
         )
 
         # define Arg Group "Parameters"
@@ -207,7 +235,7 @@ class Update(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-01-01",
+                    "api-version", "2025-09-01",
                     required=True,
                 ),
             }
@@ -306,7 +334,7 @@ class Update(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-01-01",
+                    "api-version", "2025-09-01",
                     required=True,
                 ),
             }
@@ -369,11 +397,23 @@ class Update(AAZCommand):
 
             properties = _builder.get(".properties")
             if properties is not None:
+                properties.set_prop("autoScaleProperties", AAZObjectType)
                 properties.set_prop("availabilityZones", AAZListType, ".availability_zones")
                 properties.set_prop("baseSizeTiB", AAZIntType, ".base_size_tib", typ_kwargs={"flags": {"required": True}})
                 properties.set_prop("extendedCapacitySizeTiB", AAZIntType, ".extended_capacity_size_tib", typ_kwargs={"flags": {"required": True}})
                 properties.set_prop("publicNetworkAccess", AAZStrType, ".public_network_access")
                 properties.set_prop("sku", AAZObjectType, ".sku", typ_kwargs={"flags": {"required": True}})
+
+            auto_scale_properties = _builder.get(".properties.autoScaleProperties")
+            if auto_scale_properties is not None:
+                auto_scale_properties.set_prop("scaleUpProperties", AAZObjectType)
+
+            scale_up_properties = _builder.get(".properties.autoScaleProperties.scaleUpProperties")
+            if scale_up_properties is not None:
+                scale_up_properties.set_prop("autoScalePolicyEnforcement", AAZStrType, ".auto_scale_policy_enforcement")
+                scale_up_properties.set_prop("capacityUnitScaleUpLimitTiB", AAZIntType, ".capacity_unit_scale_up_limit_tib")
+                scale_up_properties.set_prop("increaseCapacityUnitByTiB", AAZIntType, ".increase_capacity_unit_by_tib")
+                scale_up_properties.set_prop("unusedSizeTiB", AAZIntType, ".unused_size_tib")
 
             availability_zones = _builder.get(".properties.availabilityZones")
             if availability_zones is not None:
@@ -442,6 +482,9 @@ class _UpdateHelper:
         )
 
         properties = _schema_elastic_san_read.properties
+        properties.auto_scale_properties = AAZObjectType(
+            serialized_name="autoScaleProperties",
+        )
         properties.availability_zones = AAZListType(
             serialized_name="availabilityZones",
         )
@@ -486,6 +529,25 @@ class _UpdateHelper:
         properties.volume_group_count = AAZIntType(
             serialized_name="volumeGroupCount",
             flags={"read_only": True},
+        )
+
+        auto_scale_properties = _schema_elastic_san_read.properties.auto_scale_properties
+        auto_scale_properties.scale_up_properties = AAZObjectType(
+            serialized_name="scaleUpProperties",
+        )
+
+        scale_up_properties = _schema_elastic_san_read.properties.auto_scale_properties.scale_up_properties
+        scale_up_properties.auto_scale_policy_enforcement = AAZStrType(
+            serialized_name="autoScalePolicyEnforcement",
+        )
+        scale_up_properties.capacity_unit_scale_up_limit_ti_b = AAZIntType(
+            serialized_name="capacityUnitScaleUpLimitTiB",
+        )
+        scale_up_properties.increase_capacity_unit_by_ti_b = AAZIntType(
+            serialized_name="increaseCapacityUnitByTiB",
+        )
+        scale_up_properties.unused_size_ti_b = AAZIntType(
+            serialized_name="unusedSizeTiB",
         )
 
         availability_zones = _schema_elastic_san_read.properties.availability_zones

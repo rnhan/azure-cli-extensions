@@ -20,7 +20,7 @@ class Wait(AAZWaitCommand):
 
     _aaz_info = {
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.networkcloud/virtualmachines/{}", "2023-10-01-preview"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.networkcloud/virtualmachines/{}", "2026-05-01-preview"],
         ]
     }
 
@@ -119,7 +119,7 @@ class Wait(AAZWaitCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-10-01-preview",
+                    "api-version", "2026-05-01-preview",
                     required=True,
                 ),
             }
@@ -152,6 +152,9 @@ class Wait(AAZWaitCommand):
             cls._schema_on_200 = AAZObjectType()
 
             _schema_on_200 = cls._schema_on_200
+            _schema_on_200.etag = AAZStrType(
+                flags={"read_only": True},
+            )
             _schema_on_200.extended_location = AAZObjectType(
                 serialized_name="extendedLocation",
                 flags={"required": True},
@@ -159,6 +162,7 @@ class Wait(AAZWaitCommand):
             _schema_on_200.id = AAZStrType(
                 flags={"read_only": True},
             )
+            _schema_on_200.identity = AAZIdentityObjectType()
             _schema_on_200.location = AAZStrType(
                 flags={"required": True},
             )
@@ -185,6 +189,37 @@ class Wait(AAZWaitCommand):
                 flags={"required": True},
             )
 
+            identity = cls._schema_on_200.identity
+            identity.principal_id = AAZStrType(
+                serialized_name="principalId",
+                flags={"read_only": True},
+            )
+            identity.tenant_id = AAZStrType(
+                serialized_name="tenantId",
+                flags={"read_only": True},
+            )
+            identity.type = AAZStrType(
+                flags={"required": True},
+            )
+            identity.user_assigned_identities = AAZDictType(
+                serialized_name="userAssignedIdentities",
+            )
+
+            user_assigned_identities = cls._schema_on_200.identity.user_assigned_identities
+            user_assigned_identities.Element = AAZObjectType(
+                nullable=True,
+            )
+
+            _element = cls._schema_on_200.identity.user_assigned_identities.Element
+            _element.client_id = AAZStrType(
+                serialized_name="clientId",
+                flags={"read_only": True},
+            )
+            _element.principal_id = AAZStrType(
+                serialized_name="principalId",
+                flags={"read_only": True},
+            )
+
             properties = cls._schema_on_200.properties
             properties.admin_username = AAZStrType(
                 serialized_name="adminUsername",
@@ -208,6 +243,9 @@ class Wait(AAZWaitCommand):
             properties.cluster_id = AAZStrType(
                 serialized_name="clusterId",
                 flags={"read_only": True},
+            )
+            properties.console_extended_location = AAZObjectType(
+                serialized_name="consoleExtendedLocation",
             )
             properties.cpu_cores = AAZIntType(
                 serialized_name="cpuCores",
@@ -234,6 +272,10 @@ class Wait(AAZWaitCommand):
             properties.network_data = AAZStrType(
                 serialized_name="networkData",
             )
+            properties.network_data_content = AAZStrType(
+                serialized_name="networkDataContent",
+                flags={"secret": True},
+            )
             properties.placement_hints = AAZListType(
                 serialized_name="placementHints",
             )
@@ -254,6 +296,10 @@ class Wait(AAZWaitCommand):
             )
             properties.user_data = AAZStrType(
                 serialized_name="userData",
+            )
+            properties.user_data_content = AAZStrType(
+                serialized_name="userDataContent",
+                flags={"secret": True},
             )
             properties.virtio_interface = AAZStrType(
                 serialized_name="virtioInterface",
@@ -296,6 +342,14 @@ class Wait(AAZWaitCommand):
             )
             cloud_services_network_attachment.network_attachment_name = AAZStrType(
                 serialized_name="networkAttachmentName",
+            )
+
+            console_extended_location = cls._schema_on_200.properties.console_extended_location
+            console_extended_location.name = AAZStrType(
+                flags={"required": True},
+            )
+            console_extended_location.type = AAZStrType(
+                flags={"required": True},
             )
 
             network_attachments = cls._schema_on_200.properties.network_attachments

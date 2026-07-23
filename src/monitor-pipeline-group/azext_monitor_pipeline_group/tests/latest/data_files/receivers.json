@@ -1,0 +1,16 @@
+[
+    {
+        "name": "otlp1",
+        "type": "OTLP",
+        "otlp": {
+            "endpoint": "0.0.0.0:7777"
+        }
+    },
+    {
+        "name": "mysyslog1",
+        "type": "Syslog",
+        "syslog": {
+            "endpoint": "0.0.0.0:4444"
+        }
+    }  
+]

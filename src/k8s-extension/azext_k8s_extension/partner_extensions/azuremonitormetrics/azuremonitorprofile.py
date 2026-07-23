@@ -2,8 +2,7 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
-from azure.cli.core.azclierror import InvalidArgumentValueError
-from knack.util import CLIError
+from azure.cli.core.azclierror import AzCLIError
 from .helper import (
     get_cluster_region,
     rp_registrations
@@ -16,7 +15,6 @@ from .amg.link import link_grafana_instance
 from .recordingrules.create import create_rules
 from .recordingrules.delete import delete_rules
 from .dc.delete import get_dc_objects_list, delete_dc_objects_if_prometheus_enabled
-from .helper import safe_key_check, safe_value_get
 
 
 # pylint: disable=line-too-long
@@ -65,16 +63,8 @@ def ensure_azure_monitor_profile_prerequisites(
         cluster_type
 ):
     cloud_name = cmd.cli_ctx.cloud.name
-    if cloud_name.lower() == 'azurechinacloud':
-        raise CLIError("Azure China Cloud is not supported for the Azure Monitor Metrics extension")
-
-    if cloud_name.lower() == "azureusgovernment":
-        if safe_key_check('grafana-resource-id', configuration_settings):
-            grafana_resource_id = safe_value_get('grafana-resource-id', configuration_settings)
-        if grafana_resource_id is not None:
-            if grafana_resource_id != "":
-                raise InvalidArgumentValueError("Azure US Government cloud does not support Azure Managed Grarfana yet. Please follow this documenation for enabling it via the public cloud : aka.ms/ama-grafana-link-ff")
-
+    if cloud_name.lower() == "ussec" or cloud_name.lower() == "usnat" or cloud_name.lower() == "usdod":
+        raise AzCLIError(f"{cloud_name} does not support Azure Managed Prometheus yet.")
     # Do RP registrations if required
     rp_registrations(cmd, cluster_subscription)
     link_azure_monitor_profile_artifacts(

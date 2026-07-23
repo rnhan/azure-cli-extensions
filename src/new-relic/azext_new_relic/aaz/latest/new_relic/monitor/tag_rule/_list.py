@@ -15,18 +15,20 @@ from azure.cli.core.aaz import *
     "new-relic monitor tag-rule list",
 )
 class List(AAZCommand):
-    """List TagRule resources by NewRelicMonitorResource
+    """Lists all tag rules associated with a specific New Relic monitor resource, helping you manage and audit the rules that control resource monitoring.
 
     :example: List TagRule resources by NewRelicMonitorResource.
         az new-relic monitor tag-rule list --resource-group MyResourceGroup --monitor-name MyNewRelicMonitor
     """
 
     _aaz_info = {
-        "version": "2022-07-01",
+        "version": "2024-01-01",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/newrelic.observability/monitors/{}/tagrules", "2022-07-01"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/newrelic.observability/monitors/{}/tagrules", "2024-01-01"],
         ]
     }
+
+    AZ_SUPPORT_PAGINATION = True
 
     def _handler(self, command_args):
         super()._handler(command_args)
@@ -45,10 +47,11 @@ class List(AAZCommand):
         _args_schema = cls._args_schema
         _args_schema.monitor_name = AAZStrArg(
             options=["--monitor-name"],
-            help="Name of the Monitors resource",
+            help="Name of the Monitoring resource",
             required=True,
         )
         _args_schema.resource_group = AAZResourceGroupNameArg(
+            help="Name of resource group. You can configure the default group using `az configure --defaults group=<name>`.",
             required=True,
         )
         return cls._args_schema
@@ -119,7 +122,7 @@ class List(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2022-07-01",
+                    "api-version", "2024-01-01",
                     required=True,
                 ),
             }

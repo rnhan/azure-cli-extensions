@@ -15,18 +15,20 @@ from azure.cli.core.aaz import *
     "new-relic monitor list-app-service",
 )
 class ListAppService(AAZCommand):
-    """List the app service resources currently being monitored by the NewRelic resource.
+    """Lists the app service resources currently being monitored by the New Relic resource, helping you understand which app services are under monitoring.
 
     :example: List the app service resources currently being monitored by the NewRelic resource.
         az new-relic monitor list-app-service --resource-group MyResourceGroup --monitor-name MyNewRelicMonitor --user-email UserEmail@123.com --azure-resource-ids MyAzureResourceIds
     """
 
     _aaz_info = {
-        "version": "2022-07-01",
+        "version": "2024-01-01",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/newrelic.observability/monitors/{}/listappservices", "2022-07-01"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/newrelic.observability/monitors/{}/listappservices", "2024-01-01"],
         ]
     }
+
+    AZ_SUPPORT_PAGINATION = True
 
     def _handler(self, command_args):
         super()._handler(command_args)
@@ -45,10 +47,11 @@ class ListAppService(AAZCommand):
         _args_schema = cls._args_schema
         _args_schema.monitor_name = AAZStrArg(
             options=["-n", "--name", "--monitor-name"],
-            help="Name of the Monitors resource",
+            help="Name of the Monitoring resource",
             required=True,
         )
         _args_schema.resource_group = AAZResourceGroupNameArg(
+            help="Name of resource group. You can configure the default group using `az configure --defaults group=<name>`.",
             required=True,
         )
 
@@ -58,7 +61,7 @@ class ListAppService(AAZCommand):
         _args_schema.azure_resource_ids = AAZListArg(
             options=["--azure-resource-ids"],
             arg_group="Request",
-            help="Azure resource IDs",
+            help="Azure resource IDs Support shorthand-syntax, json-file and yaml-file. Try \"??\" to show more.",
         )
         _args_schema.user_email = AAZStrArg(
             options=["--user-email"],
@@ -66,7 +69,7 @@ class ListAppService(AAZCommand):
             help="User Email",
             required=True,
             fmt=AAZStrArgFormat(
-                pattern="^[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}$",
+                pattern="^[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]+\\.)+[A-Za-z]{2,}$",
             ),
         )
 
@@ -140,7 +143,7 @@ class ListAppService(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2022-07-01",
+                    "api-version", "2024-01-01",
                     required=True,
                 ),
             }

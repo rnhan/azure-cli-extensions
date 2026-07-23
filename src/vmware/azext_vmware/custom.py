@@ -25,7 +25,7 @@ Any services connected using these credentials will stop working and may cause y
 
 Check if you're using your cloudadmin credentials for any connected services like backup and disaster recovery appliances, VMware HCX, or any vRealize suite products. Verify you're not using cloudadmin credentials for connected services before generating a new password.
 
-If you are using cloudadmin for connected services, learn how you can setup a connection to an external identity source to create and manage new credentials for your connected services: https://docs.microsoft.com/en-us/azure/azure-vmware/configure-identity-source-vcenter
+If you are using cloudadmin for connected services, learn how you can setup a connection to an external identity source to create and manage new credentials for your connected services: https://learn.microsoft.com/en-us/azure/azure-vmware/configure-identity-source-vcenter
 
 Press Y to confirm no services are using my cloudadmin credentials to connect to vCenter
 '''
@@ -65,7 +65,7 @@ def privatecloud_addidentitysource(cmd, resource_group_name, name, private_cloud
     return Create(cli_ctx=cmd.cli_ctx)(command_args=command_args)
 
 
-def privatecloud_deleteidentitysource(cmd, resource_group_name, name, private_cloud, alias, domain, yes=False):
+def privatecloud_deleteidentitysource(cmd, resource_group_name, name, private_cloud, yes=False):
     from .aaz.latest.vmware.private_cloud.identity_source import Delete
     from knack.prompting import prompt_y_n
     msg = 'This will delete the identity source. Are you sure?'
@@ -106,6 +106,19 @@ def privatecloud_deletecmkenryption(cmd, resource_group_name, private_cloud, yes
         "encryption": {
             "status": "Disabled",
         }
+    })
+
+
+def privatecloud_delete_vcf_license(cmd, resource_group_name, private_cloud, yes=False):
+    from knack.prompting import prompt_y_n
+    msg = 'This will delete the VCF license from the private cloud. Are you sure?'
+    if not yes and not prompt_y_n(msg, default="n"):
+        return None
+    from .operations.private_cloud import PrivateCloudUpdate
+    return PrivateCloudUpdate(cli_ctx=cmd.cli_ctx)(command_args={
+        "private_cloud_name": private_cloud,
+        "resource_group": resource_group_name,
+        "vcf_license": None,
     })
 
 
@@ -156,21 +169,26 @@ def privatecloud_identity_get(cmd, resource_group_name, private_cloud):
     }).get("identity")
 
 
-def privatecloud_rotate_nsxt_password():
-    from knack.prompting import prompt
-    msg = ROTATE_NSXT_PASSWORD_TERMS
-    prompt(msg)
-    # return client.private_clouds.begin_rotate_nsxt_password(resource_group_name=resource_group_name, private_cloud_name=private_cloud)
-
-
 def datastore_create():
     print('Please use "az vmware datastore netapp-volume create" or "az vmware datastore disk-pool-volume create" instead.')
 
 
-def script_execution_create(cmd, resource_group_name, private_cloud, name, timeout, script_cmdlet_id=None, parameters=None, hidden_parameters=None, failure_reason=None, retention=None, out=None, named_outputs: List[Tuple[str, str]] = None):
+def script_execution_create(cmd, resource_group_name, private_cloud, name, timeout, script_cmdlet_id=None, parameters=None, hidden_parameters=None, failure_reason=None, retention=None, out=None, named_outputs: List[Tuple[str, str]] = None, yes=False):
     from .aaz.latest.vmware.script_execution import Create
+    from knack.prompting import prompt_y_n
+
+    msg = 'Attention: {} actions and SLAs are supported for Microsoft approved partners only. Continue?'
     if named_outputs is not None:
         named_outputs = dict(named_outputs)
+    if script_cmdlet_id is not None and not yes and script_cmdlet_id.lower().find("scriptpackages/microsoft.avs.vmfs") > -1:
+        if not prompt_y_n(msg.format("Microsoft.AVS.VMFS"), default="n"):
+            return None
+    elif script_cmdlet_id is not None and not yes and script_cmdlet_id.lower().find("scriptpackages/microsoft.avs.nfs") > -1:
+        if not prompt_y_n(msg.format("Microsoft.AVS.NFS"), default="n"):
+            return None
+    elif script_cmdlet_id is not None and not yes and script_cmdlet_id.lower().find("scriptpackages/microsoft.avs.vvols") > -1:
+        if not prompt_y_n(msg.format("Microsoft.AVS.VVOLS"), default="n"):
+            return None
     return Create(cli_ctx=cmd.cli_ctx)(command_args={
         "private_cloud": private_cloud,
         "resource_group": resource_group_name,

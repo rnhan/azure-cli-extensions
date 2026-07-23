@@ -20,7 +20,7 @@ class Wait(AAZWaitCommand):
 
     _aaz_info = {
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.networkcloud/volumes/{}", "2023-10-01-preview"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.networkcloud/volumes/{}", "2026-05-01-preview"],
         ]
     }
 
@@ -119,7 +119,7 @@ class Wait(AAZWaitCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-10-01-preview",
+                    "api-version", "2026-05-01-preview",
                     required=True,
                 ),
             }
@@ -152,6 +152,9 @@ class Wait(AAZWaitCommand):
             cls._schema_on_200 = AAZObjectType()
 
             _schema_on_200 = cls._schema_on_200
+            _schema_on_200.etag = AAZStrType(
+                flags={"read_only": True},
+            )
             _schema_on_200.extended_location = AAZObjectType(
                 serialized_name="extendedLocation",
                 flags={"required": True},
@@ -186,6 +189,14 @@ class Wait(AAZWaitCommand):
             )
 
             properties = cls._schema_on_200.properties
+            properties.allocated_size_mi_b = AAZIntType(
+                serialized_name="allocatedSizeMiB",
+                flags={"read_only": True},
+            )
+            properties.assigned_storage_appliance_id = AAZStrType(
+                serialized_name="assignedStorageApplianceId",
+                flags={"read_only": True},
+            )
             properties.attached_to = AAZListType(
                 serialized_name="attachedTo",
                 flags={"read_only": True},
@@ -209,6 +220,9 @@ class Wait(AAZWaitCommand):
             properties.size_mi_b = AAZIntType(
                 serialized_name="sizeMiB",
                 flags={"required": True},
+            )
+            properties.storage_appliance_id = AAZStrType(
+                serialized_name="storageApplianceId",
             )
 
             attached_to = cls._schema_on_200.properties.attached_to

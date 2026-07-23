@@ -13,7 +13,6 @@ from azure.cli.core.aaz import *
 
 @register_command(
     "dataprotection restorable-time-range find",
-    is_experimental=True,
 )
 class Find(AAZCommand):
     """Finds the valid recovery point in time ranges for the restore.
@@ -23,9 +22,9 @@ class Find(AAZCommand):
     """
 
     _aaz_info = {
-        "version": "2023-05-01",
+        "version": "2025-07-01",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.dataprotection/backupvaults/{}/backupinstances/{}/findrestorabletimeranges", "2023-05-01"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.dataprotection/backupvaults/{}/backupinstances/{}/findrestorabletimeranges", "2025-07-01"],
         ]
     }
 
@@ -53,6 +52,11 @@ class Find(AAZCommand):
             help="The name of the backup vault.",
             required=True,
             id_part="name",
+            fmt=AAZStrArgFormat(
+                pattern="^[A-Za-z][-A-Za-z0-9]*[A-Za-z0-9]$",
+                max_length=50,
+                min_length=2,
+            ),
         )
         _args_schema.end_time = AAZStrArg(
             options=["--end-time"],
@@ -150,7 +154,7 @@ class Find(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-05-01",
+                    "api-version", "2025-07-01",
                     required=True,
                 ),
             }

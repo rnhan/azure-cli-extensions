@@ -2,7 +2,7 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
-# pylint: disable=line-too-long, consider-using-f-string, no-else-return, duplicate-string-formatting-argument, expression-not-assigned, too-many-locals, logging-fstring-interpolation, broad-except, pointless-statement, bare-except
+# pylint: disable=line-too-long, consider-using-f-string, no-else-return, duplicate-string-formatting-argument, expression-not-assigned, too-many-locals, logging-fstring-interpolation, broad-except, pointless-statement, bare-except, unused-variable, redefined-outer-name, reimported, unused-import, consider-using-generator, broad-exception-raised
 import platform
 import subprocess
 import stat
@@ -13,32 +13,38 @@ import zipfile
 import hashlib
 import re
 import requests
+import shutil
 import packaging.version as SemVer
+import random
 
+from enum import Enum
 from urllib.request import urlopen
 
+from azure.cli.command_modules.acr.custom import acr_show
 from azure.cli.command_modules.containerapp._utils import safe_get, _ensure_location_allowed, \
     _generate_log_analytics_if_not_provided
+from azure.cli.command_modules.containerapp._clients import ContainerAppClient
 from azure.cli.command_modules.containerapp._client_factory import handle_raw_exception
 from azure.cli.core._profile import Profile
 from azure.cli.core.azclierror import (ValidationError, ResourceNotFoundError, CLIError, InvalidArgumentValueError)
 from azure.cli.core.commands.client_factory import get_mgmt_service_client, get_subscription_id
-from azure.core.exceptions import HttpResponseError
+from azure.cli.command_modules.containerapp._utils import is_registry_msi_system
+from azure.mgmt.core.tools import parse_resource_id, is_valid_resource_id
+from ._utils_validation import validate_image_name  # noqa: F401
+
 from azure.mgmt.resource import ResourceManagementClient
 from azure.mgmt.servicelinker import ServiceLinkerManagementClient
 
 from knack.log import get_logger
-from msrestazure.tools import parse_resource_id, is_valid_resource_id
-
 from ._managed_service_utils import ManagedRedisUtils, ManagedCosmosDBUtils, ManagedPostgreSQLFlexibleUtils, ManagedMySQLFlexibleUtils
-from ._clients import ConnectedEnvCertificateClient, ContainerAppPreviewClient
+from ._clients import ConnectedEnvCertificateClient, ContainerAppPreviewClient, JavaComponentPreviewClient, ManagedEnvironmentPreviewClient
 from ._client_factory import custom_location_client_factory, k8s_extension_client_factory, providers_client_factory, \
     connected_k8s_client_factory, handle_non_404_status_code_exception
 from ._models import OryxRunImageTagProperty
 from ._constants import (CONTAINER_APP_EXTENSION_TYPE,
                          CONNECTED_ENV_CHECK_CERTIFICATE_NAME_AVAILABILITY_TYPE, DEV_SERVICE_LIST,
                          MANAGED_ENVIRONMENT_RESOURCE_TYPE, CONTAINER_APPS_RP, CONNECTED_CLUSTER_TYPE,
-                         DEFAULT_CONNECTED_CLUSTER_EXTENSION_NAMESPACE)
+                         DEFAULT_CONNECTED_CLUSTER_EXTENSION_NAMESPACE, ACR_IMAGE_SUFFIX)
 
 logger = get_logger(__name__)
 
@@ -87,21 +93,17 @@ def process_service(cmd, resource_list, service_name, arg_dict, subscription_id,
                 if customized_keys:
                     service_bind["customizedKeys"] = customized_keys
                 service_bindings_def_list.append(service_bind)
-
+            elif service["type"] == "Microsoft.App/managedEnvironments/javaComponents":
+                service_bind = {
+                    "serviceId": service["id"],
+                    "name": binding_name
+                }
+                service_bindings_def_list.append(service_bind)
             else:
                 raise ValidationError("Service not supported")
             break
     else:
         raise ResourceNotFoundError("Service with the given name does not exist")
-
-
-def get_linker_client(cmd):
-    resource = cmd.cli_ctx.cloud.endpoints.active_directory_resource_id
-    profile = Profile(cli_ctx=cmd.cli_ctx)
-    credential, subscription_id, _ = profile.get_login_credentials(
-        subscription_id=get_subscription_id(cmd.cli_ctx), resource=resource)
-    linker_client = ServiceLinkerManagementClient(credential)
-    return linker_client
 
 
 def validate_binding_name(binding_name):
@@ -110,6 +112,8 @@ def validate_binding_name(binding_name):
 
 
 def check_unique_bindings(cmd, service_connectors_def_list, service_bindings_def_list, resource_group_name, name):
+    from ._client_factory import get_linker_client
+
     linker_client = get_linker_client(cmd)
     containerapp_def = None
 
@@ -120,7 +124,10 @@ def check_unique_bindings(cmd, service_connectors_def_list, service_bindings_def
     all_bindings = []
 
     if containerapp_def:
-        managed_bindings = linker_client.linker.list(resource_uri=containerapp_def["id"])
+        if is_cloud_supported_by_service_connector(cmd.cli_ctx):
+            managed_bindings = linker_client.linker.list(resource_uri=containerapp_def["id"])
+        else:
+            managed_bindings = []
         service_binds = containerapp_def["properties"].get("template", {}).get("serviceBinds", [])
 
         if managed_bindings:
@@ -148,10 +155,15 @@ def check_unique_bindings(cmd, service_connectors_def_list, service_bindings_def
         return True
 
 
-def parse_service_bindings(cmd, service_bindings_list, resource_group_name, name, customized_keys=None):
+def parse_service_bindings(cmd, service_bindings_list, resource_group_name, name, environment_id, customized_keys=None):
     # Make it return both managed and dev bindings
     service_bindings_def_list = []
     service_connector_def_list = []
+
+    parsed_managed_env = parse_resource_id(environment_id)
+    managed_env_name = parsed_managed_env['name']
+    managed_env_rg = parsed_managed_env['resource_group']
+    java_component_list = JavaComponentPreviewClient.list(cmd, managed_env_rg, managed_env_name)
 
     for service_binding_str in service_bindings_list:
         parts = service_binding_str.split(",")
@@ -199,6 +211,10 @@ def parse_service_bindings(cmd, service_bindings_list, resource_group_name, name
             resource_list.append({"name": item.name, "type": item.type, "id": item.id})
 
         subscription_id = get_subscription_id(cmd.cli_ctx)
+
+        # Add Java component into the resource_list
+        for java_component in java_component_list:
+            resource_list.append({"name": java_component["name"], "type": java_component["type"], "id": java_component["id"]})
 
         # Will work for both create and update
         process_service(cmd, resource_list, service_name, arg_dict, subscription_id, resource_group_name,
@@ -330,7 +346,7 @@ def get_pack_exec_path():
 
 def patchable_check(base_run_image_name, oryx_run_images, inspect_result):
     # (1) Check if the base run image is based from a supported MCR repository.
-    # (2) Fetch all of the supported Oryx run image tags from MCR and compare the version
+    # (2) Fetch all the supported Oryx run image tags from MCR and compare the version
     # of the provided base run image with the latest version of a compatible Oryx run image from MCR.
     MCR_PREFIX = "mcr.microsoft.com/"
     result = {
@@ -497,6 +513,19 @@ def get_cluster_extension(cmd, cluster_extension_id=None):
         extension_name=resource_name)
 
 
+def validate_environment_mode_and_workload_profiles_compatible(environment_mode, workload_profiles_enabled):
+    # If only environment_mode is specified, derive enable_workload_profiles from it
+    if environment_mode is not None:
+        is_environment_mode_workload_profiles_enabled = environment_mode.lower() != 'consumptiononly'
+
+        # Check for conflicts when both are specified
+        if workload_profiles_enabled is not None:
+            if not is_environment_mode_workload_profiles_enabled and workload_profiles_enabled:
+                raise ValidationError("Cannot use '--enable-workload-profiles' with '--environment-mode ConsumptionOnly'. Please use '--environment-mode' alone.")
+            if is_environment_mode_workload_profiles_enabled and not workload_profiles_enabled:
+                raise ValidationError("Cannot use '--enable-workload-profiles false' with '--environment-mode {}'. Please use '--environment-mode' alone.".format(environment_mode))
+
+
 def validate_custom_location(cmd, custom_location=None):
     if not is_valid_resource_id(custom_location):
         raise ValidationError('{} is not a valid Azure resource ID.'.format(custom_location))
@@ -533,7 +562,6 @@ def _validate_custom_loc_and_location(cmd, custom_location_id=None, env=None, co
 
     # check if custom location can be used by target environment
     if env:
-        env_rg = env_rg
         env_name = env
         env_id = None
         if is_valid_resource_id(env):
@@ -692,3 +720,209 @@ def log_in_file(log_text, opened_file, no_print=False):
 def remove_ansi_characters(text):
     regular_expression = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
     return regular_expression.sub("", text)
+
+
+def parse_build_env_vars(env_list):
+    if not env_list:
+        return None
+
+    env_pairs = {}
+
+    for pair in env_list:
+        key_val = pair.split('=', 1)
+        env_pairs[key_val[0]] = key_val[1]
+
+    env_var_def = []
+    for key, value in env_pairs.items():
+        env_var_def.append({
+            "name": key,
+            "value": value
+        })
+
+    return env_var_def
+
+
+def is_cloud_supported_by_connected_env(cli_ctx):
+    if cli_ctx.cloud.name == 'AzureCloud':
+        return True
+    return False
+
+
+def is_cloud_supported_by_service_connector(cli_ctx):
+    if cli_ctx.cloud.name == 'AzureCloud':
+        return True
+    return False
+
+
+class AppType(Enum):
+    ContainerApp = 1
+    ContainerAppJob = 2
+    SessionPool = 3
+
+
+def is_registry_msi_system_environment(identity):
+    if identity is None:
+        return False
+    return identity.lower() == "system-environment"
+
+
+def env_has_managed_identity(cmd, resource_group_name, env_name, identity):
+    identity = identity.lower()
+
+    managed_env_info = None
+    try:
+        managed_env_info = ManagedEnvironmentPreviewClient.show(cmd=cmd, resource_group_name=resource_group_name, name=env_name)
+    except Exception as e:
+        handle_non_404_status_code_exception(e)
+
+    if not managed_env_info:
+        raise ValidationError("The managed environment '{}' does not exist. Please specify a valid environment.".format(env_name))
+
+    if safe_get(managed_env_info, "identity") is None:
+        return False
+
+    identity_type = safe_get(managed_env_info, "identity", "type")
+    if is_registry_msi_system(identity) and identity_type and identity_type.__contains__("SystemAssigned"):
+        return True
+
+    user_assigned_identities = safe_get(managed_env_info, "identity", "userAssignedIdentities")
+    if user_assigned_identities is None:
+        return False
+
+    result = False
+    for msi in user_assigned_identities:
+        if msi.lower() == identity:
+            result = True
+            break
+    return result
+
+
+def create_acrpull_role_assignment_if_needed(cmd, registry_server, registry_identity=None, service_principal=None, skip_error=False):
+    import time
+    from azure.cli.command_modules.acr._utils import ResourceNotFound
+    from azure.cli.core.profiles import ResourceType
+    from azure.mgmt.containerregistry import ContainerRegistryManagementClient
+    from azure.cli.command_modules.role.custom import list_role_assignments, create_role_assignment
+    from azure.cli.core.azclierror import UnauthorizedError
+
+    if registry_identity:
+        registry_identity_parsed = parse_resource_id(registry_identity)
+        registry_identity_name, registry_identity_rg, registry_identity_sub = registry_identity_parsed.get("name"), registry_identity_parsed.get("resource_group"), registry_identity_parsed.get("subscription")
+        sp_id = get_mgmt_service_client(cmd.cli_ctx, ResourceType.MGMT_MSI, subscription_id=registry_identity_sub).user_assigned_identities.get(resource_name=registry_identity_name, resource_group_name=registry_identity_rg).principal_id
+    else:
+        sp_id = service_principal
+
+    client = get_mgmt_service_client(cmd.cli_ctx, ContainerRegistryManagementClient).registries
+    try:
+        acr_id = acr_show(cmd, client, registry_server[: registry_server.rindex(ACR_IMAGE_SUFFIX)]).id
+    except ResourceNotFound as e:
+        message = (f"Role assignment failed with error message: \"{' '.join(e.args)}\". \n"
+                   f"To add the role assignment manually, please run 'az role assignment create --assignee {sp_id} --scope <container-registry-resource-id> --role acrpull'. \n"
+                   "You may have to restart the containerapp with 'az containerapp revision restart'.")
+        logger.warning(message)
+        return
+
+    role_assignments = None
+    # Always assign role assignment even if list role assignments throw error
+    try:
+        role_assignments = list_role_assignments(cmd, assignee=sp_id, role="acrpull", scope=acr_id)
+    except:  # pylint: disable=bare-except
+        pass
+    if not role_assignments:
+        logger.warning("Creating an acrpull role assignment for the registry identity")
+        retries = 10
+        while retries > 0:
+            try:
+                create_role_assignment(cmd, role="acrpull", assignee=sp_id, scope=acr_id)
+                return
+            except Exception as e:
+                retries -= 1
+                if retries <= 0:
+                    message = (f"Role assignment failed with error message: \"{' '.join(e.args)}\". \n"
+                               f"To add the role assignment manually, please run 'az role assignment create --assignee {sp_id} --scope {acr_id} --role acrpull'. \n"
+                               "You may have to restart the containerapp with 'az containerapp revision restart'.")
+                    if skip_error:
+                        logger.error(message)
+                    else:
+                        raise UnauthorizedError(message) from e
+                else:
+                    time.sleep(5)
+
+
+def get_min_replicas_from_revision(cmd, resource_group_name, container_app_name, revision_name):
+    revision_def = ContainerAppClient.show_revision(
+        cmd=cmd,
+        resource_group_name=resource_group_name,
+        container_app_name=container_app_name,
+        name=revision_name
+    )
+    min_replicas = safe_get(revision_def, "properties", "template", "scale", "minReplicas", default=None)
+    return min_replicas
+
+
+def get_random_replica(cmd, resource_group_name, container_app_name, revision_name):
+    logger.debug(f"Getting random replica for container app: name='{container_app_name}', resource_group='{resource_group_name}', revision='{revision_name}'")
+
+    try:
+        replicas = ContainerAppClient.list_replicas(
+            cmd=cmd,
+            resource_group_name=resource_group_name,
+            container_app_name=container_app_name,
+            revision_name=revision_name
+        )
+    except Exception as e:
+        logger.debug(f"Failed to list replicas for revision '{revision_name}': {str(e)}")
+        handle_raw_exception(e)
+
+    if not replicas:
+        logger.debug(f"No replicas found for revision '{revision_name}' - unable to proceed")
+        logger.debug(f"checking min replica count for revision='{revision_name}'")
+
+        min_replicas = get_min_replicas_from_revision(
+            cmd,
+            resource_group_name,
+            container_app_name,
+            revision_name
+        )
+        if min_replicas is None or min_replicas == 0:
+            logger.debug(f"The revision '{revision_name}' has minReplicas set to 0.")
+            raise CLIError(f"The revision '{revision_name}' has minReplicas set to 0. Ensure that there is at least one replica. To update minimum replica: Run 'az containerapp update --name {container_app_name} --resource-group {resource_group_name} --min-replica 1'")
+
+        raise CLIError(f"No replicas found for revision '{revision_name}' of container app '{container_app_name}'.")
+
+    # Filter replicas by running state
+    running_replicas = [
+        replica for replica in replicas
+        if replica.get("properties", {}).get("runningState") == "Running"
+    ]
+
+    if not running_replicas:
+        raise ValidationError(f"No running replicas found for revision '{revision_name}' of container app '{container_app_name}'.")
+
+    # Select the replica with the latest creation time
+    # createdTime is in ISO 8601 format (e.g., "2025-10-03T00:56:33Z") which is lexicographically sortable
+    replica = max(running_replicas, key=lambda r: r.get("properties", {}).get("createdTime", "1900-01-01T00:00:00Z"))
+    replica_name = replica.get("name")
+    container_name = replica.get("properties", {}).get("containers", [{}])[0].get("name")
+
+    logger.debug(f"Selected random replica: '{replica_name}' with container: '{container_name}'")
+
+    if not replica_name:
+        logger.debug(f"Could not extract replica name from selected replica: {replica}")
+        raise CLIError(f"Could not determine replica name for revision '{revision_name}' of container app '{container_app_name}'.")
+
+    return replica_name, container_name
+
+
+def execute_function_admin_command(cmd, resource_group_name, name, command, revision_name=None, replica_name=None, container_name=None):
+    from .custom import containerapp_debug
+
+    return containerapp_debug(
+        cmd=cmd,
+        resource_group_name=resource_group_name,
+        name=name,
+        container=container_name,
+        revision=revision_name,
+        replica=replica_name,
+        debug_command=command
+    )

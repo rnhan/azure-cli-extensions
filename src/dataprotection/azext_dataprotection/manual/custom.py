@@ -9,21 +9,28 @@
 # pylint: disable=line-too-long
 # pylint: disable=too-many-branches
 # pylint: disable=protected-access
-import uuid
-import re
+# pylint: disable=unused-argument
+# pylint: disable=too-many-nested-blocks
+# pylint: disable=no-else-continue
+# pylint: disable=no-else-raise
+import json
 import time
 from azure.cli.core.azclierror import (
     RequiredArgumentMissingError,
     InvalidArgumentValueError,
     CLIInternalError,
     ForbiddenError,
-    MutuallyExclusiveArgumentError,
     UnauthorizedError
 )
+from azure.cli.core.commands.client_factory import get_mgmt_service_client
+from azure.cli.command_modules.role.custom import list_role_assignments, create_role_assignment
+from azure.mgmt.core.tools import is_valid_resource_id, parse_resource_id
 from knack.log import get_logger
+from knack.prompting import prompt_y_n
 from azext_dataprotection.vendored_sdks.resourcegraph.models import \
     QueryRequest, QueryRequestOptions
 from azext_dataprotection.manual import backupcenter_helper, helpers as helper
+from azext_dataprotection.aaz.latest.dataprotection.backup_vault import Show as BackupVaultGet
 
 logger = get_logger(__name__)
 
@@ -77,112 +84,117 @@ def dataprotection_backup_instance_validate_for_backup(cmd, vault_name, resource
     })
 
 
-def dataprotection_backup_instance_initialize_backupconfig(datasource_type, excluded_resource_types=None,
+def dataprotection_backup_instance_initialize_backupconfig(cmd, client, datasource_type, excluded_resource_types=None,
                                                            included_resource_types=None, excluded_namespaces=None,
                                                            included_namespaces=None, label_selectors=None,
-                                                           snapshot_volumes=None, include_cluster_scope_resources=None,
-                                                           backup_hook_references=None):
-    if snapshot_volumes is None:
-        snapshot_volumes = True
-    if include_cluster_scope_resources is None:
-        include_cluster_scope_resources = True
+                                                           snapshot_volumes=None,
+                                                           include_cluster_scope_resources=None,
+                                                           vaulted_backup_containers=None,
+                                                           include_all_containers=None,
+                                                           storage_account_name=None, storage_account_resource_group=None,
+                                                           backup_hook_references=None,
+                                                           auto_protection=None,
+                                                           auto_protection_exclusion_prefixes=None):
+    if datasource_type == "AzureKubernetesService":
+        if any([vaulted_backup_containers, include_all_containers, storage_account_name, storage_account_resource_group,
+                auto_protection is not None, auto_protection_exclusion_prefixes is not None]):
+            raise InvalidArgumentValueError('Invalid argument --vaulted-backup-containers, --include-all-containers, '
+                                            '--storage-account-name, --storage-account-resource-group, '
+                                            '--auto-protection, --exclusion-prefixes for given datasource type.')
+        if snapshot_volumes is None:
+            snapshot_volumes = True
+        if include_cluster_scope_resources is None:
+            include_cluster_scope_resources = True
+        return {
+            "object_type": "KubernetesClusterBackupDatasourceParameters",
+            "excluded_resource_types": excluded_resource_types,
+            "included_resource_types": included_resource_types,
+            "excluded_namespaces": excluded_namespaces,
+            "included_namespaces": included_namespaces,
+            "label_selectors": label_selectors,
+            "snapshot_volumes": snapshot_volumes,
+            "include_cluster_scope_resources": include_cluster_scope_resources,
+            "backup_hook_references": backup_hook_references
+        }
+    if datasource_type == "AzureBlob" or datasource_type == "AzureDataLakeStorage":
+        if any([excluded_resource_types, included_resource_types, excluded_namespaces, included_namespaces,
+                label_selectors, snapshot_volumes, include_cluster_scope_resources, backup_hook_references]):
+            raise InvalidArgumentValueError('Invalid arguments --excluded-resource-type, --included-resource-type, --excluded-namespaces, '
+                                            ' --included-namespaces, --label-selectors, --snapshot-volumes, --include-cluster-scope-resources, '
+                                            ' --backup-hook-references for given datasource type.')
+        if auto_protection_exclusion_prefixes and not auto_protection:
+            raise InvalidArgumentValueError('--exclusion-prefixes requires --auto-protection to be enabled.')
+        if auto_protection:
+            if any([vaulted_backup_containers, include_all_containers is not None]):
+                raise InvalidArgumentValueError('--auto-protection cannot be used with --container-list or --include-all-containers.')
+            if any([storage_account_name, storage_account_resource_group]):
+                raise InvalidArgumentValueError('--storage-account-name and --storage-account-resource-group are not applicable with --auto-protection.')
+            return helper.get_blob_autoprotection_config(datasource_type, auto_protection_exclusion_prefixes)
+        return helper.get_blob_backupconfig(cmd, client, vaulted_backup_containers, include_all_containers, storage_account_name, storage_account_resource_group, datasource_type)
 
-    return {
-        "excluded_resource_types": excluded_resource_types,
-        "included_resource_types": included_resource_types,
-        "excluded_namespaces": excluded_namespaces,
-        "included_namespaces": included_namespaces,
-        "label_selectors": label_selectors,
-        "snapshot_volumes": snapshot_volumes,
-        "include_cluster_scope_resources": include_cluster_scope_resources,
-        "backup_hook_references": backup_hook_references
-    }
+    raise InvalidArgumentValueError('Given datasource type is not supported currently. '
+                                    'This command only supports "AzureBlob", "AzureDataLakeStorage" or "AzureKubernetesService" datasource types.')
 
 
 def dataprotection_backup_instance_initialize(datasource_type, datasource_id, datasource_location, policy_id,
                                               friendly_name=None, backup_configuration=None,
                                               secret_store_type=None, secret_store_uri=None,
-                                              snapshot_resource_group_name=None, tags=None):
-    datasource_info = helper.get_datasource_info(datasource_type, datasource_id, datasource_location)
-    datasourceset_info = None
+                                              snapshot_resource_group_name=None, tags=None,
+                                              use_system_assigned_identity=None, user_assigned_identity_arm_url=None):
     manifest = helper.load_manifest(datasource_type)
-    if manifest["isProxyResource"]:
+
+    datasource_info = helper.get_datasource_info(datasource_type, datasource_id, datasource_location)
+
+    datasourceset_info = None
+    if manifest["isProxyResource"] or manifest["enableDataSourceSetInfo"]:
         datasourceset_info = helper.get_datasourceset_info(datasource_type, datasource_id, datasource_location)
 
     policy_parameters = None
-    # Azure Disk and AKS specific code for adding datastoreparameter list in the json
     if manifest["addDataStoreParametersList"]:
-        policy_parameters = {
-            "data_store_parameters_list": [
-                {
-                    "object_type": "AzureOperationalStoreParameters",
-                    "data_store_type": "OperationalStore",
-                    "resource_group_id": helper.get_rg_id_from_arm_id(datasource_id)
-                }
-            ]
-        }
-
-        if snapshot_resource_group_name:
-            disk_sub_id = helper.get_sub_id_from_arm_id(datasource_id)
-            policy_parameters["data_store_parameters_list"][0]["resource_group_id"] = (disk_sub_id + "/resourceGroups/"
-                                                                                       + snapshot_resource_group_name)
+        policy_parameters = helper.get_policy_parameters(datasource_id, snapshot_resource_group_name)
 
     datasource_auth_credentials_info = None
     if manifest["supportSecretStoreAuthentication"]:
-        if secret_store_uri and secret_store_type:
-            datasource_auth_credentials_info = {
-                "secret_store_resource": {
-                    "uri": secret_store_uri,
-                    "value": None,
-                    "secret_store_type": secret_store_type
-                },
-                "object_type": "SecretStoreBasedAuthCredentials"
-            }
-        elif secret_store_uri or secret_store_type:
-            raise RequiredArgumentMissingError("Either secret store uri or secret store type not provided.")
+        datasource_auth_credentials_info = helper.get_datasource_auth_credentials_info(secret_store_type, secret_store_uri)
 
     policy_info = {
         "policy_id": policy_id,
         "policy_parameters": policy_parameters
     }
 
-    # Fetching or setting Friendly name, as appropriate
-    # Following earlier patterns, not raising any concern if friendly name is provided where it isn't required
-    # However, boilerplate code has been added here as Powershell raises an error here. We might want to flag to the user
-    # that their provided friendly name will not be used.
-    if not manifest["friendlyNameRequired"] and friendly_name is not None:
-        logger.warning("--friendly-name is not a required parameter for the given DatasourceType, and the user input will be overridden")
+    friendly_name = helper.get_friendly_name(datasource_type, friendly_name, datasourceset_info, datasource_info)
 
-    # If friendly name is required, we use the user input/validate accordingly if it wasn't provided. If it isn't, we override user input if any
-    if manifest["friendlyNameRequired"]:
-        if friendly_name is None:
-            raise RequiredArgumentMissingError("friendly-name parameter is required for the given DatasourceType")
-        friendly_name = datasourceset_info["resource_name"] + "/" + friendly_name
-    elif manifest["isProxyResource"]:
-        friendly_name = datasourceset_info["resource_name"] + "/" + datasource_info["resource_name"]
-    else:
-        friendly_name = datasource_info["resource_name"]
-
-    guid = uuid.uuid1()
-    backup_instance_name = ""
-    if manifest["isProxyResource"]:
-        backup_instance_name = datasourceset_info["resource_name"] + "-" + datasource_info["resource_name"] + "-" + str(guid)
-    else:
-        backup_instance_name = datasource_info["resource_name"] + "-" + datasource_info["resource_name"] + "-" + str(guid)
+    backup_instance_name = helper.get_backup_instance_name(datasource_type, datasourceset_info, datasource_info)
 
     if manifest["addBackupDatasourceParametersList"]:
-        if backup_configuration is None:
-            raise RequiredArgumentMissingError("Please input parameter backup-configuration for AKS cluster backup. \
-                           Use command az dataprotection backup-instance initialize-backupconfig \
-                           for creating the backup-configuration")
-        backup_configuration["object_type"] = "KubernetesClusterBackupDatasourceParameters"
-        policy_info["policy_parameters"]["backup_datasource_parameters_list"] = []
-        policy_info["policy_parameters"]["backup_datasource_parameters_list"].append(backup_configuration)
+        if manifest["backupConfigurationRequired"] and backup_configuration is None:
+            raise RequiredArgumentMissingError("Please input parameter backup-configuration for given datasource type. \
+                                                Use command az dataprotection backup-instance initialize-backupconfig \
+                                                for creating the backup-configuration")
+        if backup_configuration:
+            if datasource_type == "AzureBlob" or datasource_type == "AzureDataLakeStorage":
+                for key in ['excluded_resource_types', 'included_resource_types', 'excluded_namespaces', 'included_namespaces',
+                            'label_selectors', 'snapshot_volumes', 'include_cluster_scope_resources']:
+                    if key in backup_configuration:
+                        raise InvalidArgumentValueError('Invalid arguments --excluded-resource-type, --included-resource-type, --excluded-namespaces, '
+                                                        ' --included-namespaces, --label-selectors, --snapshot-volumes, --include-cluster-scope-resources '
+                                                        ' for given datasource type. Please check the backup configuration.')
+
+            if datasource_type == "AzureKubernetesService":
+                if "containers_list" in backup_configuration:
+                    raise InvalidArgumentValueError('Invalid argument --vaulted-backup-containers for given datasource type. '
+                                                    'Please check the backup configuration.')
+
+            if not policy_info["policy_parameters"]:
+                policy_info["policy_parameters"] = {}
+
+            policy_info["policy_parameters"]["backup_datasource_parameters_list"] = []
+            policy_info["policy_parameters"]["backup_datasource_parameters_list"].append(backup_configuration)
     else:
         if backup_configuration is not None:
             logger.warning("--backup-configuration is not required for the given DatasourceType, and will not be used")
 
-    return {
+    backup_instance = {
         "backup_instance_name": backup_instance_name,
         "properties": {
             "data_source_info": datasource_info,
@@ -195,31 +207,173 @@ def dataprotection_backup_instance_initialize(datasource_type, datasource_id, da
         "tags": tags
     }
 
+    if use_system_assigned_identity is not None or user_assigned_identity_arm_url is not None:
+        if user_assigned_identity_arm_url is None and not use_system_assigned_identity:
+            # so the UAMI was not passed and either system identity is not passed, or it is false. The former is not
+            # possible as that scenario is eliminated by the first check. So UAMI not passed, but system assigned is
+            # False. Not valid input, so we don't populate identity Details
+            pass
+        else:
+            identity_details = helper.get_identity_details(use_system_assigned_identity, user_assigned_identity_arm_url)
+            backup_instance["properties"]["identity_details"] = identity_details
 
-def dataprotection_backup_instance_update_policy(cmd, resource_group_name, vault_name, backup_instance_name, policy_id, no_wait=False):
+    return backup_instance
+
+
+def dataprotection_backup_instance_validate_for_update(cmd, resource_group_name, vault_name, backup_instance_name,
+                                                       vaulted_blob_container_list=None, no_wait=False,
+                                                       use_system_assigned_identity=None, user_assigned_identity_arm_url=None):
     from azext_dataprotection.aaz.latest.dataprotection.backup_instance import Show as BackupInstanceShow
     backup_instance = BackupInstanceShow(cli_ctx=cmd.cli_ctx)(command_args={
         "resource_group": resource_group_name,
         "vault_name": vault_name,
         "backup_instance_name": backup_instance_name
     })
-    policy_info = backup_instance['properties']['policyInfo']
-    policy_info['policyId'] = policy_id
 
-    from azext_dataprotection.aaz.latest.dataprotection.backup_instance import Update
-    return Update(cli_ctx=cmd.cli_ctx)(command_args={
+    # UAMI for a backup instance
+    if use_system_assigned_identity is not None or user_assigned_identity_arm_url is not None:
+        if user_assigned_identity_arm_url is None and not use_system_assigned_identity:
+            # so the UAMI was not passed and either system identity is not passed, or it is false. The former is not
+            # possible as that scenario is eliminated by the first check. So UAMI not passed, but system assigned is
+            # False. Not valid input, so we don't populate identity Details
+            pass
+        else:
+            identity_details = helper.get_identity_details(use_system_assigned_identity, user_assigned_identity_arm_url)
+            backup_instance["properties"]["identityDetails"] = identity_details
+
+    # Policy changes - updating the vaulted blob container list for vaulted blob backups
+    if vaulted_blob_container_list is not None:
+        backup_instance['properties']['policyInfo']['policyParameters']['backupDatasourceParametersList'] = \
+            [vaulted_blob_container_list,]
+
+    backup_instance = helper.convert_backup_instance_show_to_input(backup_instance)
+
+    from azext_dataprotection.manual.aaz_operations.backup_instance import ValidateForUpdateBI
+    return ValidateForUpdateBI(cli_ctx=cmd.cli_ctx)(command_args={
         "no_wait": no_wait,
         "backup_instance_name": backup_instance_name,
+        "backup_instance": backup_instance["properties"],
         "resource_group": resource_group_name,
         "vault_name": vault_name,
-        "policy_info": policy_info
     })
 
 
-def dataprotection_backup_instance_list_from_resourcegraph(client, datasource_type, resource_groups=None, vaults=None, subscriptions=None, protection_status=None, datasource_id=None):
+def dataprotection_backup_instance_update(cmd, resource_group_name, vault_name, backup_instance_name,
+                                          vaulted_blob_container_list=None, aks_backup_configuration=None, no_wait=False,
+                                          use_system_assigned_identity=None, user_assigned_identity_arm_url=None):
+    from azext_dataprotection.aaz.latest.dataprotection.backup_instance import Show as BackupInstanceShow
+    backup_instance = BackupInstanceShow(cli_ctx=cmd.cli_ctx)(command_args={
+        "resource_group": resource_group_name,
+        "vault_name": vault_name,
+        "backup_instance_name": backup_instance_name
+    })
+
+    # UAMI for a backup instance
+    if use_system_assigned_identity is not None or user_assigned_identity_arm_url is not None:
+        if user_assigned_identity_arm_url is None and not use_system_assigned_identity:
+            # so the UAMI was not passed and either system identity is not passed, or it is false. The former is not
+            # possible as that scenario is eliminated by the first check. So UAMI not passed, but system assigned is
+            # False. Not valid input, so we don't populate identity Details
+            pass
+        else:
+            identity_details = helper.get_identity_details(use_system_assigned_identity, user_assigned_identity_arm_url)
+            backup_instance["properties"]["identityDetails"] = identity_details
+
+    # Policy changes
+    # - Updating the vaulted blob container list for vaulted blob backups
+    # - Updating the backup datasource parameters for AKS backups
+    datasource_type = backup_instance["properties"]["dataSourceInfo"]["datasourceType"]
+
+    # If user provided any of the datasource parameter update inputs, handle according to datasource type
+    if vaulted_blob_container_list is not None or aks_backup_configuration is not None:
+        if datasource_type == "Microsoft.ContainerService/managedClusters":
+            # AKS scenario (only --aks-backup-configuration is valid)
+            if vaulted_blob_container_list is not None:
+                raise InvalidArgumentValueError(f'Invalid argument --vaulted-blob-container-list for AKS datasource type: {datasource_type}. Use --aks-backup-configuration instead.')
+            elif aks_backup_configuration is not None:
+                # Allow passing JSON string or already-parsed object for AKS backup configuration
+                if isinstance(aks_backup_configuration, str):
+                    try:
+                        aks_backup_configuration = json.loads(aks_backup_configuration)
+                    except json.JSONDecodeError:
+                        raise InvalidArgumentValueError("Provided --aks-backup-configuration is not valid JSON.")
+                    except Exception:
+                        raise InvalidArgumentValueError("Provided --aks-backup-configuration is not valid.")
+                backup_instance['properties']['policyInfo']['policyParameters']['backupDatasourceParametersList'] = [aks_backup_configuration]
+        elif datasource_type == "Microsoft.Storage/storageAccounts/blobServices":
+            # Blob scenario (only --vaulted-blob-container-list is valid)
+            if aks_backup_configuration is not None:
+                raise InvalidArgumentValueError(f'Invalid argument --aks-backup-configuration for Blob datasource type: {datasource_type}. Use --vaulted-blob-container-list instead.')
+            elif vaulted_blob_container_list is not None:
+                backup_instance['properties']['policyInfo']['policyParameters']['backupDatasourceParametersList'] = [vaulted_blob_container_list]
+        else:
+            raise InvalidArgumentValueError(f"Setting backup datasource parameters is not supported for datasource type: {datasource_type}.\n "
+                                            "Supported datasource types are Microsoft.ContainerService/managedClusters (AKS) and Microsoft.Storage/storageAccounts/blobServices (Blob).")
+
+    backup_instance = helper.convert_backup_instance_show_to_input(backup_instance)
+
+    from azext_dataprotection.manual.aaz_operations.backup_instance import UpdateWithBI
+    return UpdateWithBI(cli_ctx=cmd.cli_ctx)(command_args={
+        "no_wait": no_wait,
+        "backup_instance": backup_instance,
+        "resource_group": resource_group_name,
+        "vault_name": vault_name,
+    })
+
+
+def dataprotection_backup_instance_update_policy(cmd, resource_group_name, vault_name, backup_instance_name, policy_id, no_wait=False,
+                                                 resource_guard_operation_requests=None, tenant_id=None):
+    # For some reason, the auto-generated Backup Instance Update does not contain some fields. Prominently
+    # in this situation, it is missing the properties.policyInfo.policyParameters section entirely, even though
+    # Backup Instance Create contains it. To get around this, we have a modified Update function that basically
+    # does a Create with an entire backup instance input.
+
+    # To achieve that, we have to fetch the currently present backup instance, make any necessary changes
+    # to that, and then remove any extranous fields that might be present.
+    from azext_dataprotection.aaz.latest.dataprotection.backup_instance import Show as BackupInstanceShow
+    backup_instance = BackupInstanceShow(cli_ctx=cmd.cli_ctx)(command_args={
+        "resource_group": resource_group_name,
+        "vault_name": vault_name,
+        "backup_instance_name": backup_instance_name
+    })
+
+    backup_instance['properties']['policyInfo']['policyId'] = policy_id
+
+    backup_instance = helper.convert_backup_instance_show_to_input(backup_instance)
+
+    from azext_dataprotection.manual.aaz_operations.backup_instance import UpdateWithBI
+    return UpdateWithBI(cli_ctx=cmd.cli_ctx)(command_args={
+        "no_wait": no_wait,
+        "backup_instance": backup_instance,
+        "resource_group": resource_group_name,
+        "vault_name": vault_name,
+        "resource_guard_operation_requests": resource_guard_operation_requests,
+        "tenant_id": tenant_id,
+    })
+
+
+def dataprotection_backup_instance_list_from_resourcegraph(client, datasource_type=None, resource_groups=None, vaults=None,
+                                                           subscriptions=None, protection_status=None, datasource_id=None,
+                                                           backup_instance_id=None, backup_instance_name=None):
     if subscriptions is None:
         subscriptions = [backupcenter_helper.get_selected_subscription()]
-    query = backupcenter_helper.get_backup_instance_query(datasource_type, resource_groups, vaults, protection_status, datasource_id)
+    query = backupcenter_helper.get_backup_instance_query(datasource_type, resource_groups, vaults, protection_status,
+                                                          datasource_id, backup_instance_id, backup_instance_name)
+    request_options = QueryRequestOptions(
+        top=1000,
+        skip=0
+    )
+    request = QueryRequest(query=query, subscriptions=subscriptions, options=request_options)
+    response = client.resources(request)
+    return response.data
+
+
+def dataprotection_backup_vault_list_from_resourcegraph(client, resource_groups=None, vaults=None,
+                                                        subscriptions=None, vault_id=None):
+    if subscriptions is None:
+        subscriptions = [backupcenter_helper.get_selected_subscription()]
+    query = backupcenter_helper.get_backup_vault_query(resource_groups, vaults, vault_id)
+
     request_options = QueryRequestOptions(
         top=1000,
         skip=0
@@ -231,49 +385,37 @@ def dataprotection_backup_instance_list_from_resourcegraph(client, datasource_ty
 
 def dataprotection_backup_instance_update_msi_permissions(cmd, resource_group_name, datasource_type, vault_name, operation,
                                                           permissions_scope, backup_instance=None, restore_request_object=None,
-                                                          keyvault_id=None, snapshot_resource_group_id=None, yes=False):
-    from msrestazure.tools import is_valid_resource_id, parse_resource_id
-
+                                                          keyvault_id=None, snapshot_resource_group_id=None,
+                                                          user_assigned_identity_arm_url=None,
+                                                          target_storage_account_id=None, yes=False):
     if operation == 'Backup' and backup_instance is None:
         raise RequiredArgumentMissingError("--backup-instance needs to be given when --operation is given as Backup")
-    elif operation == "Restore" and restore_request_object is None:
+
+    if operation == "Restore" and restore_request_object is None:
         raise RequiredArgumentMissingError("--restore-request-object needs to be given when --operation is given as Restore")
 
     if datasource_type == 'AzureDatabaseForPostgreSQL':
         if not keyvault_id:
             raise RequiredArgumentMissingError("--keyvault-id needs to be given when --datasource-type is AzureDatabaseForPostgreSQL")
-
         if not is_valid_resource_id(keyvault_id):
             raise InvalidArgumentValueError("Please provide a valid keyvault ID")
 
-    datasource_map = {
-        "AzureDisk": "Microsoft.Compute/disks",
-        "AzureBlob": "Microsoft.Storage/storageAccounts/blobServices",
-        "AzureDatabaseForPostgreSQL": "Microsoft.DBforPostgreSQL/servers/databases",
-        "AzureKubernetesService": "Microsoft.ContainerService/managedClusters"
-    }
-
     manifest = helper.load_manifest(datasource_type)
 
-    from knack.prompting import prompt_y_n
-    msg = helper.get_help_text_on_grant_permissions_templatized(datasource_type)
-    if not yes and not prompt_y_n(msg):
+    warning_message = helper.get_help_text_on_grant_permissions_templatized(datasource_type, operation)
+    if not yes and not prompt_y_n(warning_message):
         return None
-
-    from azure.cli.core.commands.client_factory import get_mgmt_service_client
-    from azure.cli.command_modules.role.custom import list_role_assignments, create_role_assignment
-    from azext_dataprotection.aaz.latest.dataprotection.backup_vault import Show as BackupVaultGet
 
     backup_vault = BackupVaultGet(cli_ctx=cmd.cli_ctx)(command_args={
         "resource_group": resource_group_name,
         "vault_name": vault_name
     })
-    principal_id = backup_vault['identity']['principalId']
+    vault_principal_id = helper.get_vault_identity(backup_vault, user_assigned_identity_arm_url)
 
     role_assignments_arr = []
 
     if operation == "Backup":
-        if datasource_map[datasource_type] != backup_instance["properties"]["data_source_info"]["datasource_type"]:
+        if helper.datasource_map[datasource_type] != backup_instance["properties"]["data_source_info"]["datasource_type"]:
             raise InvalidArgumentValueError("--backup-instance provided is not compatible with the --datasource-type.")
 
         if backup_instance['properties']['data_source_info']['resource_location'] != backup_vault['location']:
@@ -290,7 +432,7 @@ def dataprotection_backup_instance_update_msi_permissions(cmd, resource_group_na
             keyvault_update = False
 
             from azure.cli.core.profiles import ResourceType
-            from azure.cli.command_modules.keyvault._client_factory import Clients, get_client
+            from azure.cli.command_modules.keyvault._client_factory import Clients, data_plane_azure_keyvault_secret_client
 
             keyvault_params = parse_resource_id(keyvault_id)
             keyvault_subscription = keyvault_params['subscription']
@@ -306,9 +448,9 @@ def dataprotection_backup_instance_update_msi_permissions(cmd, resource_group_na
                 raise UnauthorizedError("Keyvault has public access disabled. Please enable public access, or grant access to your client IP")
 
             # Check if the secret URI provided in backup instance is a valid secret
-            data_entity = get_client(cmd.cli_ctx, ResourceType.DATA_KEYVAULT)
-            data_client = data_entity.client_factory(cmd.cli_ctx, None)
-            secrets_list = data_client.get_secrets(vault_base_url=keyvault.properties.vault_uri)
+            cmd.command_kwargs['vault_base_url'] = keyvault.properties.vault_uri
+            data_secrets_client = data_plane_azure_keyvault_secret_client(cmd.cli_ctx, cmd.command_kwargs)
+            secrets_list = data_secrets_client.list_properties_of_secrets()
             given_secret_uri = backup_instance['properties']['datasource_auth_credentials']['secret_store_resource']['uri']
             given_secret_id = helper.get_secret_params_from_uri(given_secret_uri)['secret_id']
             valid_secret = False
@@ -328,9 +470,9 @@ def dataprotection_backup_instance_update_msi_permissions(cmd, resource_group_na
 
                 keyvault_assignment_scope = helper.truncate_id_using_scope(keyvault_id, permissions_scope)
 
-                role_assignment = list_role_assignments(cmd, assignee=principal_id, role=role, scope=keyvault_id, include_inherited=True)
+                role_assignment = list_role_assignments(cmd, assignee=vault_principal_id, role=role, scope=keyvault_id, include_inherited=True)
                 if not role_assignment:
-                    assignment = create_role_assignment(cmd, assignee=principal_id, role=role, scope=keyvault_assignment_scope)
+                    assignment = create_role_assignment(cmd, assignee=vault_principal_id, role=role, scope=keyvault_assignment_scope)
                     role_assignments_arr.append(helper.get_permission_object_from_role_object(assignment))
 
             else:
@@ -342,7 +484,7 @@ def dataprotection_backup_instance_update_msi_permissions(cmd, resource_group_na
 
                 secrets_array = []
                 for policy in keyvault.properties.access_policies:
-                    if policy.object_id == principal_id:
+                    if policy.object_id == vault_principal_id:
                         secrets_array = policy.permissions.secrets
                         break
 
@@ -354,7 +496,7 @@ def dataprotection_backup_instance_update_msi_permissions(cmd, resource_group_na
 
                 if not permissions_set:
                     keyvault_update = True
-                    keyvault = set_policy(cmd, keyvault_client, keyvault_rg, keyvault_name, object_id=principal_id, secret_permissions=secrets_array)
+                    keyvault = set_policy(cmd, keyvault_client, keyvault_rg, keyvault_name, object_id=vault_principal_id, secret_permissions=secrets_array)
                     keyvault = keyvault.result()
 
             from azure.cli.command_modules.keyvault.custom import update_vault_setter
@@ -368,57 +510,19 @@ def dataprotection_backup_instance_update_msi_permissions(cmd, resource_group_na
             if keyvault_update:
                 role_assignments_arr.append(helper.get_permission_object_from_keyvault(keyvault))
 
-        for role_object in manifest['backupVaultPermissions']:
-            resource_id = helper.get_resource_id_from_backup_instance(backup_instance, role_object['type'])
-            resource_id = helper.truncate_id_using_scope(resource_id, "Resource")
-
-            assignment_scope = helper.truncate_id_using_scope(resource_id, permissions_scope)
-
-            role_assignments = list_role_assignments(cmd, assignee=principal_id, role=role_object['roleDefinitionName'],
-                                                     scope=resource_id, include_inherited=True)
-            if not role_assignments:
-                assignment = create_role_assignment(cmd, assignee=principal_id, role=role_object['roleDefinitionName'],
-                                                    scope=assignment_scope)
-                role_assignments_arr.append(helper.get_permission_object_from_role_object(assignment))
+        if 'backupVaultPermissions' in manifest:
+            for role_object in manifest['backupVaultPermissions']:
+                role_assignments_arr = helper.check_and_assign_roles(cmd, permissions_scope=permissions_scope, role_object=role_object,
+                                                                     backup_instance=backup_instance, principal_id=vault_principal_id,
+                                                                     role_assignments_arr=role_assignments_arr)
 
         if 'dataSourcePermissions' in manifest:
+            datasource_principal_id = helper.get_datasource_principal_id_from_object(cmd, datasource_type,
+                                                                                     backup_instance=backup_instance)
             for role_object in manifest['dataSourcePermissions']:
-                datasource_principal_id = None
-
-                if datasource_type == "AzureKubernetesService":
-                    datasource_arm_id = helper.get_resource_id_from_backup_instance(backup_instance, 'DataSource')
-                    subscription_arm_id = helper.get_sub_id_from_arm_id(datasource_arm_id)
-                    subscription_id = subscription_arm_id.split("/")[-1]
-
-                    from azext_dataprotection.vendored_sdks.azure_mgmt_preview_aks import ContainerServiceClient
-                    aks_client = get_mgmt_service_client(cmd.cli_ctx, ContainerServiceClient, subscription_id=subscription_id)
-                    aks_client = getattr(aks_client, 'managed_clusters')
-                    aks_name = helper.get_resource_name_from_backup_instance(backup_instance, 'DataSource')
-                    aks_rg_id = helper.get_rg_id_from_arm_id(datasource_arm_id)
-                    aks_rg = aks_rg_id.split('/')[-1]
-                    aks_cluster = aks_client.get(aks_rg, aks_name)
-
-                    if "UserAssigned" in aks_cluster.identity.type:
-                        uami_key = list(aks_cluster.identity.user_assigned_identities.keys())[0]
-                        if uami_key == "" or uami_key is None:
-                            raise CLIInternalError("User assigned identity not found for AKS Cluster")
-                        datasource_principal_id = aks_cluster.identity.user_assigned_identities[uami_key].principal_id
-                    else:
-                        datasource_principal_id = aks_cluster.identity.principal_id
-                else:
-                    raise InvalidArgumentValueError("Datasource-over-X permissions can currently only be set for Datasource type AzureKubernetesService")
-
-                resource_id = helper.get_resource_id_from_backup_instance(backup_instance, role_object['type'])
-                resource_id = helper.truncate_id_using_scope(resource_id, "Resource")
-                assignment_scope = helper.truncate_id_using_scope(resource_id, permissions_scope)
-
-                role_assignments = list_role_assignments(cmd, assignee=datasource_principal_id,
-                                                         role=role_object['roleDefinitionName'], scope=resource_id,
-                                                         include_inherited=True)
-                if not role_assignments:
-                    assignment = create_role_assignment(cmd, assignee=datasource_principal_id,
-                                                        role=role_object['roleDefinitionName'], scope=assignment_scope)
-                    role_assignments_arr.append(helper.get_permission_object_from_role_object(assignment))
+                role_assignments_arr = helper.check_and_assign_roles(cmd, permissions_scope=permissions_scope, role_object=role_object,
+                                                                     backup_instance=backup_instance, principal_id=datasource_principal_id,
+                                                                     role_assignments_arr=role_assignments_arr)
 
         # Network line of sight access on server, if that is the datasource type
         if datasource_type == 'AzureDatabaseForPostgreSQL':
@@ -445,76 +549,26 @@ def dataprotection_backup_instance_update_msi_permissions(cmd, resource_group_na
                 rule = postgres_firewall_client.begin_create_or_update(server_rg, server_name, firewall_rule_name, parameters)
                 role_assignments_arr.append(helper.get_permission_object_from_server_firewall_rule(rule.result()))
     elif operation == "Restore":
-        if datasource_type != "AzureKubernetesService":
+        if datasource_type not in ("AzureKubernetesService", "AzureDatabaseForMySQL",
+                                   "AzureDatabaseForPostgreSQLFlexibleServer", "AzureCosmosDB"):
             raise InvalidArgumentValueError("Set permissions for restore is currently not supported for given DataSourceType")
 
-        for role_object in manifest['backupVaultPermissions']:
-            resource_id = helper.get_resource_id_from_restore_request_object(restore_request_object, role_object['type'])
-
-            if role_object['type'] == 'SnapshotRG':
-                if snapshot_resource_group_id is None:
-                    logger.warning("snapshot-resource-group-id parameter is required to assign permissions over snapshot resource group, skipping")
-                    continue
-                else:
-                    resource_id = snapshot_resource_group_id
-
-            resource_id = helper.truncate_id_using_scope(resource_id, "Resource")
-
-            assignment_scope = helper.truncate_id_using_scope(resource_id, permissions_scope)
-
-            role_assignments = list_role_assignments(cmd, assignee=principal_id, role=role_object['roleDefinitionName'],
-                                                     scope=resource_id, include_inherited=True)
-            if not role_assignments:
-                assignment = create_role_assignment(cmd, assignee=principal_id, role=role_object['roleDefinitionName'],
-                                                    scope=assignment_scope)
-                role_assignments_arr.append(helper.get_permission_object_from_role_object(assignment))
+        for role_object in manifest['backupVaultRestorePermissions']:
+            role_assignments_arr = helper.check_and_assign_roles(cmd, permissions_scope=permissions_scope, role_object=role_object,
+                                                                 restore_request_object=restore_request_object, principal_id=vault_principal_id,
+                                                                 role_assignments_arr=role_assignments_arr,
+                                                                 target_storage_account_id=target_storage_account_id,
+                                                                 snapshot_resource_group_id=snapshot_resource_group_id)
 
         if 'dataSourcePermissions' in manifest:
-            for role_object in manifest['dataSourcePermissions']:
-                resource_id = helper.get_resource_id_from_restore_request_object(restore_request_object, role_object['type'])
-
-                if role_object['type'] == 'SnapshotRG':
-                    if snapshot_resource_group_id is None:
-                        logger.warning("snapshot-resource-group-id parameter is required to assign permissions over snapshot resource group, skipping")
-                        continue
-                    else:
-                        resource_id = snapshot_resource_group_id
-
-                resource_id = helper.truncate_id_using_scope(resource_id, "Resource")
-                assignment_scope = helper.truncate_id_using_scope(resource_id, permissions_scope)
-
-                datasource_principal_id = None
-
-                if datasource_type == "AzureKubernetesService":
-                    datasource_arm_id = helper.get_resource_id_from_restore_request_object(restore_request_object, 'DataSource')
-                    subscription_arm_id = helper.get_sub_id_from_arm_id(datasource_arm_id)
-                    subscription_id = subscription_arm_id.split("/")[-1]
-
-                    from azext_dataprotection.vendored_sdks.azure_mgmt_preview_aks import ContainerServiceClient
-                    aks_client = get_mgmt_service_client(cmd.cli_ctx, ContainerServiceClient, subscription_id=subscription_id)
-                    aks_client = getattr(aks_client, 'managed_clusters')
-                    aks_name = helper.get_resource_name_from_restore_request_object(restore_request_object, 'DataSource')
-                    aks_rg_id = helper.get_rg_id_from_arm_id(datasource_arm_id)
-                    aks_rg = aks_rg_id.split('/')[-1]
-                    aks_cluster = aks_client.get(aks_rg, aks_name)
-
-                    if "UserAssigned" in aks_cluster.identity.type:
-                        uami_key = list(aks_cluster.identity.user_assigned_identities.keys())[0]
-                        if uami_key == "" or uami_key is None:
-                            raise CLIInternalError("User assigned identity not found for AKS Cluster")
-                        datasource_principal_id = aks_cluster.identity.user_assigned_identities[uami_key].principal_id
-                    else:
-                        datasource_principal_id = aks_cluster.identity.principal_id
-                else:
-                    raise InvalidArgumentValueError("Datasource-over-X permissions can currently only be set for Datasource type AzureKubernetesService")
-
-                role_assignments = list_role_assignments(cmd, assignee=datasource_principal_id,
-                                                         role=role_object['roleDefinitionName'], scope=resource_id,
-                                                         include_inherited=True)
-                if not role_assignments:
-                    assignment = create_role_assignment(cmd, assignee=datasource_principal_id,
-                                                        role=role_object['roleDefinitionName'], scope=assignment_scope)
-                    role_assignments_arr.append(helper.get_permission_object_from_role_object(assignment))
+            datasource_principal_id = helper.get_datasource_principal_id_from_object(cmd, datasource_type,
+                                                                                     restore_request_object=restore_request_object)
+            for role_object in manifest['dataSourceRestorePermissions']:
+                role_assignments_arr = helper.check_and_assign_roles(cmd, permissions_scope=permissions_scope, role_object=role_object,
+                                                                     restore_request_object=restore_request_object, principal_id=datasource_principal_id,
+                                                                     role_assignments_arr=role_assignments_arr,
+                                                                     target_storage_account_id=target_storage_account_id,
+                                                                     snapshot_resource_group_id=snapshot_resource_group_id)
 
     if not role_assignments_arr:
         logger.warning("The required permissions are already assigned!")
@@ -526,7 +580,7 @@ def dataprotection_backup_instance_update_msi_permissions(cmd, resource_group_na
     return role_assignments_arr
 
 
-def dataprotection_job_list_from_resourcegraph(client, datasource_type, resource_groups=None, vaults=None,
+def dataprotection_job_list_from_resourcegraph(client, datasource_type=None, resource_groups=None, vaults=None,
                                                subscriptions=None, start_time=None, end_time=None,
                                                status=None, operation=None, datasource_id=None):
     if subscriptions is None:
@@ -540,6 +594,57 @@ def dataprotection_job_list_from_resourcegraph(client, datasource_type, resource
     request = QueryRequest(query=query, subscriptions=subscriptions, options=request_options)
     response = client.resources(request)
     return response.data
+
+
+def dataprotection_job_list(cmd, resource_group_name, vault_name, use_secondary_region=None,
+                            max_items=None, next_token=None):
+    from azext_dataprotection.aaz.latest.dataprotection.job import List as ListJobs
+    from azext_dataprotection.aaz.latest.dataprotection.cross_region_restore import FetchJobs as ListJobsCRR
+
+    if use_secondary_region:
+        source_backup_vault = helper.get_backup_vault_from_resourcegraph(cmd, resource_group_name, vault_name)
+        source_backup_vault_id = source_backup_vault['id']
+        source_location, target_location = helper.get_source_and_replicated_region_from_backup_vault(source_backup_vault)
+
+        return ListJobsCRR(cli_ctx=cmd.cli_ctx)(command_args={
+            "resource_group": resource_group_name,
+            "location": target_location,
+            "source_backup_vault_id": source_backup_vault_id,
+            "source_region": source_location,
+            "pagination_limit": max_items,
+            "pagination_token": next_token
+        })
+
+    return ListJobs(cli_ctx=cmd.cli_ctx)(command_args={
+        "resource_group": resource_group_name,
+        "vault_name": vault_name,
+        "pagination_limit": max_items,
+        "pagination_token": next_token
+    })
+
+
+def dataprotection_job_show(cmd, resource_group_name, vault_name, job_id, use_secondary_region=None):
+    from azext_dataprotection.aaz.latest.dataprotection.job import Show as ShowJob
+    from azext_dataprotection.aaz.latest.dataprotection.cross_region_restore._fetch_job import FetchJob as ShowJobCRR
+
+    if use_secondary_region:
+        source_backup_vault = helper.get_backup_vault_from_resourcegraph(cmd, resource_group_name, vault_name)
+        source_backup_vault_id = source_backup_vault['id']
+        source_location, target_location = helper.get_source_and_replicated_region_from_backup_vault(source_backup_vault)
+
+        return ShowJobCRR(cli_ctx=cmd.cli_ctx)(command_args={
+            "resource_group": resource_group_name,
+            "source_backup_vault_id": source_backup_vault_id,
+            "job_id": job_id,
+            "source_region": source_location,
+            "location": target_location
+        })
+
+    return ShowJob(cli_ctx=cmd.cli_ctx)(command_args={
+        "resource_group": resource_group_name,
+        "vault_name": vault_name,
+        "job_id": job_id
+    })
 
 
 def dataprotection_backup_policy_get_default_policy_template(datasource_type):
@@ -600,6 +705,17 @@ def dataprotection_backup_policy_create_lifecycle(source_datastore, retention_du
 
 
 def dataprotection_backup_policy_retention_set_in_policy(policy, name, lifecycles):
+    datasource_type = helper.get_client_datasource_type(policy["datasourceTypes"][0])
+    manifest = helper.load_manifest(datasource_type)
+
+    default_retention_mapping = manifest.get("policySettings", {}).get("defaultRetentionRuleNames") or {}
+    mapped_default_names = []
+    if default_retention_mapping:
+        mapped_default_names = helper.validate_retention_rule_matches_mapped_store(
+            name, default_retention_mapping, lifecycles, datasource_type)
+        helper.validate_exclusive_source_store_assignment(
+            name, manifest, default_retention_mapping, lifecycles, datasource_type)
+
     retention_policy_index = -1
     for index in range(0, len(policy["policyRules"])):
         if policy["policyRules"][index]["objectType"] == "AzureRetentionRule" and policy["policyRules"][index]["name"] == name:
@@ -607,17 +723,15 @@ def dataprotection_backup_policy_retention_set_in_policy(policy, name, lifecycle
             break
 
     if retention_policy_index == -1:
-        datasource_type = helper.get_client_datasource_type(policy["datasourceTypes"][0])
-        manifest = helper.load_manifest(datasource_type)
         if manifest["policySettings"]["disableAddRetentionRule"]:
             raise InvalidArgumentValueError("Adding New Retention Rule is not supported for " + datasource_type + " datasource type")
 
-        if name not in manifest["policySettings"]["supportedRetentionTags"]:
+        if name not in manifest["policySettings"]["supportedRetentionTags"] and name not in mapped_default_names:
             raise InvalidArgumentValueError("Selected Retention Rule " + name + " is not applicable for Datasource Type " + datasource_type)
 
         new_retention_rule = {
             "objectType": "AzureRetentionRule",
-            "isDefault": name == "Default",
+            "isDefault": name == "Default" or name in mapped_default_names,
             "name": name,
             "lifecycles": lifecycles
         }
@@ -751,17 +865,128 @@ def dataprotection_backup_policy_tag_remove_in_policy(name, policy):
     return policy
 
 
+def dataprotection_recovery_point_list(cmd, backup_instance_name, resource_group_name, vault_name,
+                                       start_time=None, end_time=None, use_secondary_region=None,
+                                       max_items=None, next_token=None):
+    from .aaz_operations.recovery_point import List as RecoveryPointList
+    from azext_dataprotection.aaz.latest.dataprotection.cross_region_restore import FetchSecondaryRecoveryPoints
+
+    if use_secondary_region:
+        source_backup_instance = helper.get_backup_instance_from_resourcegraph(cmd, resource_group_name, vault_name,
+                                                                               backup_instance_name)
+        source_backup_instance_id = source_backup_instance['id']
+        source_location = source_backup_instance['properties']['backupInstanceExtendedProperties']['protectedPrimaryRegion']
+        target_location = source_backup_instance['properties']['backupInstanceExtendedProperties']['protectedSecondaryRegion']
+
+        if start_time or end_time:
+            logger.warning("start-time and end-time filters will not work with use-secondary-region option")
+
+        return FetchSecondaryRecoveryPoints(cli_ctx=cmd.cli_ctx)(command_args={
+            "resource_group": resource_group_name,
+            "location": target_location,
+            "source_backup_instance_id": source_backup_instance_id,
+            "source_region": source_location,
+            "pagination_limit": max_items,
+            "pagination_token": next_token
+        })
+
+    return RecoveryPointList(cli_ctx=cmd.cli_ctx)(command_args={
+        "resource_group": resource_group_name,
+        "vault_name": vault_name,
+        "backup_instance_name": backup_instance_name,
+        "start_time": start_time,
+        "end_time": end_time,
+        "pagination_limit": max_items,
+        "pagination_token": next_token
+    })
+
+
+def dataprotection_backup_instance_restore_trigger(cmd, vault_name, resource_group_name, backup_instance_name,
+                                                   restore_request_object, use_secondary_region=None, no_wait=False,
+                                                   resource_guard_operation_requests=None, tenant_id=None):
+    from .aaz_operations.backup_instance import (
+        RestoreTrigger,
+        TriggerCRR
+    )
+
+    if use_secondary_region:
+        source_backup_instance = helper.get_backup_instance_from_resourcegraph(cmd, resource_group_name, vault_name,
+                                                                               backup_instance_name)
+        source_backup_instance_id = source_backup_instance['id']
+        source_location = source_backup_instance['properties']['backupInstanceExtendedProperties']['protectedPrimaryRegion']
+        target_location = source_backup_instance['properties']['backupInstanceExtendedProperties']['protectedSecondaryRegion']
+
+        return TriggerCRR(cli_ctx=cmd.cli_ctx)(command_args={
+            "resource_group": resource_group_name,
+            "location": target_location,
+            "source_backup_instance_id": source_backup_instance_id,
+            "source_region": source_location,
+            "restore_request_object": restore_request_object,
+            "no_wait": no_wait
+        })
+
+    # Resource guard checks only exists for non-CRR restore trigger right now
+    return RestoreTrigger(cli_ctx=cmd.cli_ctx)(command_args={
+        "resource_group": resource_group_name,
+        "vault_name": vault_name,
+        "backup_instance_name": backup_instance_name,
+        "restore_request_object": restore_request_object,
+        "resource_guard_operation_requests": resource_guard_operation_requests,
+        "tenant_id": tenant_id,
+        "no_wait": no_wait
+    })
+
+
+def dataprotection_backup_instance_validate_for_restore(cmd, vault_name, resource_group_name, backup_instance_name,
+                                                        restore_request_object, use_secondary_region=None, no_wait=False):
+    from .aaz_operations.backup_instance import (
+        ValidateForCRR as CRRValidateRestore,
+        ValidateForRestore as BackupInstanceValidateRestore,
+    )
+
+    if use_secondary_region:
+        source_backup_instance = helper.get_backup_instance_from_resourcegraph(cmd, resource_group_name, vault_name,
+                                                                               backup_instance_name)
+        source_backup_instance_id = source_backup_instance['id']
+        source_location = source_backup_instance['properties']['backupInstanceExtendedProperties']['protectedPrimaryRegion']
+        target_location = source_backup_instance['properties']['backupInstanceExtendedProperties']['protectedSecondaryRegion']
+
+        return CRRValidateRestore(cli_ctx=cmd.cli_ctx)(command_args={
+            "resource_group": resource_group_name,
+            "location": target_location,
+            "source_backup_instance_id": source_backup_instance_id,
+            "source_region": source_location,
+            "restore_request_object": restore_request_object,
+            "no_wait": no_wait
+        })
+
+    return BackupInstanceValidateRestore(cli_ctx=cmd.cli_ctx)(command_args={
+        "resource_group": resource_group_name,
+        "vault_name": vault_name,
+        "backup_instance_name": backup_instance_name,
+        "restore_request_object": restore_request_object,
+        "no_wait": no_wait
+    })
+
+
 def dataprotection_backup_instance_initialize_restoreconfig(datasource_type, excluded_resource_types=None,
                                                             included_resource_types=None, excluded_namespaces=None,
                                                             included_namespaces=None, label_selectors=None,
                                                             persistent_volume_restore_mode=None,
                                                             include_cluster_scope_resources=None,
                                                             namespace_mappings=None, conflict_policy=None,
-                                                            restore_hook_references=None):
+                                                            restore_hook_references=None, staging_resource_group_id=None,
+                                                            staging_storage_account_id=None, resource_modifier_reference=None):
     if datasource_type != "AzureKubernetesService":
         raise InvalidArgumentValueError("This command is currently not supported for datasource types other than AzureKubernetesService")
 
-    object_type = "KubernetesClusterRestoreCriteria"
+    if staging_resource_group_id is None and staging_storage_account_id is None:
+        object_type = "KubernetesClusterRestoreCriteria"
+    elif staging_storage_account_id is not None and staging_resource_group_id is not None:
+        object_type = "KubernetesClusterVaultTierRestoreCriteria"
+    else:
+        raise InvalidArgumentValueError("Both --staging-resource-group-id and --staging-storage-account-id are manadatory for vaulted tier restore "
+                                        "for AzureKubernetesService. Please either provide or remove both of them.")
 
     if persistent_volume_restore_mode is None:
         persistent_volume_restore_mode = "RestoreWithVolumeData"
@@ -781,118 +1006,63 @@ def dataprotection_backup_instance_initialize_restoreconfig(datasource_type, exc
         "include_cluster_scope_resources": include_cluster_scope_resources,
         "conflict_policy": conflict_policy,
         "namespace_mappings": namespace_mappings,
-        "restore_hook_references": restore_hook_references
+        "restore_hook_references": restore_hook_references,
+        "staging_resource_group_id": staging_resource_group_id,
+        "staging_storage_account_id": staging_storage_account_id,
+        "resource_modifier_reference": resource_modifier_reference
     }
 
 
 def restore_initialize_for_data_recovery(cmd, datasource_type, source_datastore, restore_location, target_resource_id=None,
                                          recovery_point_id=None, point_in_time=None, secret_store_type=None,
                                          secret_store_uri=None, rehydration_priority=None, rehydration_duration=15,
-                                         restore_configuration=None, backup_instance_id=None):
-
+                                         restore_configuration=None, backup_instance_id=None,
+                                         use_system_assigned_identity=None, user_assigned_identity_arm_url=None):
     restore_request = {}
     restore_mode = None
-
-    # Input Validation and variable-assignment from params for recovery via RP or point-in-time
-    if recovery_point_id is not None and point_in_time is not None:
-        raise RequiredArgumentMissingError("Please provide either recovery point id or point in time parameter, not both.")
-
-    if recovery_point_id is not None:
-        restore_request["object_type"] = "AzureBackupRecoveryPointBasedRestoreRequest"
-        restore_request["recovery_point_id"] = recovery_point_id
-        restore_mode = "RecoveryPointBased"
-
-    if point_in_time is not None:
-        restore_request["object_type"] = "AzureBackupRecoveryTimeBasedRestoreRequest"
-        restore_request["recovery_point_time"] = point_in_time
-        restore_mode = "PointInTimeBased"
-
-    if recovery_point_id is None and point_in_time is None:
-        raise RequiredArgumentMissingError("Please provide either recovery point id or point in time parameter.")
-
     manifest = helper.load_manifest(datasource_type)
 
+    # Setting up restore request according to Recovery-Point/Point-in-time style of restore
+    restore_request, restore_mode = helper.validate_and_set_restore_mode_in_restore_request(recovery_point_id, point_in_time, restore_request)
+    # We also check for rehydration priority/duration, in which case restore style changes
+    if rehydration_priority:
+        restore_request = helper.validate_and_set_rehydration_priority_in_restore_request(rehydration_priority, rehydration_duration, restore_request)
+
     # Restore mode (assigned during RP/point-in-time validation earlier) should be supported for the workload
-    if manifest is not None and manifest["allowedRestoreModes"] is not None and restore_mode not in manifest["allowedRestoreModes"]:
-        raise InvalidArgumentValueError(restore_mode + " restore mode is not supported for datasource type " + datasource_type +
-                                        ". Supported restore modes are " + ','.join(manifest["allowedRestoreModes"]))
+    helper.validate_restore_mode_for_workload(restore_mode, datasource_type, manifest)
 
     # If the source datastore (type) is allowed for the workload, we start creating the restore request object.
-    # We also check for rehydration priority/duration in here for some reason? It could be shifted out.
-    if source_datastore in manifest["policySettings"]["supportedDatastoreTypes"]:
-        restore_request["source_data_store_type"] = source_datastore
-        if rehydration_priority:
-            if rehydration_duration < 10 or rehydration_duration > 30:
-                raise InvalidArgumentValueError("The allowed range of rehydration duration is 10 to 30 days.")
-            restore_request["object_type"] = "AzureBackupRestoreWithRehydrationRequest"
-            restore_request["rehydration_priority"] = rehydration_priority
-            restore_request["rehydration_retention_duration"] = "P" + str(rehydration_duration) + "D"
-    else:
-        raise InvalidArgumentValueError(source_datastore + " datastore type is not supported for datasource type " + datasource_type +
-                                        ". Supported datastore types are " + ','.join(manifest["policySettings"]["supportedDatastoreTypes"]))
+    restore_request = helper.validate_and_set_source_datastore_type_in_restore_request(source_datastore, datasource_type,
+                                                                                       restore_request, manifest)
 
-    restore_request["restore_target_info"] = {}
-    restore_request["restore_target_info"]["restore_location"] = restore_location
-    restore_request["restore_target_info"]["recovery_option"] = "FailIfExists"
+    restore_request["restore_target_info"] = helper.get_restore_target_info_basics("RestoreTargetInfo", restore_location)
 
-    datasource_id = None
-    # Alternate/Original Location - setting the Target's datasource info accordingly
-    if target_resource_id is not None and backup_instance_id is not None:
-        raise MutuallyExclusiveArgumentError("Please provide either target-resource-id or backup-instance-id not both.")
-
-    if target_resource_id is not None:
-        # No validation for alternate/original location restore, as target_resource_id can be used for both
-        datasource_id = target_resource_id
-
-    if backup_instance_id is not None:
-        # No validation for alternate/original location restore, to be added if understood to be required
-        vault_resource_group = helper.get_vault_rg_from_bi_id(backup_instance_id)
-        vault_name = helper.get_vault_name_from_bi_id((backup_instance_id))
-        backup_instance_name = helper.get_bi_name_from_bi_id(backup_instance_id)
-
-        from azext_dataprotection.aaz.latest.dataprotection.backup_instance import Show as _Show
-        backup_instance = _Show(cli_ctx=cmd.cli_ctx)(command_args={
-            "vault_name": vault_name,
-            "resource_group": vault_resource_group,
-            "backup_instance_name": backup_instance_name
-        })
-        datasource_id = backup_instance['properties']['dataSourceInfo']['resourceID']
-
-    if backup_instance_id is None and target_resource_id is None:
-        raise MutuallyExclusiveArgumentError("Please provide either target-resource-id (for alternate location restore) or backup-instance-id (for original location restore).")
-
+    # The datasource ID is set either from Backup instance ID or Target Resource Id, depending on restore type
+    datasource_id = helper.validate_and_set_datasource_id_in_restore_request(cmd, target_resource_id, backup_instance_id)
     restore_request["restore_target_info"]["datasource_info"] = helper.get_datasource_info(datasource_type, datasource_id, restore_location)
-
-    # AKS Data-level and Item-level are identical in their configuration, for our purpose
-    if datasource_type != 'AzureKubernetesService':
-        restore_request["restore_target_info"]["object_type"] = "RestoreTargetInfo"
-    else:
-        restore_request["restore_target_info"]["object_type"] = "ItemLevelRestoreTargetInfo"
-
-        restore_criteria_list = []
-        if restore_configuration is not None:
-            restore_criteria = restore_configuration
-        else:
-            raise RequiredArgumentMissingError("Please input parameter restore_configuration for AKS cluster restore.\n\
-                                                Use command initialize-restoreconfig for creating the RestoreConfiguration")
-        restore_criteria_list.append(restore_criteria)
-        restore_request["restore_target_info"]["restore_criteria"] = restore_criteria_list
 
     if manifest["isProxyResource"]:
         restore_request["restore_target_info"]["datasource_set_info"] = helper.get_datasourceset_info(datasource_type, datasource_id, restore_location)
 
     if manifest["supportSecretStoreAuthentication"]:
-        if secret_store_uri and secret_store_type:
-            restore_request["restore_target_info"]["datasource_auth_credentials"] = {
-                "secret_store_resource": {
-                    "uri": secret_store_uri,
-                    "value": None,
-                    "secret_store_type": secret_store_type
-                },
-                "object_type": "SecretStoreBasedAuthCredentials"
-            }
-        elif secret_store_uri or secret_store_type:
-            raise RequiredArgumentMissingError("Either secret store uri or secret store type not provided.")
+        restore_request["restore_target_info"]["datasource_auth_credentials"] = helper.get_datasource_auth_credentials_info(secret_store_type, secret_store_uri)
+
+    # AKS Data-level and Item-level are identical in their configuration, for our purpose, and restore criteria is required for item level
+    if datasource_type == 'AzureKubernetesService':
+        restore_request["restore_target_info"]["object_type"] = "ItemLevelRestoreTargetInfo"
+        restore_request["restore_target_info"]["restore_criteria"] = helper.get_resource_criteria_list(datasource_type, restore_configuration,
+                                                                                                       None, None, None, None, None)
+
+    # UAMI for a restore request object
+    if use_system_assigned_identity is not None or user_assigned_identity_arm_url is not None:
+        if user_assigned_identity_arm_url is None and not use_system_assigned_identity:
+            # so the UAMI was not passed and either system identity is not passed, or it is false. The former is not
+            # possible as that scenario is eliminated by the first check. So UAMI not passed, but system assigned is
+            # False. Not valid input, so we don't populate identity Details
+            pass
+        else:
+            identity_details = helper.get_identity_details(use_system_assigned_identity, user_assigned_identity_arm_url)
+            restore_request["identity_details"] = identity_details
 
     return restore_request
 
@@ -900,56 +1070,33 @@ def restore_initialize_for_data_recovery(cmd, datasource_type, source_datastore,
 def restore_initialize_for_data_recovery_as_files(target_blob_container_url, target_file_name, datasource_type, source_datastore,
                                                   restore_location, target_resource_id=None,
                                                   recovery_point_id=None, point_in_time=None,
-                                                  rehydration_priority=None, rehydration_duration=15):
-
+                                                  rehydration_priority=None, rehydration_duration=15,
+                                                  use_system_assigned_identity=None, user_assigned_identity_arm_url=None):
     restore_request = {}
     restore_mode = None
-
-    # Input Validation and variable-assignment from params for recovery via RP or point-in-time
-    if recovery_point_id is not None and point_in_time is not None:
-        raise MutuallyExclusiveArgumentError("Please provide either recovery point id or point in time parameter, not both.")
-
-    if recovery_point_id is not None:
-        restore_request["object_type"] = "AzureBackupRecoveryPointBasedRestoreRequest"
-        restore_request["recovery_point_id"] = recovery_point_id
-        restore_mode = "RecoveryPointBased"
-
-    if point_in_time is not None:
-        restore_request["object_type"] = "AzureBackupRecoveryTimeBasedRestoreRequest"
-        restore_request["recovery_point_time"] = point_in_time
-        restore_mode = "PointInTimeBased"
-
-    if recovery_point_id is None and point_in_time is None:
-        raise RequiredArgumentMissingError("Please provide either recovery point id or point in time parameter.")
-
     manifest = helper.load_manifest(datasource_type)
 
+    # Workload should allow for Recover as files
+    if manifest is not None and "RestoreAsFiles" not in manifest["allowedRestoreTargetTypes"]:
+        raise InvalidArgumentValueError("Specified DatasourceType " + datasource_type + " doesn't support Recovery as Files")
+
+    # Setting up restore request according to Recovery-Point/Point-in-time style of restore
+    restore_request, restore_mode = helper.validate_and_set_restore_mode_in_restore_request(recovery_point_id, point_in_time, restore_request)
+    # We also check for rehydration priority/duration, in which case restore style changes
+    if rehydration_priority:
+        restore_request = helper.validate_and_set_rehydration_priority_in_restore_request(rehydration_priority, rehydration_duration, restore_request)
+
     # Restore mode (assigned during RP/point-in-time validation earlier) should be supported for the workload
-    if manifest is not None and manifest["allowedRestoreModes"] is not None and restore_mode not in manifest["allowedRestoreModes"]:
-        raise InvalidArgumentValueError(restore_mode + " restore mode is not supported for datasource type " + datasource_type +
-                                        ". Supported restore modes are " + ','.join(manifest["allowedRestoreModes"]))
+    helper.validate_restore_mode_for_workload(restore_mode, datasource_type, manifest)
 
     # If the source datastore (type) is allowed for the workload, we start creating the restore request object.
-    # We also check for rehydration priority/duration in here for some reason? It could be shifted out.
-    if source_datastore in manifest["policySettings"]["supportedDatastoreTypes"]:
-        restore_request["source_data_store_type"] = source_datastore
-        if rehydration_priority:
-            if rehydration_duration < 10 or rehydration_duration > 30:
-                raise InvalidArgumentValueError("The allowed range of rehydration duration is 10 to 30 days.")
-            restore_request["object_type"] = "AzureBackupRestoreWithRehydrationRequest"
-            restore_request["rehydration_priority"] = rehydration_priority
-            restore_request["rehydration_retention_duration"] = "P" + str(rehydration_duration) + "D"
-    else:
-        raise InvalidArgumentValueError(source_datastore + " datastore type is not supported for datasource type " + datasource_type +
-                                        ". Supported datastore types are " + ','.join(manifest["policySettings"]["supportedDatastoreTypes"]))
+    restore_request = helper.validate_and_set_source_datastore_type_in_restore_request(source_datastore, datasource_type,
+                                                                                       restore_request, manifest)
 
     # Constructing the rest of the restore request object. No further validation is being done.
+    restore_request["restore_target_info"] = helper.get_restore_target_info_basics("RestoreFilesTargetInfo", restore_location)
+
     # Currently, restore_target_info.target_details.restore_target_location_type is fixed to AzureBlobs
-    # There is no check currently for ensuring that the manifest's allowedRestoreTargetTypes contains RestoreAsFiles
-    restore_request["restore_target_info"] = {}
-    restore_request["restore_target_info"]["object_type"] = "RestoreFilesTargetInfo"
-    restore_request["restore_target_info"]["restore_location"] = restore_location
-    restore_request["restore_target_info"]["recovery_option"] = "FailIfExists"
     restore_request["restore_target_info"]["target_details"] = {}
     restore_request["restore_target_info"]["target_details"]["url"] = target_blob_container_url
     restore_request["restore_target_info"]["target_details"]["file_prefix"] = target_file_name
@@ -959,170 +1106,120 @@ def restore_initialize_for_data_recovery_as_files(target_blob_container_url, tar
     if target_resource_id is not None:
         restore_request["restore_target_info"]["target_details"]["target_resource_arm_id"] = target_resource_id
 
+    # UAMI for a restore request object
+    if use_system_assigned_identity is not None or user_assigned_identity_arm_url is not None:
+        if user_assigned_identity_arm_url is None and not use_system_assigned_identity:
+            # so the UAMI was not passed and either system identity is not passed, or it is false. The former is not
+            # possible as that scenario is eliminated by the first check. So UAMI not passed, but system assigned is
+            # False. Not valid input, so we don't populate identity Details
+            pass
+        else:
+            identity_details = helper.get_identity_details(use_system_assigned_identity, user_assigned_identity_arm_url)
+            restore_request["identity_details"] = identity_details
+
     return restore_request
 
 
 def restore_initialize_for_item_recovery(cmd, datasource_type, source_datastore, restore_location, backup_instance_id=None,
                                          target_resource_id=None, recovery_point_id=None, point_in_time=None, container_list=None,
-                                         from_prefix_pattern=None, to_prefix_pattern=None, restore_configuration=None):
-
+                                         from_prefix_pattern=None, to_prefix_pattern=None, restore_configuration=None,
+                                         vaulted_blob_prefix_pattern=None, use_system_assigned_identity=None,
+                                         user_assigned_identity_arm_url=None):
     restore_request = {}
     restore_mode = None
-
-    # Input Validation and variable-assignment from params for recovery via RP or point-in-time
-    if recovery_point_id is not None and point_in_time is not None:
-        raise MutuallyExclusiveArgumentError("Please provide either recovery point id or point in time parameter, not both.")
-
-    if recovery_point_id is not None:
-        restore_request["object_type"] = "AzureBackupRecoveryPointBasedRestoreRequest"
-        restore_request["recovery_point_id"] = recovery_point_id
-        restore_mode = "RecoveryPointBased"
-
-    if point_in_time is not None:
-        restore_request["object_type"] = "AzureBackupRecoveryTimeBasedRestoreRequest"
-        restore_request["recovery_point_time"] = point_in_time
-        restore_mode = "PointInTimeBased"
-
-    if recovery_point_id is None and point_in_time is None:
-        raise RequiredArgumentMissingError("Please provide either recovery point id or point in time parameter.")
-
     manifest = helper.load_manifest(datasource_type)
 
-    # Restore mode (assigned during RP/point-in-time validation earlier) should be supported for the workload
-    if manifest is not None and manifest["allowedRestoreModes"] is not None and restore_mode not in manifest["allowedRestoreModes"]:
-        raise InvalidArgumentValueError(restore_mode + " restore mode is not supported for datasource type " + datasource_type +
-                                        ". Supported restore modes are " + ','.join(manifest["allowedRestoreModes"]))
-
     # Workload should allow for item level recovery
-    if manifest is not None and not manifest["itemLevelRecoveyEnabled"]:
+    if manifest is not None and not manifest["itemLevelRecoveryEnabled"]:
         raise InvalidArgumentValueError("Specified DatasourceType " + datasource_type + " doesn't support Item Level Recovery")
 
+    # Setting up restore request according to Recovery-Point/Point-in-time style of restore
+    restore_request, restore_mode = helper.validate_and_set_restore_mode_in_restore_request(recovery_point_id, point_in_time, restore_request)
+
+    # Restore mode (assigned during RP/point-in-time validation earlier) should be supported for the workload
+    helper.validate_restore_mode_for_workload(restore_mode, datasource_type, manifest)
+
+    # If the source datastore (type) is allowed for the workload, we start creating the restore request object.
+    restore_request = helper.validate_and_set_source_datastore_type_in_restore_request(source_datastore, datasource_type,
+                                                                                       restore_request, manifest)
+
     # Constructing the rest of the restore request object. No further validation is being done.
-    restore_request["source_data_store_type"] = source_datastore
-    restore_request["restore_target_info"] = {}
-    restore_request["restore_target_info"]["object_type"] = "ItemLevelRestoreTargetInfo"
-    restore_request["restore_target_info"]["restore_location"] = restore_location
-    restore_request["restore_target_info"]["recovery_option"] = "FailIfExists"
+    restore_request["restore_target_info"] = helper.get_restore_target_info_basics("ItemLevelRestoreTargetInfo", restore_location)
 
-    # We set the restore criteria depending on the datasource type and on the prefix pattern/container list as provided
-    # AKS directly uses the restore configuration. Currently, the "else" just covers Blobs.
-    restore_criteria_list = []
-    if datasource_type == "AzureKubernetesService":
-        if restore_configuration is not None:
-            restore_criteria = restore_configuration
-        else:
-            raise RequiredArgumentMissingError("Please input parameter restore_configuration for AKS cluster restore.\n\
-                                               Use command initialize-restoreconfig for creating the RestoreConfiguration")
-        restore_criteria_list.append(restore_criteria)
-    else:
-        # For non-AKS workloads, we need either a prefix-pattern or a container-list. Accordingly, the restore
-        # criteria's min_matching_value and max_matching_value are set. We need to provide one, but can't provide both
-        if container_list is not None and (from_prefix_pattern is not None or to_prefix_pattern is not None):
-            raise MutuallyExclusiveArgumentError("Please specify either container list or prefix pattern.")
-
-        if container_list is not None:
-            if len(container_list) > 10:
-                raise InvalidArgumentValueError("A maximum of 10 containers can be restored. Please choose up to 10 containers.")
-            for container in container_list:
-                if container[0] == '$':
-                    raise InvalidArgumentValueError("container name can not start with '$'. Please retry with different sets of containers.")
-                restore_criteria = {}
-                restore_criteria["object_type"] = "RangeBasedItemLevelRestoreCriteria"
-                restore_criteria["min_matching_value"] = container
-                restore_criteria["max_matching_value"] = container + "-0"
-
-                restore_criteria_list.append(restore_criteria)
-
-        if from_prefix_pattern is not None or to_prefix_pattern is not None:
-            if from_prefix_pattern is None or to_prefix_pattern is None or \
-               len(from_prefix_pattern) != len(to_prefix_pattern) or len(from_prefix_pattern) > 10:
-                raise InvalidArgumentValueError(
-                    "from-prefix-pattern and to-prefix-pattern should not be null, both of them should have "
-                    "equal length and can have a maximum of 10 patterns."
-                )
-
-            for index, _ in enumerate(from_prefix_pattern):
-                if from_prefix_pattern[index][0] == '$' or to_prefix_pattern[index][0] == '$':
-                    raise InvalidArgumentValueError(
-                        "Prefix patterns should not start with '$'. Please provide valid prefix patterns and try again."
-                    )
-
-                if not 3 <= len(from_prefix_pattern[index]) <= 63 or not 3 <= len(to_prefix_pattern[index]) <= 63:
-                    raise InvalidArgumentValueError(
-                        "Prefix patterns needs to be between 3 to 63 characters."
-                    )
-
-                if from_prefix_pattern[index] >= to_prefix_pattern[index]:
-                    raise InvalidArgumentValueError(
-                        "From prefix pattern must be less than to prefix pattern."
-                    )
-
-                regex_pattern = r"^[a-z0-9](?!.*--)[a-z0-9-]{1,61}[a-z0-9](\/.{1,60})*$"
-                if re.match(regex_pattern, from_prefix_pattern[index]) is None:
-                    raise InvalidArgumentValueError(
-                        "prefix patterns must start or end with a letter or number,"
-                        "and can contain only lowercase letters, numbers, and the dash (-) character. "
-                        "consecutive dashes are not permitted."
-                        "Given pattern " + from_prefix_pattern[index] + " violates the above rule."
-                    )
-
-                if re.match(regex_pattern, to_prefix_pattern[index]) is None:
-                    raise InvalidArgumentValueError(
-                        "prefix patterns must start or end with a letter or number,"
-                        "and can contain only lowercase letters, numbers, and the dash (-) character. "
-                        "consecutive dashes are not permitted."
-                        "Given pattern " + to_prefix_pattern[index] + " violates the above rule."
-                    )
-
-                for compareindex in range(index + 1, len(from_prefix_pattern)):
-                    if (from_prefix_pattern[index] <= from_prefix_pattern[compareindex] and to_prefix_pattern[index] >= from_prefix_pattern[compareindex]) or \
-                       (from_prefix_pattern[index] >= from_prefix_pattern[compareindex] and from_prefix_pattern[index] <= to_prefix_pattern[compareindex]):
-                        raise InvalidArgumentValueError(
-                            "overlapping ranges are not allowed."
-                        )
-
-            for index, _ in enumerate(from_prefix_pattern):
-                restore_criteria = {}
-                restore_criteria["object_type"] = "RangeBasedItemLevelRestoreCriteria"
-                restore_criteria["min_matching_value"] = from_prefix_pattern[index]
-                restore_criteria["max_matching_value"] = to_prefix_pattern[index]
-
-                restore_criteria_list.append(restore_criteria)
-
-        if container_list is None and from_prefix_pattern is None and to_prefix_pattern is None:
-            raise RequiredArgumentMissingError("Provide ContainersList or Prefixes for Item Level Recovery")
-
-    restore_request["restore_target_info"]["restore_criteria"] = restore_criteria_list
-
-    datasource_id = None
-    # Alternate/Original Location - setting the Target's datasource info accordingly
-    if target_resource_id is not None and backup_instance_id is not None:
-        raise MutuallyExclusiveArgumentError("Please provide either target-resource-id or backup-instance-id not both.")
-
-    if target_resource_id is not None:
-        # No validation for alternate/original location restore, as target_resource_id can be used for both
-        datasource_id = target_resource_id
-
-    if backup_instance_id is not None:
-        # No validation for alternate/original location restore, to be added if understood to be required
-        vault_resource_group = helper.get_vault_rg_from_bi_id(backup_instance_id)
-        vault_name = helper.get_vault_name_from_bi_id((backup_instance_id))
-        backup_instance_name = helper.get_bi_name_from_bi_id(backup_instance_id)
-
-        from azext_dataprotection.aaz.latest.dataprotection.backup_instance import Show as _Show
-        backup_instance = _Show(cli_ctx=cmd.cli_ctx)(command_args={
-            "vault_name": vault_name,
-            "resource_group": vault_resource_group,
-            "backup_instance_name": backup_instance_name
-        })
-        datasource_id = backup_instance['properties']['dataSourceInfo']['resourceID']
-
-    if backup_instance_id is None and target_resource_id is None:
-        raise RequiredArgumentMissingError("Please provide either target-resource-id (for alternate location restore) of backup-instance-id (for original location restore).")
-
+    # The datasource ID is set either from Backup instance ID or Target Resource Id, depending on restore type
+    datasource_id = helper.validate_and_set_datasource_id_in_restore_request(cmd, target_resource_id, backup_instance_id)
     restore_request["restore_target_info"]["datasource_info"] = helper.get_datasource_info(datasource_type, datasource_id, restore_location)
 
-    if manifest["isProxyResource"]:
+    if manifest["isProxyResource"] or manifest["enableDataSourceSetInfo"]:
         restore_request["restore_target_info"]["datasource_set_info"] = helper.get_datasourceset_info(datasource_type, datasource_id, restore_location)
 
+    # UAMI for a restore request object
+    if use_system_assigned_identity is not None or user_assigned_identity_arm_url is not None:
+        if user_assigned_identity_arm_url is None and not use_system_assigned_identity:
+            # so the UAMI was not passed and either system identity is not passed, or it is false. The former is not
+            # possible as that scenario is eliminated by the first check. So UAMI not passed, but system assigned is
+            # False. Not valid input, so we don't populate identity Details
+            pass
+        else:
+            identity_details = helper.get_identity_details(use_system_assigned_identity, user_assigned_identity_arm_url)
+            restore_request["identity_details"] = identity_details
+
+    restore_request["restore_target_info"]["restore_criteria"] = helper.get_resource_criteria_list(datasource_type, restore_configuration,
+                                                                                                   container_list, from_prefix_pattern,
+                                                                                                   to_prefix_pattern, recovery_point_id,
+                                                                                                   vaulted_blob_prefix_pattern)
+
     return restore_request
+
+
+def dataprotection_enable_backup(cmd, datasource_type, datasource_id,
+                                 backup_strategy=None,
+                                 backup_configuration_file=None,
+                                 yes=False):
+    """Enable backup for a datasource using a single command.
+
+    This command orchestrates all the steps required to enable backup:
+    - Creates backup infrastructure (resource group, storage account, vault)
+    - Installs required extensions
+    - Configures backup instance with specified strategy
+    """
+    from azext_dataprotection.manual.enums import get_backup_strategies_for_datasource
+
+    # Supported datasource types
+    supported_datasource_types = ["AzureKubernetesService"]
+
+    # Validate datasource type is supported
+    if datasource_type not in supported_datasource_types:
+        raise InvalidArgumentValueError(
+            f"Unsupported datasource type: {datasource_type}. "
+            f"Supported types: {', '.join(supported_datasource_types)}"
+        )
+
+    # Get valid strategies for this datasource type
+    valid_strategies = get_backup_strategies_for_datasource(datasource_type)
+
+    # Set default strategy based on datasource type
+    if backup_strategy is None:
+        if datasource_type == "AzureKubernetesService":
+            backup_strategy = 'Week'
+        # Add defaults for other datasource types here as they are supported
+
+    # Validate strategy for datasource type
+    if backup_strategy not in valid_strategies:
+        raise InvalidArgumentValueError(
+            f"Invalid backup-strategy '{backup_strategy}' for {datasource_type}. "
+            f"Allowed values: {', '.join(valid_strategies)}"
+        )
+
+    config = backup_configuration_file if backup_configuration_file is not None else {}
+
+    # Route to datasource-specific handler
+    if datasource_type == "AzureKubernetesService":
+        if "Microsoft.ContainerService/managedClusters".lower() not in datasource_id.lower():
+            raise InvalidArgumentValueError(
+                "datasource-id must be an AKS cluster resource ID for AzureKubernetesService datasource type"
+            )
+
+        from azext_dataprotection.manual.aks.aks_helper import dataprotection_enable_backup_helper
+        dataprotection_enable_backup_helper(
+            cmd, datasource_id, backup_strategy, config, yes=yes)

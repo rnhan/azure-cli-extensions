@@ -15,8 +15,10 @@ from .action import (
     AddConfigurationProtectedSettings,
 )
 
+from knack.commands import CLICommand
 
-def load_arguments(self, _):
+
+def load_arguments(self, _: CLICommand) -> None:
     with self.argument_context(consts.EXTENSION_NAME) as c:
         c.argument('location',
                    validator=get_default_location_from_resource_group)
@@ -41,8 +43,14 @@ def load_arguments(self, _):
         c.argument('auto_upgrade_minor_version',
                    arg_group="Version",
                    options_list=['--auto-upgrade-minor-version', '--auto-upgrade'],
+                   deprecate_info=c.deprecate(target='--auto-upgrade-minor-version / --auto-upgrade', redirect='--auto-upgrade-mode'),
                    arg_type=get_three_state_flag(),
                    help='Automatically upgrade minor version of the extension instance.')
+        c.argument('auto_upgrade_mode',
+                   arg_group="Version",
+                   options_list=['--auto-upgrade-mode'],
+                   arg_type=get_enum_type(['none', 'patch', 'compatible']),
+                   help='Automatically upgrade version of the extension instance based on the selected mode. Default mode is \'compatible\' which is equivalent to \'--auto-upgrade-minor-version true\'. Use \'none\' to disable auto upgrade. Use \'patch\' to upgrade to the latest patch version. Use \'compatible\' to upgrade to the latest compatible minor/patch version.')
         c.argument('version',
                    arg_group="Version",
                    help='Specify the version to install for the extension instance if'
@@ -131,3 +139,20 @@ def load_arguments(self, _):
         c.argument('show_latest',
                    arg_type=get_three_state_flag(),
                    help='Filter results by only the latest version. For example, if this flag is used the latest version of the extensionType will be shown.')
+
+    with self.argument_context(f"{consts.EXTENSION_NAME} troubleshoot") as c:
+        c.argument('name',
+                   options_list=['--name', '-n'],
+                   help='Name of the Kubernetes extension')
+        c.argument('namespace_list',
+                   options_list=['--namespace-list'],
+                   help='Comma-separated list of namespaces to troubleshoot')
+        c.argument('kube_config',
+                   options_list=['--kube-config'],
+                   help='Path to the kube config file. If not specified, the default kube config file will be used.')
+        c.argument('kube_context',
+                   options_list=['--kube-context'],
+                   help='Kubeconfig context from current machine. If not specified, the current context from kube config file will be used.')
+        c.argument('skip_ssl_verification',
+                   action="store_true",
+                   help='Skip SSL verification for any cluster connection.')

@@ -26,9 +26,9 @@ class Update(AAZCommand):
     """
 
     _aaz_info = {
-        "version": "2023-10-01-preview",
+        "version": "2026-05-01-preview",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.networkcloud/virtualmachines/{}/consoles/{}", "2023-10-01-preview"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.networkcloud/virtualmachines/{}/consoles/{}", "2026-05-01-preview"],
         ]
     }
 
@@ -49,6 +49,14 @@ class Update(AAZCommand):
         # define Arg Group ""
 
         _args_schema = cls._args_schema
+        _args_schema.if_match = AAZStrArg(
+            options=["--if-match"],
+            help="The ETag of the transformation. Omit this value to always overwrite the current resource. Specify the last-seen ETag value to prevent accidentally overwriting concurrent changes.",
+        )
+        _args_schema.if_none_match = AAZStrArg(
+            options=["--if-none-match"],
+            help="Set to '*' to allow a new record set to be created, but to prevent updating an existing resource. Other values will result in error from server as they are not supported.",
+        )
         _args_schema.console_name = AAZStrArg(
             options=["-n", "--name", "--console-name"],
             help="The name of the virtual machine console.",
@@ -199,7 +207,7 @@ class Update(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-10-01-preview",
+                    "api-version", "2026-05-01-preview",
                     required=True,
                 ),
             }
@@ -208,6 +216,12 @@ class Update(AAZCommand):
         @property
         def header_parameters(self):
             parameters = {
+                **self.serialize_header_param(
+                    "If-Match", self.ctx.args.if_match,
+                ),
+                **self.serialize_header_param(
+                    "If-None-Match", self.ctx.args.if_none_match,
+                ),
                 **self.serialize_header_param(
                     "Content-Type", "application/json",
                 ),
@@ -259,132 +273,108 @@ class Update(AAZCommand):
                 return cls._schema_on_200
 
             cls._schema_on_200 = AAZObjectType()
-            _UpdateHelper._build_schema_console_read(cls._schema_on_200)
+
+            _schema_on_200 = cls._schema_on_200
+            _schema_on_200.etag = AAZStrType(
+                flags={"read_only": True},
+            )
+            _schema_on_200.extended_location = AAZObjectType(
+                serialized_name="extendedLocation",
+                flags={"required": True},
+            )
+            _schema_on_200.id = AAZStrType(
+                flags={"read_only": True},
+            )
+            _schema_on_200.location = AAZStrType(
+                flags={"required": True},
+            )
+            _schema_on_200.name = AAZStrType(
+                flags={"read_only": True},
+            )
+            _schema_on_200.properties = AAZObjectType(
+                flags={"required": True, "client_flatten": True},
+            )
+            _schema_on_200.system_data = AAZObjectType(
+                serialized_name="systemData",
+                flags={"read_only": True},
+            )
+            _schema_on_200.tags = AAZDictType()
+            _schema_on_200.type = AAZStrType(
+                flags={"read_only": True},
+            )
+
+            extended_location = cls._schema_on_200.extended_location
+            extended_location.name = AAZStrType(
+                flags={"required": True},
+            )
+            extended_location.type = AAZStrType(
+                flags={"required": True},
+            )
+
+            properties = cls._schema_on_200.properties
+            properties.detailed_status = AAZStrType(
+                serialized_name="detailedStatus",
+                flags={"read_only": True},
+            )
+            properties.detailed_status_message = AAZStrType(
+                serialized_name="detailedStatusMessage",
+                flags={"read_only": True},
+            )
+            properties.enabled = AAZStrType(
+                flags={"required": True},
+            )
+            properties.expiration = AAZStrType()
+            properties.private_link_service_id = AAZStrType(
+                serialized_name="privateLinkServiceId",
+                flags={"read_only": True},
+            )
+            properties.provisioning_state = AAZStrType(
+                serialized_name="provisioningState",
+                flags={"read_only": True},
+            )
+            properties.ssh_public_key = AAZObjectType(
+                serialized_name="sshPublicKey",
+                flags={"required": True},
+            )
+            properties.virtual_machine_access_id = AAZStrType(
+                serialized_name="virtualMachineAccessId",
+                flags={"read_only": True},
+            )
+
+            ssh_public_key = cls._schema_on_200.properties.ssh_public_key
+            ssh_public_key.key_data = AAZStrType(
+                serialized_name="keyData",
+                flags={"required": True},
+            )
+
+            system_data = cls._schema_on_200.system_data
+            system_data.created_at = AAZStrType(
+                serialized_name="createdAt",
+            )
+            system_data.created_by = AAZStrType(
+                serialized_name="createdBy",
+            )
+            system_data.created_by_type = AAZStrType(
+                serialized_name="createdByType",
+            )
+            system_data.last_modified_at = AAZStrType(
+                serialized_name="lastModifiedAt",
+            )
+            system_data.last_modified_by = AAZStrType(
+                serialized_name="lastModifiedBy",
+            )
+            system_data.last_modified_by_type = AAZStrType(
+                serialized_name="lastModifiedByType",
+            )
+
+            tags = cls._schema_on_200.tags
+            tags.Element = AAZStrType()
 
             return cls._schema_on_200
 
 
 class _UpdateHelper:
     """Helper class for Update"""
-
-    _schema_console_read = None
-
-    @classmethod
-    def _build_schema_console_read(cls, _schema):
-        if cls._schema_console_read is not None:
-            _schema.extended_location = cls._schema_console_read.extended_location
-            _schema.id = cls._schema_console_read.id
-            _schema.location = cls._schema_console_read.location
-            _schema.name = cls._schema_console_read.name
-            _schema.properties = cls._schema_console_read.properties
-            _schema.system_data = cls._schema_console_read.system_data
-            _schema.tags = cls._schema_console_read.tags
-            _schema.type = cls._schema_console_read.type
-            return
-
-        cls._schema_console_read = _schema_console_read = AAZObjectType()
-
-        console_read = _schema_console_read
-        console_read.extended_location = AAZObjectType(
-            serialized_name="extendedLocation",
-            flags={"required": True},
-        )
-        console_read.id = AAZStrType(
-            flags={"read_only": True},
-        )
-        console_read.location = AAZStrType(
-            flags={"required": True},
-        )
-        console_read.name = AAZStrType(
-            flags={"read_only": True},
-        )
-        console_read.properties = AAZObjectType(
-            flags={"required": True, "client_flatten": True},
-        )
-        console_read.system_data = AAZObjectType(
-            serialized_name="systemData",
-            flags={"read_only": True},
-        )
-        console_read.tags = AAZDictType()
-        console_read.type = AAZStrType(
-            flags={"read_only": True},
-        )
-
-        extended_location = _schema_console_read.extended_location
-        extended_location.name = AAZStrType(
-            flags={"required": True},
-        )
-        extended_location.type = AAZStrType(
-            flags={"required": True},
-        )
-
-        properties = _schema_console_read.properties
-        properties.detailed_status = AAZStrType(
-            serialized_name="detailedStatus",
-            flags={"read_only": True},
-        )
-        properties.detailed_status_message = AAZStrType(
-            serialized_name="detailedStatusMessage",
-            flags={"read_only": True},
-        )
-        properties.enabled = AAZStrType(
-            flags={"required": True},
-        )
-        properties.expiration = AAZStrType()
-        properties.private_link_service_id = AAZStrType(
-            serialized_name="privateLinkServiceId",
-            flags={"read_only": True},
-        )
-        properties.provisioning_state = AAZStrType(
-            serialized_name="provisioningState",
-            flags={"read_only": True},
-        )
-        properties.ssh_public_key = AAZObjectType(
-            serialized_name="sshPublicKey",
-            flags={"required": True},
-        )
-        properties.virtual_machine_access_id = AAZStrType(
-            serialized_name="virtualMachineAccessId",
-            flags={"read_only": True},
-        )
-
-        ssh_public_key = _schema_console_read.properties.ssh_public_key
-        ssh_public_key.key_data = AAZStrType(
-            serialized_name="keyData",
-            flags={"required": True},
-        )
-
-        system_data = _schema_console_read.system_data
-        system_data.created_at = AAZStrType(
-            serialized_name="createdAt",
-        )
-        system_data.created_by = AAZStrType(
-            serialized_name="createdBy",
-        )
-        system_data.created_by_type = AAZStrType(
-            serialized_name="createdByType",
-        )
-        system_data.last_modified_at = AAZStrType(
-            serialized_name="lastModifiedAt",
-        )
-        system_data.last_modified_by = AAZStrType(
-            serialized_name="lastModifiedBy",
-        )
-        system_data.last_modified_by_type = AAZStrType(
-            serialized_name="lastModifiedByType",
-        )
-
-        tags = _schema_console_read.tags
-        tags.Element = AAZStrType()
-
-        _schema.extended_location = cls._schema_console_read.extended_location
-        _schema.id = cls._schema_console_read.id
-        _schema.location = cls._schema_console_read.location
-        _schema.name = cls._schema_console_read.name
-        _schema.properties = cls._schema_console_read.properties
-        _schema.system_data = cls._schema_console_read.system_data
-        _schema.tags = cls._schema_console_read.tags
-        _schema.type = cls._schema_console_read.type
 
 
 __all__ = ["Update"]

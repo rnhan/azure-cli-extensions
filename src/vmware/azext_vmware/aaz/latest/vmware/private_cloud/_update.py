@@ -19,9 +19,9 @@ class Update(AAZCommand):
     """
 
     _aaz_info = {
-        "version": "2023-03-01",
+        "version": "2025-09-01",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.avs/privateclouds/{}", "2023-03-01"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.avs/privateclouds/{}", "2025-09-01"],
         ]
     }
 
@@ -50,7 +50,7 @@ class Update(AAZCommand):
             required=True,
             id_part="name",
             fmt=AAZStrArgFormat(
-                pattern="^[-\w\._]+$",
+                pattern="^[-\\w\\._]+$",
             ),
         )
         _args_schema.resource_group = AAZResourceGroupNameArg(
@@ -63,7 +63,25 @@ class Update(AAZCommand):
         _args_schema.cluster_size = AAZIntArg(
             options=["--cluster-size"],
             arg_group="ManagementCluster",
-            help="The cluster size",
+            help="Number of hosts for the default management cluster. Minimum of 3 and maximum of 16.",
+            nullable=True,
+        )
+        _args_schema.hosts = AAZListArg(
+            options=["--hosts"],
+            arg_group="ManagementCluster",
+            help="The hosts",
+            nullable=True,
+        )
+        _args_schema.vsan_datastore_name = AAZStrArg(
+            options=["--vsan-datastore-name"],
+            arg_group="ManagementCluster",
+            help="Name of the vsan datastore associated with the cluster",
+            nullable=True,
+        )
+
+        hosts = cls._args_schema.hosts
+        hosts.Element = AAZStrArg(
+            nullable=True,
         )
 
         # define Arg Group "PrivateCloud"
@@ -72,7 +90,7 @@ class Update(AAZCommand):
         _args_schema.identity = AAZObjectArg(
             options=["--identity"],
             arg_group="PrivateCloud",
-            help="The identity of the private cloud, if configured.",
+            help="The managed service identities assigned to this resource.",
             nullable=True,
         )
         _args_schema.tags = AAZDictArg(
@@ -85,8 +103,7 @@ class Update(AAZCommand):
         identity = cls._args_schema.identity
         identity.type = AAZStrArg(
             options=["type"],
-            help="The type of identity used for the private cloud. The type 'SystemAssigned' refers to an implicitly created identity. The type 'None' will remove any identities from the Private Cloud.",
-            nullable=True,
+            help="Type of managed service identity (either system assigned, or none).",
             enum={"None": "None", "SystemAssigned": "SystemAssigned"},
         )
 
@@ -98,6 +115,13 @@ class Update(AAZCommand):
         # define Arg Group "Properties"
 
         _args_schema = cls._args_schema
+        _args_schema.dns_zone_type = AAZStrArg(
+            options=["--dns-zone-type"],
+            arg_group="Properties",
+            help="The type of DNS zone to use.",
+            nullable=True,
+            enum={"Private": "Private", "Public": "Public"},
+        )
         _args_schema.encryption = AAZObjectArg(
             options=["--encryption"],
             arg_group="Properties",
@@ -123,23 +147,16 @@ class Update(AAZCommand):
             nullable=True,
             enum={"Disabled": "Disabled", "Enabled": "Enabled"},
         )
-        _args_schema.nsxt_password = AAZPasswordArg(
-            options=["--nsxt-password"],
+        _args_schema.network_block = AAZStrArg(
+            options=["--network-block"],
             arg_group="Properties",
-            help="Optionally, set the NSX-T Manager password when the private cloud is created",
-            nullable=True,
-            blank=AAZPromptPasswordInput(
-                msg="Password:",
-            ),
+            help="The block of addresses should be unique across VNet in your subscription as well as on-premise. Make sure the CIDR format is conformed to (A.B.C.D/X) where A,B,C,D are between 0 and 255, and X is between 0 and 22",
         )
-        _args_schema.vcenter_password = AAZPasswordArg(
-            options=["--vcenter-password"],
+        _args_schema.vcf_license = AAZObjectArg(
+            options=["--vcf-license"],
             arg_group="Properties",
-            help="Optionally, set the vCenter admin password when the private cloud is created",
+            help="The private cloud license",
             nullable=True,
-            blank=AAZPromptPasswordInput(
-                msg="Password:",
-            ),
         )
 
         encryption = cls._args_schema.encryption
@@ -186,30 +203,40 @@ class Update(AAZCommand):
         _element.alias = AAZStrArg(
             options=["alias"],
             help="The domain's NetBIOS name",
+            nullable=True,
         )
         _element.base_group_dn = AAZStrArg(
             options=["base-group-dn"],
             help="The base distinguished name for groups",
+            nullable=True,
         )
         _element.base_user_dn = AAZStrArg(
             options=["base-user-dn"],
             help="The base distinguished name for users",
+            nullable=True,
         )
         _element.domain = AAZStrArg(
             options=["domain"],
             help="The domain's dns name",
+            nullable=True,
         )
         _element.name = AAZStrArg(
             options=["name"],
             help="The name of the identity source",
+            nullable=True,
         )
-        _element.password = AAZStrArg(
+        _element.password = AAZPasswordArg(
             options=["password"],
             help="The password of the Active Directory user with a minimum of read-only access to Base DN for users and groups.",
+            nullable=True,
+            blank=AAZPromptPasswordInput(
+                msg="Password:",
+            ),
         )
         _element.primary_server = AAZStrArg(
             options=["primary-server"],
             help="Primary server URL",
+            nullable=True,
         )
         _element.secondary_server = AAZStrArg(
             options=["secondary-server"],
@@ -225,6 +252,69 @@ class Update(AAZCommand):
         _element.username = AAZStrArg(
             options=["username"],
             help="The ID of an Active Directory user with a minimum of read-only access to Base DN for users and group",
+            nullable=True,
+        )
+
+        vcf_license = cls._args_schema.vcf_license
+        vcf_license.vcf5 = AAZObjectArg(
+            options=["vcf5"],
+        )
+
+        vcf5 = cls._args_schema.vcf_license.vcf5
+        vcf5.contract_number = AAZStrArg(
+            options=["contract-number"],
+            help="The Broadcom contract number associated with the license.",
+            nullable=True,
+        )
+        vcf5.site_id = AAZStrArg(
+            options=["site-id"],
+            help="The Broadcom site ID associated with the license.",
+            nullable=True,
+        )
+        vcf5.cores = AAZIntArg(
+            options=["cores"],
+            help="Number of cores included in the license",
+        )
+        vcf5.end_date = AAZDateTimeArg(
+            options=["end-date"],
+            help="UTC datetime when the license expires",
+            fmt=AAZDateTimeFormat(
+                protocol="iso",
+            ),
+        )
+        vcf5.labels = AAZListArg(
+            options=["labels"],
+            help="Additional labels passed through for license reporting.",
+            nullable=True,
+        )
+        vcf5.license_key = AAZPasswordArg(
+            options=["license-key"],
+            help="License key",
+            nullable=True,
+            blank=AAZPromptPasswordInput(
+                msg="Password:",
+            ),
+        )
+
+        labels = cls._args_schema.vcf_license.vcf5.labels
+        labels.Element = AAZObjectArg(
+            nullable=True,
+        )
+
+        _element = cls._args_schema.vcf_license.vcf5.labels.Element
+        _element.key = AAZStrArg(
+            options=["key"],
+            help="The key of the label.",
+            fmt=AAZStrArgFormat(
+                min_length=1,
+            ),
+        )
+        _element.value = AAZStrArg(
+            options=["value"],
+            help="The value of the label.",
+            fmt=AAZStrArgFormat(
+                min_length=1,
+            ),
         )
 
         # define Arg Group "Sku"
@@ -308,7 +398,7 @@ class Update(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-03-01",
+                    "api-version", "2025-09-01",
                     required=True,
                 ),
             }
@@ -407,7 +497,7 @@ class Update(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-03-01",
+                    "api-version", "2025-09-01",
                     required=True,
                 ),
             }
@@ -466,23 +556,24 @@ class Update(AAZCommand):
                 typ=AAZObjectType
             )
             _builder.set_prop("identity", AAZObjectType, ".identity")
-            _builder.set_prop("properties", AAZObjectType, ".", typ_kwargs={"flags": {"required": True, "client_flatten": True}})
+            _builder.set_prop("properties", AAZObjectType, typ_kwargs={"flags": {"client_flatten": True}})
             _builder.set_prop("sku", AAZObjectType, ".", typ_kwargs={"flags": {"required": True}})
             _builder.set_prop("tags", AAZDictType, ".tags")
 
             identity = _builder.get(".identity")
             if identity is not None:
-                identity.set_prop("type", AAZStrType, ".type")
+                identity.set_prop("type", AAZStrType, ".type", typ_kwargs={"flags": {"required": True}})
 
             properties = _builder.get(".properties")
             if properties is not None:
+                properties.set_prop("dnsZoneType", AAZStrType, ".dns_zone_type")
                 properties.set_prop("encryption", AAZObjectType, ".encryption")
                 properties.set_prop("extendedNetworkBlocks", AAZListType, ".extended_network_blocks")
                 properties.set_prop("identitySources", AAZListType, ".identity_sources")
                 properties.set_prop("internet", AAZStrType, ".internet")
                 properties.set_prop("managementCluster", AAZObjectType, ".", typ_kwargs={"flags": {"required": True}})
-                properties.set_prop("nsxtPassword", AAZStrType, ".nsxt_password", typ_kwargs={"flags": {"secret": True}})
-                properties.set_prop("vcenterPassword", AAZStrType, ".vcenter_password", typ_kwargs={"flags": {"secret": True}})
+                properties.set_prop("networkBlock", AAZStrType, ".network_block", typ_kwargs={"flags": {"required": True}})
+                properties.set_prop("vcfLicense", AAZObjectType, ".vcf_license")
 
             encryption = _builder.get(".properties.encryption")
             if encryption is not None:
@@ -505,20 +596,49 @@ class Update(AAZCommand):
 
             _elements = _builder.get(".properties.identitySources[]")
             if _elements is not None:
-                _elements.set_prop("alias", AAZStrType, ".alias", typ_kwargs={"flags": {"required": True}})
-                _elements.set_prop("baseGroupDN", AAZStrType, ".base_group_dn", typ_kwargs={"flags": {"required": True}})
-                _elements.set_prop("baseUserDN", AAZStrType, ".base_user_dn", typ_kwargs={"flags": {"required": True}})
-                _elements.set_prop("domain", AAZStrType, ".domain", typ_kwargs={"flags": {"required": True}})
-                _elements.set_prop("name", AAZStrType, ".name", typ_kwargs={"flags": {"required": True}})
+                _elements.set_prop("alias", AAZStrType, ".alias")
+                _elements.set_prop("baseGroupDN", AAZStrType, ".base_group_dn")
+                _elements.set_prop("baseUserDN", AAZStrType, ".base_user_dn")
+                _elements.set_prop("domain", AAZStrType, ".domain")
+                _elements.set_prop("name", AAZStrType, ".name")
                 _elements.set_prop("password", AAZStrType, ".password", typ_kwargs={"flags": {"secret": True}})
-                _elements.set_prop("primaryServer", AAZStrType, ".primary_server", typ_kwargs={"flags": {"required": True}})
+                _elements.set_prop("primaryServer", AAZStrType, ".primary_server")
                 _elements.set_prop("secondaryServer", AAZStrType, ".secondary_server")
                 _elements.set_prop("ssl", AAZStrType, ".ssl")
-                _elements.set_prop("username", AAZStrType, ".username", typ_kwargs={"flags": {"secret": True}})
+                _elements.set_prop("username", AAZStrType, ".username")
 
             management_cluster = _builder.get(".properties.managementCluster")
             if management_cluster is not None:
-                management_cluster.set_prop("clusterSize", AAZIntType, ".cluster_size", typ_kwargs={"flags": {"required": True}})
+                management_cluster.set_prop("clusterSize", AAZIntType, ".cluster_size")
+                management_cluster.set_prop("hosts", AAZListType, ".hosts")
+                management_cluster.set_prop("vsanDatastoreName", AAZStrType, ".vsan_datastore_name")
+
+            hosts = _builder.get(".properties.managementCluster.hosts")
+            if hosts is not None:
+                hosts.set_elements(AAZStrType, ".")
+
+            vcf_license = _builder.get(".properties.vcfLicense")
+            if vcf_license is not None:
+                vcf_license.set_const("kind", "vcf5", AAZStrType, ".vcf5", typ_kwargs={"flags": {"required": True}})
+                vcf_license.discriminate_by("kind", "vcf5")
+
+            disc_vcf5 = _builder.get(".properties.vcfLicense{kind:vcf5}")
+            if disc_vcf5 is not None:
+                disc_vcf5.set_prop("broadcomContractNumber", AAZStrType, ".vcf5.contract_number")
+                disc_vcf5.set_prop("broadcomSiteId", AAZStrType, ".vcf5.site_id")
+                disc_vcf5.set_prop("cores", AAZIntType, ".vcf5.cores", typ_kwargs={"flags": {"required": True}})
+                disc_vcf5.set_prop("endDate", AAZStrType, ".vcf5.end_date", typ_kwargs={"flags": {"required": True}})
+                disc_vcf5.set_prop("labels", AAZListType, ".vcf5.labels")
+                disc_vcf5.set_prop("licenseKey", AAZStrType, ".vcf5.license_key", typ_kwargs={"flags": {"secret": True}})
+
+            labels = _builder.get(".properties.vcfLicense{kind:vcf5}.labels")
+            if labels is not None:
+                labels.set_elements(AAZObjectType, ".")
+
+            _elements = _builder.get(".properties.vcfLicense{kind:vcf5}.labels[]")
+            if _elements is not None:
+                _elements.set_prop("key", AAZStrType, ".key", typ_kwargs={"flags": {"required": True}})
+                _elements.set_prop("value", AAZStrType, ".value", typ_kwargs={"flags": {"required": True}})
 
             tags = _builder.get(".tags")
             if tags is not None:
@@ -585,8 +705,10 @@ class _UpdateHelper:
             _schema.name = cls._schema_private_cloud_read.name
             _schema.properties = cls._schema_private_cloud_read.properties
             _schema.sku = cls._schema_private_cloud_read.sku
+            _schema.system_data = cls._schema_private_cloud_read.system_data
             _schema.tags = cls._schema_private_cloud_read.tags
             _schema.type = cls._schema_private_cloud_read.type
+            _schema.zones = cls._schema_private_cloud_read.zones
             return
 
         cls._schema_private_cloud_read = _schema_private_cloud_read = AAZObjectType()
@@ -603,15 +725,20 @@ class _UpdateHelper:
             flags={"read_only": True},
         )
         private_cloud_read.properties = AAZObjectType(
-            flags={"required": True, "client_flatten": True},
+            flags={"client_flatten": True},
         )
         private_cloud_read.sku = AAZObjectType(
             flags={"required": True},
+        )
+        private_cloud_read.system_data = AAZObjectType(
+            serialized_name="systemData",
+            flags={"read_only": True},
         )
         private_cloud_read.tags = AAZDictType()
         private_cloud_read.type = AAZStrType(
             flags={"read_only": True},
         )
+        private_cloud_read.zones = AAZListType()
 
         identity = _schema_private_cloud_read.identity
         identity.principal_id = AAZStrType(
@@ -622,14 +749,21 @@ class _UpdateHelper:
             serialized_name="tenantId",
             flags={"read_only": True},
         )
-        identity.type = AAZStrType()
+        identity.type = AAZStrType(
+            flags={"required": True},
+        )
 
         properties = _schema_private_cloud_read.properties
         properties.availability = AAZObjectType()
         properties.circuit = AAZObjectType()
         cls._build_schema_circuit_read(properties.circuit)
+        properties.dns_zone_type = AAZStrType(
+            serialized_name="dnsZoneType",
+        )
         properties.encryption = AAZObjectType()
-        properties.endpoints = AAZObjectType()
+        properties.endpoints = AAZObjectType(
+            flags={"read_only": True},
+        )
         properties.extended_network_blocks = AAZListType(
             serialized_name="extendedNetworkBlocks",
         )
@@ -685,6 +819,12 @@ class _UpdateHelper:
             serialized_name="vcenterPassword",
             flags={"secret": True},
         )
+        properties.vcf_license = AAZObjectType(
+            serialized_name="vcfLicense",
+        )
+        properties.virtual_network_id = AAZStrType(
+            serialized_name="virtualNetworkId",
+        )
         properties.vmotion_network = AAZStrType(
             serialized_name="vmotionNetwork",
             flags={"read_only": True},
@@ -731,8 +871,20 @@ class _UpdateHelper:
             serialized_name="hcxCloudManager",
             flags={"read_only": True},
         )
+        endpoints.hcx_cloud_manager_ip = AAZStrType(
+            serialized_name="hcxCloudManagerIp",
+            flags={"read_only": True},
+        )
         endpoints.nsxt_manager = AAZStrType(
             serialized_name="nsxtManager",
+            flags={"read_only": True},
+        )
+        endpoints.nsxt_manager_ip = AAZStrType(
+            serialized_name="nsxtManagerIp",
+            flags={"read_only": True},
+        )
+        endpoints.vcenter_ip = AAZStrType(
+            serialized_name="vcenterIp",
             flags={"read_only": True},
         )
         endpoints.vcsa = AAZStrType(
@@ -749,37 +901,26 @@ class _UpdateHelper:
         identity_sources.Element = AAZObjectType()
 
         _element = _schema_private_cloud_read.properties.identity_sources.Element
-        _element.alias = AAZStrType(
-            flags={"required": True},
-        )
+        _element.alias = AAZStrType()
         _element.base_group_dn = AAZStrType(
             serialized_name="baseGroupDN",
-            flags={"required": True},
         )
         _element.base_user_dn = AAZStrType(
             serialized_name="baseUserDN",
-            flags={"required": True},
         )
-        _element.domain = AAZStrType(
-            flags={"required": True},
-        )
-        _element.name = AAZStrType(
-            flags={"required": True},
-        )
+        _element.domain = AAZStrType()
+        _element.name = AAZStrType()
         _element.password = AAZStrType(
             flags={"secret": True},
         )
         _element.primary_server = AAZStrType(
             serialized_name="primaryServer",
-            flags={"required": True},
         )
         _element.secondary_server = AAZStrType(
             serialized_name="secondaryServer",
         )
         _element.ssl = AAZStrType()
-        _element.username = AAZStrType(
-            flags={"secret": True},
-        )
+        _element.username = AAZStrType()
 
         management_cluster = _schema_private_cloud_read.properties.management_cluster
         management_cluster.cluster_id = AAZIntType(
@@ -788,24 +929,93 @@ class _UpdateHelper:
         )
         management_cluster.cluster_size = AAZIntType(
             serialized_name="clusterSize",
-            flags={"required": True},
         )
         management_cluster.hosts = AAZListType()
         management_cluster.provisioning_state = AAZStrType(
             serialized_name="provisioningState",
             flags={"read_only": True},
         )
+        management_cluster.vsan_datastore_name = AAZStrType(
+            serialized_name="vsanDatastoreName",
+        )
 
         hosts = _schema_private_cloud_read.properties.management_cluster.hosts
         hosts.Element = AAZStrType()
 
+        vcf_license = _schema_private_cloud_read.properties.vcf_license
+        vcf_license.kind = AAZStrType(
+            flags={"required": True},
+        )
+        vcf_license.provisioning_state = AAZStrType(
+            serialized_name="provisioningState",
+            flags={"read_only": True},
+        )
+
+        disc_vcf5 = _schema_private_cloud_read.properties.vcf_license.discriminate_by("kind", "vcf5")
+        disc_vcf5.broadcom_contract_number = AAZStrType(
+            serialized_name="broadcomContractNumber",
+        )
+        disc_vcf5.broadcom_site_id = AAZStrType(
+            serialized_name="broadcomSiteId",
+        )
+        disc_vcf5.cores = AAZIntType(
+            flags={"required": True},
+        )
+        disc_vcf5.end_date = AAZStrType(
+            serialized_name="endDate",
+            flags={"required": True},
+        )
+        disc_vcf5.labels = AAZListType()
+        disc_vcf5.license_key = AAZStrType(
+            serialized_name="licenseKey",
+            flags={"secret": True},
+        )
+
+        labels = _schema_private_cloud_read.properties.vcf_license.discriminate_by("kind", "vcf5").labels
+        labels.Element = AAZObjectType()
+
+        _element = _schema_private_cloud_read.properties.vcf_license.discriminate_by("kind", "vcf5").labels.Element
+        _element.key = AAZStrType(
+            flags={"required": True},
+        )
+        _element.value = AAZStrType(
+            flags={"required": True},
+        )
+
         sku = _schema_private_cloud_read.sku
+        sku.capacity = AAZIntType()
+        sku.family = AAZStrType()
         sku.name = AAZStrType(
             flags={"required": True},
+        )
+        sku.size = AAZStrType()
+        sku.tier = AAZStrType()
+
+        system_data = _schema_private_cloud_read.system_data
+        system_data.created_at = AAZStrType(
+            serialized_name="createdAt",
+        )
+        system_data.created_by = AAZStrType(
+            serialized_name="createdBy",
+        )
+        system_data.created_by_type = AAZStrType(
+            serialized_name="createdByType",
+        )
+        system_data.last_modified_at = AAZStrType(
+            serialized_name="lastModifiedAt",
+        )
+        system_data.last_modified_by = AAZStrType(
+            serialized_name="lastModifiedBy",
+        )
+        system_data.last_modified_by_type = AAZStrType(
+            serialized_name="lastModifiedByType",
         )
 
         tags = _schema_private_cloud_read.tags
         tags.Element = AAZStrType()
+
+        zones = _schema_private_cloud_read.zones
+        zones.Element = AAZStrType()
 
         _schema.id = cls._schema_private_cloud_read.id
         _schema.identity = cls._schema_private_cloud_read.identity
@@ -813,8 +1023,10 @@ class _UpdateHelper:
         _schema.name = cls._schema_private_cloud_read.name
         _schema.properties = cls._schema_private_cloud_read.properties
         _schema.sku = cls._schema_private_cloud_read.sku
+        _schema.system_data = cls._schema_private_cloud_read.system_data
         _schema.tags = cls._schema_private_cloud_read.tags
         _schema.type = cls._schema_private_cloud_read.type
+        _schema.zones = cls._schema_private_cloud_read.zones
 
 
 __all__ = ["Update"]

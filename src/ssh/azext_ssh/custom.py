@@ -53,7 +53,6 @@ def ssh_vm(cmd, resource_group_name=None, vm_name=None, ssh_ip=None, public_key_
         if platform.system() != 'Windows':
             raise azclierror.BadRequestError("RDP connection is not supported for this platform. "
                                              "Supported platforms: Windows")
-        logger.warning("RDP feature is in preview.")
         op_call = rdp_utils.start_rdp_connection
 
     ssh_session = ssh_info.SSHSession(resource_group_name, vm_name, ssh_ip, public_key_file,
@@ -188,7 +187,7 @@ def _do_ssh_op(cmd, op_info, op_call):
 
     try:
         if op_info.is_arc():
-            op_info.proxy_path = connectivity_utils.get_client_side_proxy(op_info.ssh_proxy_folder)
+            op_info.proxy_path = connectivity_utils.install_client_side_proxy(op_info.ssh_proxy_folder)
             (op_info.relay_info, op_info.new_service_config) = connectivity_utils.get_relay_information(
                 cmd, op_info.resource_group_name, op_info.vm_name, op_info.resource_type,
                 cert_lifetime, op_info.port, op_info.yes_without_prompt)
@@ -206,18 +205,9 @@ def _do_ssh_op(cmd, op_info, op_call):
 
 
 def _get_and_write_certificate(cmd, public_key_file, cert_file, ssh_client_folder):
-    cloudtoscope = {
-        "azurecloud": "https://pas.windows.net/CheckMyAccess/Linux/.default",
-        "azurechinacloud": "https://pas.chinacloudapi.cn/CheckMyAccess/Linux/.default",
-        "azureusgovernment": "https://pasff.usgovcloudapi.net/CheckMyAccess/Linux/.default"
-    }
-    scope = cloudtoscope.get(cmd.cli_ctx.cloud.name.lower(), None)
-    if not scope:
-        raise azclierror.InvalidArgumentValueError(
-            f"Unsupported cloud {cmd.cli_ctx.cloud.name.lower()}",
-            "Supported clouds include azurecloud,azurechinacloud,azureusgovernment")
-
+    scope = f'{const.AADSSHLOGINFORLINUX_SERVER_APP_ID}/.default'
     scopes = [scope]
+
     data = _prepare_jwk_data(public_key_file)
     from azure.cli.core._profile import Profile
     profile = Profile(cli_ctx=cmd.cli_ctx)

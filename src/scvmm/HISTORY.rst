@@ -2,6 +2,25 @@
 
 Release History
 ===============
+1.2.1
+++++++
+* [HotFix] Fixed `az scvmm vm create-from-machines` command for VM Instance creation.
+
+1.2.0
+++++++
+* Add command `az scvmm vm create-from-machines`.
+
+1.1.2
+++++++
+* Security upgrades and fixes - Drop `msrestazure` dependency.
+
+1.1.1
+++++++
+* [Hotfix] Fixed VMMServer connect command parameter error.
+
+1.1.0
+++++++
+* Security upgrades and fixes.
 
 1.0.0
 ++++++

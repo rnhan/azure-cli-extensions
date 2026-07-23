@@ -26,10 +26,10 @@ class List(AAZCommand):
     """
 
     _aaz_info = {
-        "version": "2023-10-01-preview",
+        "version": "2026-05-01-preview",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/providers/microsoft.networkcloud/virtualmachines", "2023-10-01-preview"],
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.networkcloud/virtualmachines", "2023-10-01-preview"],
+            ["mgmt-plane", "/subscriptions/{}/providers/microsoft.networkcloud/virtualmachines", "2026-05-01-preview"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.networkcloud/virtualmachines", "2026-05-01-preview"],
         ]
     }
 
@@ -51,16 +51,24 @@ class List(AAZCommand):
 
         _args_schema = cls._args_schema
         _args_schema.resource_group = AAZResourceGroupNameArg()
+        _args_schema.skip_token = AAZStrArg(
+            options=["--skip-token"],
+            help="The opaque token that the server returns to indicate where to continue listing resources from. This is used for paging through large result sets.",
+        )
+        _args_schema.top = AAZIntArg(
+            options=["--top"],
+            help="The maximum number of resources to return from the operation. Example: '$top=10'.",
+        )
         return cls._args_schema
 
     def _execute_operations(self):
         self.pre_operations()
-        condition_0 = has_value(self.ctx.args.resource_group) and has_value(self.ctx.subscription_id)
-        condition_1 = has_value(self.ctx.subscription_id) and has_value(self.ctx.args.resource_group) is not True
+        condition_0 = has_value(self.ctx.subscription_id) and has_value(self.ctx.args.resource_group) is not True
+        condition_1 = has_value(self.ctx.args.resource_group) and has_value(self.ctx.subscription_id)
         if condition_0:
-            self.VirtualMachinesListByResourceGroup(ctx=self.ctx)()
-        if condition_1:
             self.VirtualMachinesListBySubscription(ctx=self.ctx)()
+        if condition_1:
+            self.VirtualMachinesListByResourceGroup(ctx=self.ctx)()
         self.post_operations()
 
     @register_callback
@@ -76,7 +84,7 @@ class List(AAZCommand):
         next_link = self.deserialize_output(self.ctx.vars.instance.next_link)
         return result, next_link
 
-    class VirtualMachinesListByResourceGroup(AAZHttpOperation):
+    class VirtualMachinesListBySubscription(AAZHttpOperation):
         CLIENT_TYPE = "MgmtClient"
 
         def __call__(self, *args, **kwargs):
@@ -90,7 +98,7 @@ class List(AAZCommand):
         @property
         def url(self):
             return self.client.format_url(
-                "/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.NetworkCloud/virtualMachines",
+                "/subscriptions/{subscriptionId}/providers/Microsoft.NetworkCloud/virtualMachines",
                 **self.url_parameters
             )
 
@@ -106,10 +114,6 @@ class List(AAZCommand):
         def url_parameters(self):
             parameters = {
                 **self.serialize_url_param(
-                    "resourceGroupName", self.ctx.args.resource_group,
-                    required=True,
-                ),
-                **self.serialize_url_param(
                     "subscriptionId", self.ctx.subscription_id,
                     required=True,
                 ),
@@ -120,7 +124,13 @@ class List(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-10-01-preview",
+                    "$skipToken", self.ctx.args.skip_token,
+                ),
+                **self.serialize_query_param(
+                    "$top", self.ctx.args.top,
+                ),
+                **self.serialize_query_param(
+                    "api-version", "2026-05-01-preview",
                     required=True,
                 ),
             }
@@ -156,12 +166,17 @@ class List(AAZCommand):
             _schema_on_200.next_link = AAZStrType(
                 serialized_name="nextLink",
             )
-            _schema_on_200.value = AAZListType()
+            _schema_on_200.value = AAZListType(
+                flags={"required": True},
+            )
 
             value = cls._schema_on_200.value
             value.Element = AAZObjectType()
 
             _element = cls._schema_on_200.value.Element
+            _element.etag = AAZStrType(
+                flags={"read_only": True},
+            )
             _element.extended_location = AAZObjectType(
                 serialized_name="extendedLocation",
                 flags={"required": True},
@@ -169,6 +184,7 @@ class List(AAZCommand):
             _element.id = AAZStrType(
                 flags={"read_only": True},
             )
+            _element.identity = AAZIdentityObjectType()
             _element.location = AAZStrType(
                 flags={"required": True},
             )
@@ -195,6 +211,37 @@ class List(AAZCommand):
                 flags={"required": True},
             )
 
+            identity = cls._schema_on_200.value.Element.identity
+            identity.principal_id = AAZStrType(
+                serialized_name="principalId",
+                flags={"read_only": True},
+            )
+            identity.tenant_id = AAZStrType(
+                serialized_name="tenantId",
+                flags={"read_only": True},
+            )
+            identity.type = AAZStrType(
+                flags={"required": True},
+            )
+            identity.user_assigned_identities = AAZDictType(
+                serialized_name="userAssignedIdentities",
+            )
+
+            user_assigned_identities = cls._schema_on_200.value.Element.identity.user_assigned_identities
+            user_assigned_identities.Element = AAZObjectType(
+                nullable=True,
+            )
+
+            _element = cls._schema_on_200.value.Element.identity.user_assigned_identities.Element
+            _element.client_id = AAZStrType(
+                serialized_name="clientId",
+                flags={"read_only": True},
+            )
+            _element.principal_id = AAZStrType(
+                serialized_name="principalId",
+                flags={"read_only": True},
+            )
+
             properties = cls._schema_on_200.value.Element.properties
             properties.admin_username = AAZStrType(
                 serialized_name="adminUsername",
@@ -218,6 +265,9 @@ class List(AAZCommand):
             properties.cluster_id = AAZStrType(
                 serialized_name="clusterId",
                 flags={"read_only": True},
+            )
+            properties.console_extended_location = AAZObjectType(
+                serialized_name="consoleExtendedLocation",
             )
             properties.cpu_cores = AAZIntType(
                 serialized_name="cpuCores",
@@ -244,6 +294,10 @@ class List(AAZCommand):
             properties.network_data = AAZStrType(
                 serialized_name="networkData",
             )
+            properties.network_data_content = AAZStrType(
+                serialized_name="networkDataContent",
+                flags={"secret": True},
+            )
             properties.placement_hints = AAZListType(
                 serialized_name="placementHints",
             )
@@ -264,6 +318,10 @@ class List(AAZCommand):
             )
             properties.user_data = AAZStrType(
                 serialized_name="userData",
+            )
+            properties.user_data_content = AAZStrType(
+                serialized_name="userDataContent",
+                flags={"secret": True},
             )
             properties.virtio_interface = AAZStrType(
                 serialized_name="virtioInterface",
@@ -306,6 +364,14 @@ class List(AAZCommand):
             )
             cloud_services_network_attachment.network_attachment_name = AAZStrType(
                 serialized_name="networkAttachmentName",
+            )
+
+            console_extended_location = cls._schema_on_200.value.Element.properties.console_extended_location
+            console_extended_location.name = AAZStrType(
+                flags={"required": True},
+            )
+            console_extended_location.type = AAZStrType(
+                flags={"required": True},
             )
 
             network_attachments = cls._schema_on_200.value.Element.properties.network_attachments
@@ -430,7 +496,7 @@ class List(AAZCommand):
 
             return cls._schema_on_200
 
-    class VirtualMachinesListBySubscription(AAZHttpOperation):
+    class VirtualMachinesListByResourceGroup(AAZHttpOperation):
         CLIENT_TYPE = "MgmtClient"
 
         def __call__(self, *args, **kwargs):
@@ -444,7 +510,7 @@ class List(AAZCommand):
         @property
         def url(self):
             return self.client.format_url(
-                "/subscriptions/{subscriptionId}/providers/Microsoft.NetworkCloud/virtualMachines",
+                "/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.NetworkCloud/virtualMachines",
                 **self.url_parameters
             )
 
@@ -460,6 +526,10 @@ class List(AAZCommand):
         def url_parameters(self):
             parameters = {
                 **self.serialize_url_param(
+                    "resourceGroupName", self.ctx.args.resource_group,
+                    required=True,
+                ),
+                **self.serialize_url_param(
                     "subscriptionId", self.ctx.subscription_id,
                     required=True,
                 ),
@@ -470,7 +540,13 @@ class List(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-10-01-preview",
+                    "$skipToken", self.ctx.args.skip_token,
+                ),
+                **self.serialize_query_param(
+                    "$top", self.ctx.args.top,
+                ),
+                **self.serialize_query_param(
+                    "api-version", "2026-05-01-preview",
                     required=True,
                 ),
             }
@@ -506,12 +582,17 @@ class List(AAZCommand):
             _schema_on_200.next_link = AAZStrType(
                 serialized_name="nextLink",
             )
-            _schema_on_200.value = AAZListType()
+            _schema_on_200.value = AAZListType(
+                flags={"required": True},
+            )
 
             value = cls._schema_on_200.value
             value.Element = AAZObjectType()
 
             _element = cls._schema_on_200.value.Element
+            _element.etag = AAZStrType(
+                flags={"read_only": True},
+            )
             _element.extended_location = AAZObjectType(
                 serialized_name="extendedLocation",
                 flags={"required": True},
@@ -519,6 +600,7 @@ class List(AAZCommand):
             _element.id = AAZStrType(
                 flags={"read_only": True},
             )
+            _element.identity = AAZIdentityObjectType()
             _element.location = AAZStrType(
                 flags={"required": True},
             )
@@ -545,6 +627,37 @@ class List(AAZCommand):
                 flags={"required": True},
             )
 
+            identity = cls._schema_on_200.value.Element.identity
+            identity.principal_id = AAZStrType(
+                serialized_name="principalId",
+                flags={"read_only": True},
+            )
+            identity.tenant_id = AAZStrType(
+                serialized_name="tenantId",
+                flags={"read_only": True},
+            )
+            identity.type = AAZStrType(
+                flags={"required": True},
+            )
+            identity.user_assigned_identities = AAZDictType(
+                serialized_name="userAssignedIdentities",
+            )
+
+            user_assigned_identities = cls._schema_on_200.value.Element.identity.user_assigned_identities
+            user_assigned_identities.Element = AAZObjectType(
+                nullable=True,
+            )
+
+            _element = cls._schema_on_200.value.Element.identity.user_assigned_identities.Element
+            _element.client_id = AAZStrType(
+                serialized_name="clientId",
+                flags={"read_only": True},
+            )
+            _element.principal_id = AAZStrType(
+                serialized_name="principalId",
+                flags={"read_only": True},
+            )
+
             properties = cls._schema_on_200.value.Element.properties
             properties.admin_username = AAZStrType(
                 serialized_name="adminUsername",
@@ -568,6 +681,9 @@ class List(AAZCommand):
             properties.cluster_id = AAZStrType(
                 serialized_name="clusterId",
                 flags={"read_only": True},
+            )
+            properties.console_extended_location = AAZObjectType(
+                serialized_name="consoleExtendedLocation",
             )
             properties.cpu_cores = AAZIntType(
                 serialized_name="cpuCores",
@@ -594,6 +710,10 @@ class List(AAZCommand):
             properties.network_data = AAZStrType(
                 serialized_name="networkData",
             )
+            properties.network_data_content = AAZStrType(
+                serialized_name="networkDataContent",
+                flags={"secret": True},
+            )
             properties.placement_hints = AAZListType(
                 serialized_name="placementHints",
             )
@@ -614,6 +734,10 @@ class List(AAZCommand):
             )
             properties.user_data = AAZStrType(
                 serialized_name="userData",
+            )
+            properties.user_data_content = AAZStrType(
+                serialized_name="userDataContent",
+                flags={"secret": True},
             )
             properties.virtio_interface = AAZStrType(
                 serialized_name="virtioInterface",
@@ -656,6 +780,14 @@ class List(AAZCommand):
             )
             cloud_services_network_attachment.network_attachment_name = AAZStrType(
                 serialized_name="networkAttachmentName",
+            )
+
+            console_extended_location = cls._schema_on_200.value.Element.properties.console_extended_location
+            console_extended_location.name = AAZStrType(
+                flags={"required": True},
+            )
+            console_extended_location.type = AAZStrType(
+                flags={"required": True},
             )
 
             network_attachments = cls._schema_on_200.value.Element.properties.network_attachments

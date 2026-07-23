@@ -15,16 +15,13 @@ from azure.cli.core.aaz import *
     "storage-mover job-run show",
 )
 class Show(AAZCommand):
-    """Gets a Job Run resource.
-
-    :example: job-run show
-        az storage-mover job-run show -n {job_name} -g {rg} --job-definition-name {job_definition} --project-name {project_name} --storage-mover-name {mover_name}
+    """Get a Job Run resource.
     """
 
     _aaz_info = {
-        "version": "2023-10-01",
+        "version": "2025-12-01",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.storagemover/storagemovers/{}/projects/{}/jobdefinitions/{}/jobruns/{}", "2023-10-01"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.storagemover/storagemovers/{}/projects/{}/jobdefinitions/{}/jobruns/{}", "2025-12-01"],
         ]
     }
 
@@ -70,6 +67,9 @@ class Show(AAZCommand):
             help="The name of the Storage Mover resource.",
             required=True,
             id_part="name",
+            fmt=AAZStrArgFormat(
+                pattern="^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$",
+            ),
         )
         return cls._args_schema
 
@@ -150,7 +150,7 @@ class Show(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-10-01",
+                    "api-version", "2025-12-01",
                     required=True,
                 ),
             }
@@ -233,7 +233,9 @@ class Show(AAZCommand):
                 serialized_name="bytesUnsupported",
                 flags={"read_only": True},
             )
-            properties.error = AAZObjectType()
+            properties.error = AAZObjectType(
+                flags={"read_only": True},
+            )
             properties.execution_end_time = AAZStrType(
                 serialized_name="executionEndTime",
                 flags={"read_only": True},
@@ -266,6 +268,10 @@ class Show(AAZCommand):
                 serialized_name="itemsUnsupported",
                 flags={"read_only": True},
             )
+            properties.job_definition_properties = AAZAnyType(
+                serialized_name="jobDefinitionProperties",
+                flags={"read_only": True},
+            )
             properties.last_status_update = AAZStrType(
                 serialized_name="lastStatusUpdate",
                 flags={"read_only": True},
@@ -278,8 +284,16 @@ class Show(AAZCommand):
                 serialized_name="scanStatus",
                 flags={"read_only": True},
             )
+            properties.scheduled_execution_time = AAZStrType(
+                serialized_name="scheduledExecutionTime",
+                flags={"read_only": True},
+            )
             properties.source_name = AAZStrType(
                 serialized_name="sourceName",
+                flags={"read_only": True},
+            )
+            properties.source_properties = AAZAnyType(
+                serialized_name="sourceProperties",
                 flags={"read_only": True},
             )
             properties.source_resource_id = AAZStrType(
@@ -293,8 +307,19 @@ class Show(AAZCommand):
                 serialized_name="targetName",
                 flags={"read_only": True},
             )
+            properties.target_properties = AAZAnyType(
+                serialized_name="targetProperties",
+                flags={"read_only": True},
+            )
             properties.target_resource_id = AAZStrType(
                 serialized_name="targetResourceId",
+                flags={"read_only": True},
+            )
+            properties.trigger_type = AAZStrType(
+                serialized_name="triggerType",
+                flags={"read_only": True},
+            )
+            properties.warnings = AAZListType(
                 flags={"read_only": True},
             )
 
@@ -302,6 +327,14 @@ class Show(AAZCommand):
             error.code = AAZStrType()
             error.message = AAZStrType()
             error.target = AAZStrType()
+
+            warnings = cls._schema_on_200.properties.warnings
+            warnings.Element = AAZObjectType()
+
+            _element = cls._schema_on_200.properties.warnings.Element
+            _element.code = AAZStrType()
+            _element.message = AAZStrType()
+            _element.target = AAZStrType()
 
             system_data = cls._schema_on_200.system_data
             system_data.created_at = AAZStrType(

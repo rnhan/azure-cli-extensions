@@ -15,16 +15,16 @@ from azure.cli.core.aaz import *
     "new-relic monitor vm-host-payload",
 )
 class VmHostPayload(AAZCommand):
-    """Returns the payload that needs to be passed in the request body for installing NewRelic agent on a VM.
+    """Returns the payload that needs to be passed in the request body for installing the New Relic agent on a VM, providing the necessary configuration details.
 
     :example: Get MonitorsVmHostPayload.
         az monitor vm-host-payload --monitor-name MyNewRelicMonitor --resource-group MyResourceGroup
     """
 
     _aaz_info = {
-        "version": "2022-07-01",
+        "version": "2024-01-01",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/newrelic.observability/monitors/{}/vmhostpayloads", "2022-07-01"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/newrelic.observability/monitors/{}/vmhostpayloads", "2024-01-01"],
         ]
     }
 
@@ -46,11 +46,12 @@ class VmHostPayload(AAZCommand):
         _args_schema = cls._args_schema
         _args_schema.monitor_name = AAZStrArg(
             options=["--monitor-name"],
-            help="Name of the Monitors resource",
+            help="Name of the Monitoring resource",
             required=True,
             id_part="name",
         )
         _args_schema.resource_group = AAZResourceGroupNameArg(
+            help="Name of resource group. You can configure the default group using `az configure --defaults group=<name>`.",
             required=True,
         )
         return cls._args_schema
@@ -120,7 +121,7 @@ class VmHostPayload(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2022-07-01",
+                    "api-version", "2024-01-01",
                     required=True,
                 ),
             }

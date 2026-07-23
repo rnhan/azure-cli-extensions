@@ -20,7 +20,7 @@ class Wait(AAZWaitCommand):
 
     _aaz_info = {
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.managednetworkfabric/networkfabriccontrollers/{}", "2023-06-15"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.managednetworkfabric/networkfabriccontrollers/{}", "2026-01-15-preview"],
         ]
     }
 
@@ -45,9 +45,11 @@ class Wait(AAZWaitCommand):
             help="Name of the Network Fabric Controller.",
             required=True,
             id_part="name",
+            fmt=AAZStrArgFormat(
+                pattern="^[a-zA-Z]{1}[a-zA-Z0-9-_]{2,127}$",
+            ),
         )
         _args_schema.resource_group = AAZResourceGroupNameArg(
-            help="Name of the resource group",
             required=True,
         )
         return cls._args_schema
@@ -117,7 +119,7 @@ class Wait(AAZWaitCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-06-15",
+                    "api-version", "2026-01-15-preview",
                     required=True,
                 ),
             }
@@ -153,6 +155,7 @@ class Wait(AAZWaitCommand):
             _schema_on_200.id = AAZStrType(
                 flags={"read_only": True},
             )
+            _schema_on_200.identity = AAZIdentityObjectType()
             _schema_on_200.location = AAZStrType(
                 flags={"required": True},
             )
@@ -168,6 +171,37 @@ class Wait(AAZWaitCommand):
             )
             _schema_on_200.tags = AAZDictType()
             _schema_on_200.type = AAZStrType(
+                flags={"read_only": True},
+            )
+
+            identity = cls._schema_on_200.identity
+            identity.principal_id = AAZStrType(
+                serialized_name="principalId",
+                flags={"read_only": True},
+            )
+            identity.tenant_id = AAZStrType(
+                serialized_name="tenantId",
+                flags={"read_only": True},
+            )
+            identity.type = AAZStrType(
+                flags={"required": True},
+            )
+            identity.user_assigned_identities = AAZDictType(
+                serialized_name="userAssignedIdentities",
+            )
+
+            user_assigned_identities = cls._schema_on_200.identity.user_assigned_identities
+            user_assigned_identities.Element = AAZObjectType(
+                nullable=True,
+            )
+
+            _element = cls._schema_on_200.identity.user_assigned_identities.Element
+            _element.client_id = AAZStrType(
+                serialized_name="clientId",
+                flags={"read_only": True},
+            )
+            _element.principal_id = AAZStrType(
+                serialized_name="principalId",
                 flags={"read_only": True},
             )
 
@@ -190,6 +224,10 @@ class Wait(AAZWaitCommand):
             properties.is_workload_management_network_enabled = AAZStrType(
                 serialized_name="isWorkloadManagementNetworkEnabled",
             )
+            properties.last_operation = AAZObjectType(
+                serialized_name="lastOperation",
+                flags={"read_only": True},
+            )
             properties.managed_resource_group_configuration = AAZObjectType(
                 serialized_name="managedResourceGroupConfiguration",
             )
@@ -200,6 +238,10 @@ class Wait(AAZWaitCommand):
             properties.nfc_sku = AAZStrType(
                 serialized_name="nfcSku",
             )
+            properties.operational_state = AAZStrType(
+                serialized_name="operationalState",
+                flags={"read_only": True},
+            )
             properties.provisioning_state = AAZStrType(
                 serialized_name="provisioningState",
                 flags={"read_only": True},
@@ -208,12 +250,11 @@ class Wait(AAZWaitCommand):
                 serialized_name="tenantInternetGatewayIds",
                 flags={"read_only": True},
             )
+            properties.vm_profile = AAZObjectType(
+                serialized_name="vmProfile",
+            )
             properties.workload_express_route_connections = AAZListType(
                 serialized_name="workloadExpressRouteConnections",
-            )
-            properties.workload_management_network = AAZBoolType(
-                serialized_name="workloadManagementNetwork",
-                flags={"read_only": True},
             )
             properties.workload_services = AAZObjectType(
                 serialized_name="workloadServices",
@@ -225,15 +266,30 @@ class Wait(AAZWaitCommand):
             infrastructure_express_route_connections.Element = AAZObjectType()
             _WaitHelper._build_schema_express_route_connection_information_read(infrastructure_express_route_connections.Element)
 
+            last_operation = cls._schema_on_200.properties.last_operation
+            last_operation.details = AAZStrType(
+                flags={"read_only": True},
+            )
+
             managed_resource_group_configuration = cls._schema_on_200.properties.managed_resource_group_configuration
             managed_resource_group_configuration.location = AAZStrType()
             managed_resource_group_configuration.name = AAZStrType()
 
             network_fabric_ids = cls._schema_on_200.properties.network_fabric_ids
-            network_fabric_ids.Element = AAZStrType()
+            network_fabric_ids.Element = AAZStrType(
+                nullable=True,
+            )
 
             tenant_internet_gateway_ids = cls._schema_on_200.properties.tenant_internet_gateway_ids
-            tenant_internet_gateway_ids.Element = AAZStrType()
+            tenant_internet_gateway_ids.Element = AAZStrType(
+                nullable=True,
+            )
+
+            vm_profile = cls._schema_on_200.properties.vm_profile
+            vm_profile.vm_sku_name = AAZStrType(
+                serialized_name="vmSkuName",
+                flags={"required": True},
+            )
 
             workload_express_route_connections = cls._schema_on_200.properties.workload_express_route_connections
             workload_express_route_connections.Element = AAZObjectType()
@@ -312,11 +368,12 @@ class _WaitHelper:
         express_route_connection_information_read = _schema_express_route_connection_information_read
         express_route_connection_information_read.express_route_authorization_key = AAZStrType(
             serialized_name="expressRouteAuthorizationKey",
-            flags={"required": True, "secret": True},
+            flags={"secret": True},
         )
         express_route_connection_information_read.express_route_circuit_id = AAZStrType(
             serialized_name="expressRouteCircuitId",
             flags={"required": True},
+            nullable=True,
         )
 
         _schema.express_route_authorization_key = cls._schema_express_route_connection_information_read.express_route_authorization_key

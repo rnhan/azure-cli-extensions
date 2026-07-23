@@ -127,6 +127,11 @@ helps['vmware private-cloud disable-cmk-encryption'] = """
     short-summary: Disable a Customer Managed Keys Encryption from a private cloud.
 """
 
+helps['vmware private-cloud delete-vcf-license'] = """
+    type: command
+    short-summary: Delete the VCF license from a private cloud.
+"""
+
 helps['vmware private-cloud identity'] = """
     type: group
     short-summary: Commands for Managed Identity in a private cloud.
@@ -205,7 +210,7 @@ helps['vmware private-cloud rotate-nsxt-password'] = """
     short-summary: Rotate the NSX-T Manager password.
     examples:
     - name: Rotate the NSX-T Manager password.
-      text: az vmware private-cloud rotate-nsxt-password
+      text: az vmware private-cloud rotate-nsxt-password --resource-group MyResourceGroup --private-cloud MyPrivateCloud
 """
 
 helps['vmware authorization create'] = """
@@ -274,7 +279,7 @@ helps['vmware datastore create'] = """
 
 helps['vmware datastore netapp-volume'] = """
     type: group
-    short-summary: Create a new Microsoft.NetApp provided NetApp volume in a private cloud cluster.
+    short-summary: Manage NetApp volume resource.
 """
 
 helps['vmware datastore netapp-volume create'] = """
@@ -287,7 +292,7 @@ helps['vmware datastore netapp-volume create'] = """
 
 helps['vmware datastore disk-pool-volume'] = """
     type: group
-    short-summary: Create a VMFS datastore in a private cloud cluster using Microsoft.StoragePool provided iSCSI target.
+    short-summary: Manage disk pool volume resource.
 """
 
 helps['vmware datastore disk-pool-volume create'] = """
@@ -296,6 +301,32 @@ helps['vmware datastore disk-pool-volume create'] = """
     examples:
     - name: Create a new Microsoft.StoragePool provided disk pool based iSCSI datastore.
       text: az vmware datastore disk-pool-volume create --name iSCSIDatastore1 --resource-group MyResourceGroup --cluster Cluster-1 --private-cloud MyPrivateCloud --target-id /subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/ResourceGroup1/providers/Microsoft.StoragePool/diskPools/mpio-diskpool/iscsiTargets/mpio-iscsi-target --lun-name lun0
+"""
+
+helps['vmware datastore elastic-san-volume'] = """
+    type: group
+    short-summary: Manage Elastic SAN volume resource.
+"""
+
+helps['vmware datastore elastic-san-volume create'] = """
+    type: command
+    short-summary: Create an Elastic SAN volume in a private cloud cluster using Microsoft.ElasticSan provider.
+    examples:
+    - name: Create a new Microsoft.ElasticSan provided Elastic SAN volume based datastore.
+      text: az vmware datastore elastic-san-volume create --name ElasticSANDatastore --resource-group MyResourceGroup --cluster Cluster-1 --private-cloud MyPrivateCloud --elastic-san-volume elasticsan
+"""
+
+helps['vmware datastore pure-storage-volume'] = """
+    type: group
+    short-summary: Manage Pure Storage volume resource.
+"""
+
+helps['vmware datastore pure-storage-volume create'] = """
+    type: command
+    short-summary: Create a Pure Storage volume in a private cloud cluster using PureStorage.Block provider.
+    examples:
+    - name: Create a new PureStorage.Block provided Pure Storage volume based datastore.
+      text: az vmware datastore pure-storage-volume create --name PureStorageDatastore --resource-group MyResourceGroup --cluster Cluster-1 --private-cloud MyPrivateCloud --storage-pool-id "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/ResourceGroup1/providers/PureStorage.Block/storagePools/storagePool1" --size-gb 64
 """
 
 helps['vmware datastore show'] = """

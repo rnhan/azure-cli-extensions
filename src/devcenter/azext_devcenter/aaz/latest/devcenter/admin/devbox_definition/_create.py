@@ -22,9 +22,9 @@ class Create(AAZCommand):
     """
 
     _aaz_info = {
-        "version": "2023-10-01-preview",
+        "version": "2025-10-01-preview",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.devcenter/devcenters/{}/devboxdefinitions/{}", "2023-10-01-preview"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.devcenter/devcenters/{}/devboxdefinitions/{}", "2025-10-01-preview"],
         ]
     }
 
@@ -94,7 +94,6 @@ class Create(AAZCommand):
         _args_schema = cls._args_schema
         _args_schema.hibernate_support = AAZStrArg(
             options=["--hibernate-support"],
-            is_preview=True,
             arg_group="Properties",
             help="Indicates whether dev boxes created with this definition are capable of hibernation. Not all images are capable of supporting hibernation. To find out more see https://aka.ms/devbox/hibernate",
             enum={"Disabled": "Disabled", "Enabled": "Enabled"},
@@ -203,7 +202,7 @@ class Create(AAZCommand):
 
         @property
         def error_format(self):
-            return "ODataV4Format"
+            return "MgmtErrorFormat"
 
         @property
         def url_parameters(self):
@@ -231,7 +230,7 @@ class Create(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-10-01-preview",
+                    "api-version", "2025-10-01-preview",
                     required=True,
                 ),
             }
@@ -327,6 +326,7 @@ class Create(AAZCommand):
             properties = cls._schema_on_200_201.properties
             properties.active_image_reference = AAZObjectType(
                 serialized_name="activeImageReference",
+                flags={"read_only": True},
             )
             _CreateHelper._build_schema_image_reference_read(properties.active_image_reference)
             properties.hibernate_support = AAZStrType(
@@ -339,9 +339,11 @@ class Create(AAZCommand):
             _CreateHelper._build_schema_image_reference_read(properties.image_reference)
             properties.image_validation_error_details = AAZObjectType(
                 serialized_name="imageValidationErrorDetails",
+                flags={"read_only": True},
             )
             properties.image_validation_status = AAZStrType(
                 serialized_name="imageValidationStatus",
+                flags={"read_only": True},
             )
             properties.os_storage_type = AAZStrType(
                 serialized_name="osStorageType",
@@ -355,6 +357,7 @@ class Create(AAZCommand):
             )
             properties.validation_status = AAZStrType(
                 serialized_name="validationStatus",
+                flags={"read_only": True},
             )
 
             image_validation_error_details = cls._schema_on_200_201.properties.image_validation_error_details

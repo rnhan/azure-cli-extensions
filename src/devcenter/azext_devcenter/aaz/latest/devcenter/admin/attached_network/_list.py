@@ -25,10 +25,10 @@ class List(AAZCommand):
     """
 
     _aaz_info = {
-        "version": "2023-10-01-preview",
+        "version": "2025-10-01-preview",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.devcenter/devcenters/{}/attachednetworks", "2023-10-01-preview"],
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.devcenter/projects/{}/attachednetworks", "2023-10-01-preview"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.devcenter/devcenters/{}/attachednetworks", "2025-10-01-preview"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.devcenter/projects/{}/attachednetworks", "2025-10-01-preview"],
         ]
     }
 
@@ -74,12 +74,12 @@ class List(AAZCommand):
 
     def _execute_operations(self):
         self.pre_operations()
-        condition_0 = has_value(self.ctx.args.project_name) and has_value(self.ctx.args.resource_group) and has_value(self.ctx.subscription_id)
-        condition_1 = has_value(self.ctx.args.dev_center_name) and has_value(self.ctx.args.resource_group) and has_value(self.ctx.subscription_id)
+        condition_0 = has_value(self.ctx.args.dev_center_name) and has_value(self.ctx.args.resource_group) and has_value(self.ctx.subscription_id)
+        condition_1 = has_value(self.ctx.args.project_name) and has_value(self.ctx.args.resource_group) and has_value(self.ctx.subscription_id)
         if condition_0:
-            self.AttachedNetworksListByProject(ctx=self.ctx)()
-        if condition_1:
             self.AttachedNetworksListByDevCenter(ctx=self.ctx)()
+        if condition_1:
+            self.AttachedNetworksListByProject(ctx=self.ctx)()
         self.post_operations()
 
     @register_callback
@@ -95,7 +95,7 @@ class List(AAZCommand):
         next_link = self.deserialize_output(self.ctx.vars.instance.next_link)
         return result, next_link
 
-    class AttachedNetworksListByProject(AAZHttpOperation):
+    class AttachedNetworksListByDevCenter(AAZHttpOperation):
         CLIENT_TYPE = "MgmtClient"
 
         def __call__(self, *args, **kwargs):
@@ -109,7 +109,7 @@ class List(AAZCommand):
         @property
         def url(self):
             return self.client.format_url(
-                "/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.DevCenter/projects/{projectName}/attachednetworks",
+                "/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.DevCenter/devcenters/{devCenterName}/attachednetworks",
                 **self.url_parameters
             )
 
@@ -119,13 +119,13 @@ class List(AAZCommand):
 
         @property
         def error_format(self):
-            return "ODataV4Format"
+            return "MgmtErrorFormat"
 
         @property
         def url_parameters(self):
             parameters = {
                 **self.serialize_url_param(
-                    "projectName", self.ctx.args.project_name,
+                    "devCenterName", self.ctx.args.dev_center_name,
                     required=True,
                 ),
                 **self.serialize_url_param(
@@ -143,7 +143,7 @@ class List(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-10-01-preview",
+                    "api-version", "2025-10-01-preview",
                     required=True,
                 ),
             }
@@ -208,9 +208,11 @@ class List(AAZCommand):
             properties = cls._schema_on_200.value.Element.properties
             properties.domain_join_type = AAZStrType(
                 serialized_name="domainJoinType",
+                flags={"read_only": True},
             )
             properties.health_check_status = AAZStrType(
                 serialized_name="healthCheckStatus",
+                flags={"read_only": True},
             )
             properties.network_connection_id = AAZStrType(
                 serialized_name="networkConnectionId",
@@ -247,7 +249,7 @@ class List(AAZCommand):
 
             return cls._schema_on_200
 
-    class AttachedNetworksListByDevCenter(AAZHttpOperation):
+    class AttachedNetworksListByProject(AAZHttpOperation):
         CLIENT_TYPE = "MgmtClient"
 
         def __call__(self, *args, **kwargs):
@@ -261,7 +263,7 @@ class List(AAZCommand):
         @property
         def url(self):
             return self.client.format_url(
-                "/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.DevCenter/devcenters/{devCenterName}/attachednetworks",
+                "/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.DevCenter/projects/{projectName}/attachednetworks",
                 **self.url_parameters
             )
 
@@ -271,13 +273,13 @@ class List(AAZCommand):
 
         @property
         def error_format(self):
-            return "ODataV4Format"
+            return "MgmtErrorFormat"
 
         @property
         def url_parameters(self):
             parameters = {
                 **self.serialize_url_param(
-                    "devCenterName", self.ctx.args.dev_center_name,
+                    "projectName", self.ctx.args.project_name,
                     required=True,
                 ),
                 **self.serialize_url_param(
@@ -295,7 +297,7 @@ class List(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-10-01-preview",
+                    "api-version", "2025-10-01-preview",
                     required=True,
                 ),
             }
@@ -360,9 +362,11 @@ class List(AAZCommand):
             properties = cls._schema_on_200.value.Element.properties
             properties.domain_join_type = AAZStrType(
                 serialized_name="domainJoinType",
+                flags={"read_only": True},
             )
             properties.health_check_status = AAZStrType(
                 serialized_name="healthCheckStatus",
+                flags={"read_only": True},
             )
             properties.network_connection_id = AAZStrType(
                 serialized_name="networkConnectionId",

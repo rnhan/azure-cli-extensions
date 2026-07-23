@@ -12,13 +12,13 @@ from azure.cli.core.aaz import *
 
 
 class Create(AAZCommand):
-    """Create a addon in a private cloud
+    """Create an addon in a private cloud
     """
 
     _aaz_info = {
-        "version": "2023-03-01",
+        "version": "2025-09-01",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.avs/privateclouds/{}/addons/{}", "2023-03-01"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.avs/privateclouds/{}/addons/{}", "2025-09-01"],
         ]
     }
 
@@ -44,13 +44,16 @@ class Create(AAZCommand):
             help="Name of the addon for the private cloud",
             required=True,
             fmt=AAZStrArgFormat(
-                pattern="^[-\w\._]+$",
+                pattern="^[-\\w\\._]+$",
             ),
         )
         _args_schema.private_cloud = AAZStrArg(
             options=["-c", "--private-cloud"],
             help="Name of the private cloud",
             required=True,
+            fmt=AAZStrArgFormat(
+                pattern="^[-\\w\\._]+$",
+            ),
         )
         _args_schema.resource_group = AAZResourceGroupNameArg(
             required=True,
@@ -77,28 +80,34 @@ class Create(AAZCommand):
         _args_schema.vr = AAZObjectArg(
             options=["--vr"],
             arg_group="Properties",
-            help="a vSphere Replication (VR) addon for a private cloud",
+            help="a vSphere Replication (VR) addon for a private cloud.",
         )
 
         arc = cls._args_schema.arc
         arc.vcenter = AAZStrArg(
             options=["vcenter"],
             help="The VMware vCenter resource ID",
-            required=True,
         )
 
         hcx = cls._args_schema.hcx
+        hcx.management_network = AAZStrArg(
+            options=["management-network"],
+            help="HCX management network.",
+        )
         hcx.offer = AAZStrArg(
             options=["offer"],
             help="The HCX offer, example VMware MaaS Cloud Provider (Enterprise)",
             required=True,
+        )
+        hcx.uplink_network = AAZStrArg(
+            options=["uplink-network"],
+            help="HCX uplink network",
         )
 
         srm = cls._args_schema.srm
         srm.license_key = AAZStrArg(
             options=["license-key"],
             help="The Site Recovery Manager (SRM) license",
-            required=True,
         )
 
         vr = cls._args_schema.vr
@@ -194,7 +203,7 @@ class Create(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-03-01",
+                    "api-version", "2025-09-01",
                     required=True,
                 ),
             }
@@ -219,7 +228,7 @@ class Create(AAZCommand):
                 typ=AAZObjectType,
                 typ_kwargs={"flags": {"required": True, "client_flatten": True}}
             )
-            _builder.set_prop("properties", AAZObjectType)
+            _builder.set_prop("properties", AAZObjectType, typ_kwargs={"flags": {"client_flatten": True}})
 
             properties = _builder.get(".properties")
             if properties is not None:
@@ -234,15 +243,17 @@ class Create(AAZCommand):
 
             disc_arc = _builder.get(".properties{addonType:Arc}")
             if disc_arc is not None:
-                disc_arc.set_prop("vCenter", AAZStrType, ".arc.vcenter", typ_kwargs={"flags": {"required": True}})
+                disc_arc.set_prop("vCenter", AAZStrType, ".arc.vcenter")
 
             disc_hcx = _builder.get(".properties{addonType:HCX}")
             if disc_hcx is not None:
+                disc_hcx.set_prop("managementNetwork", AAZStrType, ".hcx.management_network")
                 disc_hcx.set_prop("offer", AAZStrType, ".hcx.offer", typ_kwargs={"flags": {"required": True}})
+                disc_hcx.set_prop("uplinkNetwork", AAZStrType, ".hcx.uplink_network")
 
             disc_srm = _builder.get(".properties{addonType:SRM}")
             if disc_srm is not None:
-                disc_srm.set_prop("licenseKey", AAZStrType, ".srm.license_key", typ_kwargs={"flags": {"required": True}})
+                disc_srm.set_prop("licenseKey", AAZStrType, ".srm.license_key")
 
             disc_vr = _builder.get(".properties{addonType:VR}")
             if disc_vr is not None:
@@ -274,7 +285,13 @@ class Create(AAZCommand):
             _schema_on_200_201.name = AAZStrType(
                 flags={"read_only": True},
             )
-            _schema_on_200_201.properties = AAZObjectType()
+            _schema_on_200_201.properties = AAZObjectType(
+                flags={"client_flatten": True},
+            )
+            _schema_on_200_201.system_data = AAZObjectType(
+                serialized_name="systemData",
+                flags={"read_only": True},
+            )
             _schema_on_200_201.type = AAZStrType(
                 flags={"read_only": True},
             )
@@ -292,24 +309,48 @@ class Create(AAZCommand):
             disc_arc = cls._schema_on_200_201.properties.discriminate_by("addon_type", "Arc")
             disc_arc.v_center = AAZStrType(
                 serialized_name="vCenter",
-                flags={"required": True},
             )
 
             disc_hcx = cls._schema_on_200_201.properties.discriminate_by("addon_type", "HCX")
+            disc_hcx.management_network = AAZStrType(
+                serialized_name="managementNetwork",
+            )
             disc_hcx.offer = AAZStrType(
                 flags={"required": True},
+            )
+            disc_hcx.uplink_network = AAZStrType(
+                serialized_name="uplinkNetwork",
             )
 
             disc_srm = cls._schema_on_200_201.properties.discriminate_by("addon_type", "SRM")
             disc_srm.license_key = AAZStrType(
                 serialized_name="licenseKey",
-                flags={"required": True},
             )
 
             disc_vr = cls._schema_on_200_201.properties.discriminate_by("addon_type", "VR")
             disc_vr.vrs_count = AAZIntType(
                 serialized_name="vrsCount",
                 flags={"required": True},
+            )
+
+            system_data = cls._schema_on_200_201.system_data
+            system_data.created_at = AAZStrType(
+                serialized_name="createdAt",
+            )
+            system_data.created_by = AAZStrType(
+                serialized_name="createdBy",
+            )
+            system_data.created_by_type = AAZStrType(
+                serialized_name="createdByType",
+            )
+            system_data.last_modified_at = AAZStrType(
+                serialized_name="lastModifiedAt",
+            )
+            system_data.last_modified_by = AAZStrType(
+                serialized_name="lastModifiedBy",
+            )
+            system_data.last_modified_by_type = AAZStrType(
+                serialized_name="lastModifiedByType",
             )
 
             return cls._schema_on_200_201

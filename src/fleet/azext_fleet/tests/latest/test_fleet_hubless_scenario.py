@@ -11,7 +11,7 @@ from azure.cli.testsdk.scenario_tests import AllowLargeResponse
 
 def _get_test_data_file(filename):
     curr_dir = os.path.dirname(os.path.realpath(__file__))
-    return os.path.join(curr_dir, 'data', filename)
+    return os.path.join(curr_dir, 'data', filename).replace('\\', '\\\\')
 
 
 class FleetHublessScenarioTest(ScenarioTest):
@@ -44,7 +44,7 @@ class FleetHublessScenarioTest(ScenarioTest):
         return pathname.replace('\\', '\\\\')
 
     @AllowLargeResponse(size_kb=9999)
-    @ResourceGroupPreparer(name_prefix='cli-', random_name_length=8)
+    @ResourceGroupPreparer(name_prefix='cli-', random_name_length=8, location='westcentralus')
     def test_fleet_hubless(self):
 
         self.kwargs.update({
@@ -52,8 +52,24 @@ class FleetHublessScenarioTest(ScenarioTest):
             'member_name': self.create_random_name(prefix='flmc-', length=9),
             'updaterun': self.create_random_name(prefix='uprn-', length=9),
             'updateStrategy_name': self.create_random_name(prefix='upstr-', length=10),
+            'autoupgradeprofile_name': self.create_random_name(prefix='aup-', length=10),
+            'autoupgradeprofile_name_TKV': self.create_random_name(prefix='aup-', length=10),
             'ssh_key_value': self.generate_ssh_keys(),
-            'stages_file': _get_test_data_file('stages.json')
+            'stages_file': _get_test_data_file('stages.json'),
+            'kubernetes_version': '1.33.0',
+            'target_kubernetes_version': '1.30',
+            'updaterun_stage_max_concurrency': 7,
+            'updaterun_group1_max_concurrency': 1,
+            'updaterun_group2_max_concurrency': 1,
+            'updaterun_stage_max_allowed_failures': 1,
+            'updaterun_group1_max_allowed_failures': 0,
+            'updaterun_group2_max_allowed_failures': 1,
+            'strategy_stage_max_concurrency': '7',
+            'strategy_group1_max_concurrency': '100%',
+            'strategy_group2_max_concurrency': '50%',
+            'strategy_stage_max_allowed_failures': '1',
+            'strategy_group1_max_allowed_failures': '0',
+            'strategy_group2_max_allowed_failures': '1'
         })
 
         self.cmd('fleet create -g {rg} -n {fleet_name}', checks=[
@@ -63,6 +79,11 @@ class FleetHublessScenarioTest(ScenarioTest):
         self.cmd('fleet wait -g {rg} --fleet-name {fleet_name} --created', checks=[self.is_empty()])
 
         self.cmd('fleet update -g {rg} -n {fleet_name} --tags foo=doo', checks=[
+            self.check('name', '{fleet_name}'),
+            self.check('tags.foo', 'doo')
+        ])
+
+        self.cmd('fleet reconcile -g {rg} -n {fleet_name}', checks=[
             self.check('name', '{fleet_name}'),
             self.check('tags.foo', 'doo')
         ])
@@ -87,13 +108,26 @@ class FleetHublessScenarioTest(ScenarioTest):
             'mc_id': mc_id,
         })
 
-        self.cmd('fleet member create -g {rg} --fleet-name {fleet_name} -n {member_name} --member-cluster-id {mc_id} --update-group group1', checks=[
+        self.cmd('fleet member create -g {rg} --fleet-name {fleet_name} -n {member_name} --member-cluster-id {mc_id} --update-group group1 --member-labels "team=fleet"', checks=[
             self.check('name', '{member_name}'),
             self.check('clusterResourceId', '{mc_id}'),
-            self.check('group', 'group1')
+            self.check('group', 'group1'),
+            self.check('labels.team', 'fleet')
         ])
 
         self.cmd('fleet member update -g {rg} --fleet-name {fleet_name} -n {member_name} --update-group group2', checks=[
+            self.check('group', 'group2')
+        ])
+
+        self.cmd('fleet member wait -g {rg} --fleet-name {fleet_name} --fleet-member-name {member_name} --updated', checks=[self.is_empty()])
+        self.cmd(
+            'aks wait -g {rg} -n {member_name} '
+            '--custom "provisioningState==\'Succeeded\'"',
+            checks=[self.is_empty()]
+        )
+
+        self.cmd('fleet member reconcile -g {rg} -f {fleet_name} -n {member_name}', checks=[
+            self.check('name', '{member_name}'),
             self.check('group', 'group2')
         ])
 
@@ -105,20 +139,40 @@ class FleetHublessScenarioTest(ScenarioTest):
             self.check('name', '{member_name}')
         ])
 
-        self.cmd('aks wait -g {rg} -n {member_name} --created', checks=[self.is_empty()])
+        self.cmd('fleet member wait -g {rg} --fleet-name {fleet_name} --fleet-member-name {member_name} --updated', checks=[self.is_empty()])
+        self.cmd('aks wait -g {rg} -n {member_name} --updated', checks=[self.is_empty()])
 
-        self.cmd('fleet updaterun create -g {rg} -n {updaterun} -f {fleet_name} --upgrade-type Full --node-image-selection Latest --kubernetes-version 1.27.1 --stages {stages_file}', checks=[
+        self.cmd('fleet updaterun create -g {rg} -n {updaterun} -f {fleet_name} --upgrade-type Full --node-image-selection Latest --kubernetes-version {kubernetes_version} --stages {stages_file}', checks=[
             self.check('name', '{updaterun}')
+        ])
+
+        self.cmd('fleet updaterun skip -g {rg} -n {updaterun} -f {fleet_name} --targets Group:group2', checks=[
+            self.check('status.stages[0].groups[1].status.state', 'Skipped')
         ])
 
         self.cmd('fleet updaterun delete -g {rg} -n {updaterun} -f {fleet_name} --yes')
 
-        update_strategy_name = self.cmd('fleet updatestrategy create -g {rg} -n {updateStrategy_name} -f {fleet_name} --stages {stages_file}', checks=[
+        update_strategy = self.cmd('fleet updatestrategy create -g {rg} -n {updateStrategy_name} -f {fleet_name} --stages {stages_file}', checks=[
             self.check('name', '{updateStrategy_name}')
-        ]).get_output_in_json()['id']
+        ]).get_output_in_json()
 
         self.cmd('fleet updatestrategy show -g {rg} -n {updateStrategy_name} -f {fleet_name}', checks=[
-            self.check('name', '{updateStrategy_name}')
+            self.check('name', '{updateStrategy_name}'),
+            self.check('strategy.stages[0].maxConcurrency', '{strategy_stage_max_concurrency}'),
+            self.check('strategy.stages[0].maxAllowedFailures', '{strategy_stage_max_allowed_failures}'),
+            self.check('strategy.stages[0].memberSelector.byLabel', 'team=fleet'),
+            self.check('strategy.stages[0].beforeGates[0].type', 'ScheduledStart'),
+            self.check('strategy.stages[0].afterGates[0].type', 'Approval'),
+            self.check('strategy.stages[0].groups[0].maxConcurrency', '{strategy_group1_max_concurrency}'),
+            self.check('strategy.stages[0].groups[0].maxAllowedFailures', '{strategy_group1_max_allowed_failures}'),
+            self.check('strategy.stages[0].groups[0].memberSelector', None),
+            self.check('strategy.stages[0].groups[0].beforeGates[0].type', 'ScheduledStart'),
+            self.check('strategy.stages[0].groups[0].afterGates[0].type', 'Approval'),
+            self.check('strategy.stages[0].groups[1].maxConcurrency', '{strategy_group2_max_concurrency}'),
+            self.check('strategy.stages[0].groups[1].maxAllowedFailures', '{strategy_group2_max_allowed_failures}'),
+            self.check('strategy.stages[0].groups[1].memberSelector.byLabel', 'team=fleet'),
+            self.check('strategy.stages[0].groups[1].beforeGates[0].type', 'Approval'),
+            self.check('strategy.stages[0].groups[1].afterGates[0].type', 'Approval')
         ])
 
         self.cmd('fleet updatestrategy list -g {rg} -f {fleet_name}', checks=[
@@ -126,10 +180,11 @@ class FleetHublessScenarioTest(ScenarioTest):
         ])
 
         self.kwargs.update({
-            'update_strategy_name': update_strategy_name,
+            'update_strategy_name': update_strategy['name'],
+            'update_strategy_id': update_strategy['id'],
         })
 
-        self.cmd('fleet updaterun create -g {rg} -n {updaterun} -f {fleet_name} --upgrade-type Full --node-image-selection Latest --kubernetes-version 1.27.1 --update-strategy-name {update_strategy_name}', checks=[
+        self.cmd('fleet updaterun create -g {rg} -n {updaterun} -f {fleet_name} --upgrade-type Full --node-image-selection Latest --kubernetes-version {kubernetes_version} --update-strategy-name {update_strategy_name}', checks=[
             self.check('name', '{updaterun}')
         ])
 
@@ -138,14 +193,81 @@ class FleetHublessScenarioTest(ScenarioTest):
         ])
 
         self.cmd('fleet updaterun show -g {rg} -n {updaterun} -f {fleet_name}', checks=[
-            self.check('name', '{updaterun}')
+            self.check('name', '{updaterun}'),
+            self.check('status.stages[0].maxConcurrency', '{updaterun_stage_max_concurrency}'),
+            self.check('status.stages[0].maxAllowedFailures', '{updaterun_stage_max_allowed_failures}'),
+            self.check('status.stages[0].groups[0].maxConcurrency', '{updaterun_group1_max_concurrency}'),
+            self.check('status.stages[0].groups[0].maxAllowedFailures', '{updaterun_group1_max_allowed_failures}'),
+            self.check('status.stages[0].groups[1].maxConcurrency', '{updaterun_group2_max_concurrency}'),
+            self.check('status.stages[0].groups[1].maxAllowedFailures', '{updaterun_group2_max_allowed_failures}'),
+            self.check('strategy.stages[0].memberSelector.byLabel', 'team=fleet'),
+            self.check('strategy.stages[0].groups[0].memberSelector', None),
+            self.check('strategy.stages[0].groups[1].memberSelector.byLabel', 'team=fleet')
         ])
 
         self.cmd('fleet updaterun list -g {rg} -f {fleet_name}', checks=[
             self.check('length([])', 1)
         ])
 
+        self.cmd('fleet gate list -g {rg} -f {fleet_name} --gate-type ScheduledStart', checks=[
+            self.check('length([])', 1)
+        ])
+
+        gate_list = self.cmd('fleet gate list -g {rg} -f {fleet_name}', checks=[
+            self.check('length([])', 1)
+        ]).get_output_in_json()
+
+        gate = gate_list[0]
+
+        gate_name = gate['name']
+
+        self.kwargs.update({
+            'gate_name': gate_name
+        })
+
+        self.cmd('fleet gate show -g {rg} -f {fleet_name} -n {gate_name}', checks=[
+            self.check('name', '{gate_name}'),
+            self.check('gateType', 'ScheduledStart'),
+            self.check('scheduledStartProperties.startDay', 'Monday'),
+            self.check('scheduledStartProperties.startTime', '03:00'),
+            self.check('scheduledStartProperties.utcOffset', '+00:00')
+        ])
+
+        self.cmd('fleet gate approve -g {rg} -f {fleet_name} -n {gate_name}', checks=[
+            self.check('state', 'Completed')
+        ])
+
         self.cmd('fleet updaterun delete -g {rg} -n {updaterun} -f {fleet_name} --yes')
+
+        self.cmd('fleet autoupgradeprofile create -g {rg} -f {fleet_name} -n {autoupgradeprofile_name} -c Rapid --node-image-selection Latest --update-strategy-id {update_strategy_id} --disabled', checks=[
+            self.check('name', '{autoupgradeprofile_name}')
+        ])
+
+        self.cmd('fleet autoupgradeprofile create -g {rg} -f {fleet_name} -n {autoupgradeprofile_name_TKV} -c TargetKubernetesVersion --long-term-support --target-kubernetes-version {target_kubernetes_version}', checks=[
+            self.check('name', '{autoupgradeprofile_name_TKV}'),
+            self.check('longTermSupport', True),
+            self.check('targetKubernetesVersion', '{target_kubernetes_version}')
+        ])
+
+        self.cmd('fleet autoupgradeprofile show -g {rg} -f {fleet_name} -n {autoupgradeprofile_name}', checks=[
+            self.check('name', '{autoupgradeprofile_name}')
+        ])
+
+        self.cmd('fleet autoupgradeprofile show -g {rg} -f {fleet_name} -n {autoupgradeprofile_name_TKV}', checks=[
+            self.check('name', '{autoupgradeprofile_name_TKV}'),
+            self.check('longTermSupport', True),
+            self.check('targetKubernetesVersion', '{target_kubernetes_version}')
+        ])
+
+        self.cmd('fleet autoupgradeprofile list -g {rg} -f {fleet_name}', checks=[
+            self.check('length([])', 2)
+        ])
+
+        self.cmd('fleet autoupgradeprofile generate-update-run -g {rg} -f {fleet_name} --auto-upgrade-profile-name {autoupgradeprofile_name}', checks=[
+            self.check("contains(id, 'auto-{autoupgradeprofile_name}-rapid')", True)
+        ])
+
+        self.cmd('fleet autoupgradeprofile delete -g {rg} -f {fleet_name} -n {autoupgradeprofile_name} --yes')
 
         self.cmd('fleet updatestrategy delete -g {rg} -f {fleet_name} -n {updateStrategy_name} --yes')
 

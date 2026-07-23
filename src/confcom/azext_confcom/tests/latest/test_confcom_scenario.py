@@ -3,18 +3,14 @@
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
 
+import json
 import os
 import unittest
-import json
-
-from azext_confcom.security_policy import (
-    UserContainerImage,
-    OutputType,
-    load_policy_from_str,
-)
 
 import azext_confcom.config as config
-from azext_confcom.template_util import case_insensitive_dict_get
+from azext_confcom.security_policy import (OutputType, UserContainerImage,
+                                           load_policy_from_json)
+from azext_confcom.template_util import DockerClient, case_insensitive_dict_get
 
 TEST_DIR = os.path.abspath(os.path.join(os.path.abspath(__file__), ".."))
 
@@ -25,7 +21,8 @@ class MountEnforcement(unittest.TestCase):
         "version": "1.0",
         "containers": [
             {
-                "containerImage": "alpine:3.16",
+                "name": "mcr.microsoft.com/azurelinux/distroless/base:3.0",
+                "containerImage": "mcr.microsoft.com/azurelinux/distroless/base:3.0",
                 "environmentVariables": [
                     {
                         "name": "PATH",
@@ -48,7 +45,8 @@ class MountEnforcement(unittest.TestCase):
                 ]
             },
             {
-                "containerImage": "nginx:1.24",
+                "name": "mcr.microsoft.com/azurelinux/base/python:3.12",
+                "containerImage": "mcr.microsoft.com/azurelinux/base/python:3.12",
                 "environmentVariables": [],
                 "command": ["echo", "hello"],
                 "workingDir": "/customized/absolute/path",
@@ -64,7 +62,7 @@ class MountEnforcement(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        with load_policy_from_str(cls.custom_json) as aci_policy:
+        with load_policy_from_json(cls.custom_json) as aci_policy:
             aci_policy.populate_policy_content_for_all_images()
             cls.aci_policy = aci_policy
 
@@ -73,7 +71,7 @@ class MountEnforcement(unittest.TestCase):
             (
                 img
                 for img in self.aci_policy.get_images()
-                if isinstance(img, UserContainerImage) and img.base == "alpine"
+                if isinstance(img, UserContainerImage) and img.base == "mcr.microsoft.com/azurelinux/distroless/base"
             ),
             None,
         )
@@ -112,7 +110,7 @@ class MountEnforcement(unittest.TestCase):
             (
                 img
                 for img in self.aci_policy.get_images()
-                if isinstance(img, UserContainerImage) and img.base == "nginx"
+                if isinstance(img, UserContainerImage) and img.base == "mcr.microsoft.com/azurelinux/base/python"
             ),
             None,
         )
@@ -154,6 +152,7 @@ class PolicyGenerating(unittest.TestCase):
         "version": "1.0",
         "containers": [
             {
+                "name": "mcr.microsoft.com/aci/msi-atlas-adapter:master_20201203.1",
                 "containerImage": "mcr.microsoft.com/aci/msi-atlas-adapter:master_20201203.1",
                 "environmentVariables": [
                 {
@@ -262,7 +261,7 @@ class PolicyGenerating(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        with load_policy_from_str(cls.custom_json) as aci_policy:
+        with load_policy_from_json(cls.custom_json) as aci_policy:
             aci_policy.populate_policy_content_for_all_images()
             cls.aci_policy = aci_policy
 
@@ -350,7 +349,7 @@ class PolicyGenerating(unittest.TestCase):
         self.assertEqual(image.base, "mcr.microsoft.com/aci/msi-atlas-adapter")
         self.assertIsNotNone(image)
 
-        self.assertEquals(image._command, command)
+        self.assertEqual(image._command, command)
         for env_var in env_vars:
             env_names = map(lambda x: x['pattern'], image._environmentRules + image._extraEnvironmentRules)
             self.assertIn(env_var['name'] + "=" + env_var['value'], env_names)
@@ -365,7 +364,8 @@ class PolicyGeneratingDebugMode(unittest.TestCase):
         "version": "1.0",
         "containers": [
             {
-                "containerImage": "python:3.6.14-slim-buster",
+                "name": "mcr.microsoft.com/azurelinux/base/python:3.12",
+                "containerImage": "mcr.microsoft.com/azurelinux/base/python:3.12",
             "environmentVariables": [
 
             ],
@@ -379,7 +379,7 @@ class PolicyGeneratingDebugMode(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        with load_policy_from_str(cls.custom_json, debug_mode=True) as aci_policy:
+        with load_policy_from_json(cls.custom_json, debug_mode=True) as aci_policy:
             aci_policy.populate_policy_content_for_all_images()
             cls.aci_policy = aci_policy
 
@@ -412,6 +412,7 @@ class SidecarValidation(unittest.TestCase):
     "version": "1.0",
     "containers": [
         {
+            "name": "mcr.microsoft.com/aci/msi-atlas-adapter:master_20201210.1",
             "containerImage": "mcr.microsoft.com/aci/msi-atlas-adapter:master_20201210.1",
             "environmentVariables": [
                 {
@@ -436,6 +437,7 @@ class SidecarValidation(unittest.TestCase):
     "version": "1.0",
     "containers": [
         {
+            "name": "mcr.microsoft.com/aci/msi-atlas-adapter:master_20201210.1",
             "containerImage": "mcr.microsoft.com/aci/msi-atlas-adapter:master_20201210.1",
             "environmentVariables": [
                {"name": "PATH",
@@ -459,10 +461,10 @@ class SidecarValidation(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        with load_policy_from_str(cls.custom_json) as aci_policy:
+        with load_policy_from_json(cls.custom_json) as aci_policy:
             aci_policy.populate_policy_content_for_all_images()
             cls.aci_policy = aci_policy
-        with load_policy_from_str(cls.custom_json2) as aci_policy2:
+        with load_policy_from_json(cls.custom_json2) as aci_policy2:
             aci_policy2.populate_policy_content_for_all_images()
             cls.aci_policy2 = aci_policy2
 
@@ -505,7 +507,8 @@ class CustomJsonParsing(unittest.TestCase):
             "version": "1.0",
             "containers": [
                 {
-                    "containerImage": "python:3.6.14-slim-buster",
+                    "name": "mcr.microsoft.com/azurelinux/base/python:3.12",
+                    "containerImage": "mcr.microsoft.com/azurelinux/base/python:3.12",
                     "environmentVariables": [],
                     "command": ["echo", "hello"],
                     "workingDir": "/customized/absolute/path"
@@ -513,7 +516,7 @@ class CustomJsonParsing(unittest.TestCase):
             ]
         }
         """
-        with load_policy_from_str(custom_json) as aci_policy:
+        with load_policy_from_json(custom_json) as aci_policy:
             # pull actual image to local for next step
             image = next(
                 (
@@ -533,7 +536,8 @@ class CustomJsonParsing(unittest.TestCase):
             "version": "1.0",
             "containers": [
                 {
-                    "containerImage": "python:3.6.14-slim-buster",
+                    "name": "mcr.microsoft.com/azurelinux/base/python:3.12",
+                    "containerImage": "mcr.microsoft.com/azurelinux/base/python:3.12",
                     "environmentVariables": [],
                     "command": ["echo", "hello"],
                     "workingDir": "/customized/absolute/path",
@@ -542,7 +546,7 @@ class CustomJsonParsing(unittest.TestCase):
             ]
         }
         """
-        with load_policy_from_str(custom_json) as aci_policy:
+        with load_policy_from_json(custom_json) as aci_policy:
             # pull actual image to local for next step
             image = next(
                 (
@@ -562,55 +566,25 @@ class CustomJsonParsing(unittest.TestCase):
             "version": "1.0",
             "containers": [
                 {
-                    "containerImage": "python:3.6.14-slim-buster",
+                    "name": "mcr.microsoft.com/azurelinux/base/python:3.12",
+                    "containerImage": "mcr.microsoft.com/azurelinux/base/python@sha256:ec2e8a66b7a5ad1da168bf13463e03ea79c3a18d7142818d52fbcc8772bbba8d",
                     "environmentVariables": [],
                     "command": ["echo", "hello"]
                 }
             ]
         }
         """
-        with load_policy_from_str(custom_json) as aci_policy:
+        with load_policy_from_json(custom_json) as aci_policy:
             # pull actual image to local for next step
-            aci_policy.pull_image(aci_policy.get_images()[0])
+            with DockerClient() as client:
+                image_ref = aci_policy.get_images()[0]
+                image = client.images.pull(image_ref.containerImage)
             aci_policy.populate_policy_content_for_all_images()
             layers = aci_policy.get_images()[0]._layers
             expected_layers = [
-                "254cc853da6081905c9109c8b9d99c9fb0987ba1d88f729088903cffb80f55f1",
-                "a568f1900bed60a0641b76b991ad431446d9c3a344d7b261f10de8d8e73763ac",
-                "c70c530e842f66215b0bd955877157ba24c3799303567c3f5673c45663ea4d15",
-                "3e86c3ccf1642bf584de33b49c7248f87eecd0f6d8c08353daa36cc7ad0a7b6a",
-                "1e4684d8c7caa74c6524172b4d5a159a10887613ed70f18d0a55d05b2af61acd",
-            ]
-            self.assertEqual(len(layers), len(expected_layers))
-            for i in range(len(expected_layers)):
-                self.assertEqual(layers[i], expected_layers[i])
-
-    def test_image_layers_nginx(self):
-        custom_json = """
-        {
-            "version": "1.0",
-            "containers": [
-                {
-                    "containerImage": "nginx:1.22",
-                    "environmentVariables": [],
-                    "command": ["echo", "hello"]
-                }
-            ]
-        }
-        """
-        with load_policy_from_str(custom_json) as aci_policy:
-            # pull actual image to local for next step
-            aci_policy.pull_image(aci_policy.get_images()[0])
-            aci_policy.populate_policy_content_for_all_images()
-            layers = aci_policy.get_images()[0]._layers
-
-            expected_layers = [
-                "5250e7d2517bcae4d264c84d8e7c6da14607ce867e29a81bf4327ee6896218a3",
-                "b6d54ad6a7223dd687d308c8562aaa7dfef2f5a88ec701fb3f89e49312832b82",
-                "8608c5be3af25ed58b2291999fe76cc021ced0ea70b6387c4373c6551f4d6ddb",
-                "1e0878890d701c494c8aeade31d15eaaf9b9c382c27e2519727cb5d1e91df764",
-                "233b6e2f8931a4d67930ac602688acc16c930926fcadc9e31195440db0737791",
-                "1053a7714644b99537bc0e8058a7e4771d2fe679ef54097e128a813f3c80a9cf",
+                "679545575069dd4dc31f4d991094d669ca346950c3bc3aa465a9343a7369a8c9",
+                "ff808293653ce6dc4aa63381a8ceaec73c15618bbc6ccb30a44441d638c07af7",
+                "1dd5fd89c3a5a58b669d14d9a693aff3f16d3a8ec643c9d7f2d24f25297cfbc7"
             ]
             self.assertEqual(len(layers), len(expected_layers))
             for i in range(len(expected_layers)):
@@ -622,20 +596,23 @@ class CustomJsonParsing(unittest.TestCase):
             "version": "1.0",
             "containers": [
                 {
-                    "containerImage": "alpine:3.16",
+                    "name": "mcr.microsoft.com/azurelinux/distroless/base:3.0",
+                    "containerImage": "mcr.microsoft.com/azurelinux/distroless/base:3.0",
                     "environmentVariables": [],
                     "command": ["echo", "hello"]
                 }
             ]
         }
         """
-        with load_policy_from_str(custom_json) as aci_policy:
-            image = aci_policy.pull_image(aci_policy.get_images()[0])
+        with load_policy_from_json(custom_json) as aci_policy:
+            with DockerClient() as client:
+                image_ref = aci_policy.get_images()[0]
+                image = client.images.pull(image_ref.base, tag=image_ref.tag)
             self.assertIsNotNone(image.id)
 
             self.assertEqual(
-                image.id,
-                "sha256:e525c930fe751104ff24c356a7bcfad66ce4b92797780eb38dc2ff95d7a66fdc",
+                image.tags[0],
+                "mcr.microsoft.com/azurelinux/distroless/base:3.0",
             )
 
     def test_infrastructure_svn(self):
@@ -644,14 +621,15 @@ class CustomJsonParsing(unittest.TestCase):
             "version": "1.0",
             "containers": [
                 {
-                    "containerImage": "alpine:3.16",
+                    "name": "mcr.microsoft.com/azurelinux/distroless/base:3.0",
+                    "containerImage": "mcr.microsoft.com/azurelinux/distroless/base:3.0",
                     "environmentVariables": [],
                     "command": ["echo", "hello"]
                 }
             ]
         }
         """
-        with load_policy_from_str(custom_json) as aci_policy:
+        with load_policy_from_json(custom_json) as aci_policy:
             aci_policy.populate_policy_content_for_all_images()
             output = aci_policy.get_serialized_output(OutputType.PRETTY_PRINT)
 
@@ -663,7 +641,8 @@ class CustomJsonParsing(unittest.TestCase):
             "version": "1.0",
             "containers": [
                 {
-                    "containerImage": "mcr.microsoft.com/azuredocs/aci-dataprocessing-cc:v1",
+                    "name": "mcr.microsoft.com/azurelinux/distroless/base:3.0",
+                    "containerImage": "mcr.microsoft.com/azurelinux/distroless/base:3.0",
                     "environmentVariables": [
                         {
                             "name": "env-name1",
@@ -681,7 +660,7 @@ class CustomJsonParsing(unittest.TestCase):
             ]
         }
         """
-        containers = load_policy_from_str(custom_json).get_images()
+        containers = load_policy_from_json(custom_json).get_images()
         self.assertEqual(len(containers), 1)
         envs = containers[0]._environmentRules
         self.assertIsNotNone(envs)
@@ -720,14 +699,15 @@ class CustomJsonParsing(unittest.TestCase):
             "version": "1.0",
             "containers": [
                 {
-                    "containerImage": "python:3.6.14-slim-buster",
+                    "name": "mcr.microsoft.com/azurelinux/base/python:3.12",
+                    "containerImage": "mcr.microsoft.com/azurelinux/base/python:3.12",
                     "environmentVariables": [],
                     "command": ["echo", "hello"]
                 }
             ]
         }
         """
-        with load_policy_from_str(custom_json) as aci_policy:
+        with load_policy_from_json(custom_json) as aci_policy:
             aci_policy.populate_policy_content_for_all_images()
             self.assertTrue(
                 json.loads(
@@ -743,7 +723,8 @@ class CustomJsonParsing(unittest.TestCase):
             "version": "1.0",
             "containers": [
                 {
-                    "containerImage": "python:3.6.14-slim-buster",
+                    "name": "mcr.microsoft.com/azurelinux/base/python:3.12",
+                    "containerImage": "mcr.microsoft.com/azurelinux/base/python:3.12",
                     "environmentVariables": [],
                     "command": ["echo", "hello"],
                     "allowStdioAccess": false
@@ -751,7 +732,7 @@ class CustomJsonParsing(unittest.TestCase):
             ]
         }
         """
-        with load_policy_from_str(custom_json) as aci_policy:
+        with load_policy_from_json(custom_json, disable_stdio=True) as aci_policy:
             aci_policy.populate_policy_content_for_all_images()
 
             self.assertFalse(
@@ -760,6 +741,41 @@ class CustomJsonParsing(unittest.TestCase):
                         output_type=OutputType.RAW, rego_boilerplate=False
                     )
                 )[0][config.POLICY_FIELD_CONTAINERS_ELEMENTS_ALLOW_STDIO_ACCESS]
+            )
+
+    def test_omit_id(self):
+        image_name = "mcr.microsoft.com/azurelinux/base/python:3.12"
+        custom_json = f"""
+        {{
+            "version": "1.0",
+            "containers": [
+                {{
+                    "name": "{image_name}",
+                    "containerImage": "{image_name}",
+                    "environmentVariables": [],
+                    "command": ["echo", "hello"],
+                    "allowStdioAccess": false
+                }}
+            ]
+        }}
+        """
+        with load_policy_from_json(custom_json) as aci_policy:
+            aci_policy.populate_policy_content_for_all_images()
+
+            self.assertIsNone(
+                json.loads(
+                    aci_policy.get_serialized_output(
+                        output_type=OutputType.RAW, rego_boilerplate=False, omit_id=True
+                    )
+                )[0].get(config.POLICY_FIELD_CONTAINERS_ID)
+            )
+
+            self.assertEqual(
+                json.loads(
+                    aci_policy.get_serialized_output(
+                        output_type=OutputType.RAW, rego_boilerplate=False, omit_id=False
+                    )
+                )[0].get(config.POLICY_FIELD_CONTAINERS_ID), image_name
             )
 
 
@@ -772,6 +788,7 @@ class CustomJsonParsingIncorrect(unittest.TestCase):
             "version": "1.0",
             "containers": [
                 {
+                    "name": "fake-name",
                     "containerImage": "notexists:1.0.0",
                     "environmentVariables": [],
                     "command": ["echo", "hello"]
@@ -779,10 +796,10 @@ class CustomJsonParsingIncorrect(unittest.TestCase):
             ]
         }
         """
-        with load_policy_from_str(custom_json) as aci_policy:
-            with self.assertRaises(SystemExit) as exc_info:
+        with self.assertRaises(SystemExit) as exc_info:
+            with load_policy_from_json(custom_json) as aci_policy:
                 aci_policy.populate_policy_content_for_all_images()
-            self.assertEqual(exc_info.exception.code, 1)
+        self.assertEqual(exc_info.exception.code, 1)
 
     def test_incorrect_allow_elevated_data_type(self):
         custom_json = """
@@ -790,7 +807,8 @@ class CustomJsonParsingIncorrect(unittest.TestCase):
             "version": "1.0",
             "containers": [
                 {
-                    "containerImage": "alpine:3.16",
+                    "name": "mcr.microsoft.com/azurelinux/distroless/base:3.0",
+                    "containerImage": "mcr.microsoft.com/azurelinux/distroless/base:3.0",
                     "environmentVariables": [],
                     "command": "echo hello",
                     "workingDir": "relative/string/path",
@@ -801,7 +819,7 @@ class CustomJsonParsingIncorrect(unittest.TestCase):
         """
         # allow_elevated can only be a boolean
         with self.assertRaises(SystemExit) as exc_info:
-            load_policy_from_str(custom_json)
+            load_policy_from_json(custom_json)
         self.assertEqual(exc_info.exception.code, 1)
 
     def test_incorrect_workingdir_path(self):
@@ -810,7 +828,8 @@ class CustomJsonParsingIncorrect(unittest.TestCase):
             "version": "1.0",
             "containers": [
                 {
-                    "containerImage": "alpine:3.16",
+                    "name": "mcr.microsoft.com/azurelinux/distroless/base:3.0",
+                    "containerImage": "mcr.microsoft.com/azurelinux/distroless/base:3.0",
                     "environmentVariables": [],
                     "command": "echo hello",
                     "workingDir": "relative/string/path"
@@ -820,7 +839,7 @@ class CustomJsonParsingIncorrect(unittest.TestCase):
         """
         # workingDir can only be absolute path string
         with self.assertRaises(SystemExit) as exc_info:
-            load_policy_from_str(custom_json)
+            load_policy_from_json(custom_json)
         self.assertEqual(exc_info.exception.code, 1)
 
     def test_incorrect_workingdir_data_type(self):
@@ -829,7 +848,8 @@ class CustomJsonParsingIncorrect(unittest.TestCase):
             "version": "1.0",
             "containers": [
                 {
-                    "containerImage": "alpine:3.16",
+                    "name": "mcr.microsoft.com/azurelinux/distroless/base:3.0",
+                    "containerImage": "mcr.microsoft.com/azurelinux/distroless/base:3.0",
                     "environmentVariables": [],
                     "command": "echo hello",
                     "workingDir": ["hello"]
@@ -839,7 +859,7 @@ class CustomJsonParsingIncorrect(unittest.TestCase):
         """
         # workingDir can only be single string
         with self.assertRaises(SystemExit) as exc_info:
-            load_policy_from_str(custom_json)
+            load_policy_from_json(custom_json)
         self.assertEqual(exc_info.exception.code, 1)
 
     def test_incorrect_command_data_type(self):
@@ -848,7 +868,8 @@ class CustomJsonParsingIncorrect(unittest.TestCase):
             "version": "1.0",
             "containers": [
                 {
-                    "containerImage": "alpine:3.16",
+                    "name": "mcr.microsoft.com/azurelinux/distroless/base:3.0",
+                    "containerImage": "mcr.microsoft.com/azurelinux/distroless/base:3.0",
                     "environmentVariables": [],
                     "command": "echo hello"
                 }
@@ -857,7 +878,7 @@ class CustomJsonParsingIncorrect(unittest.TestCase):
         """
         # command can only be list of strings
         with self.assertRaises(SystemExit) as exc_info:
-            load_policy_from_str(custom_json)
+            load_policy_from_json(custom_json)
         self.assertEqual(exc_info.exception.code, 1)
 
     def test_json_missing_containers(self):
@@ -867,29 +888,7 @@ class CustomJsonParsingIncorrect(unittest.TestCase):
         }
         """
         with self.assertRaises(SystemExit) as exc_info:
-            load_policy_from_str(custom_json)
-        self.assertEqual(exc_info.exception.code, 1)
-
-    def test_json_missing_version(self):
-        custom_json = """
-        {
-            "containers": [
-                {
-                    "containerImage": "mcr.microsoft.com/azuredocs/aci-dataprocessing-cc:v1",
-                    "environmentVariables": [
-                        {
-                            "name": "port",
-                            "value": "80",
-                            "strategy": "string"
-                        }
-                    ],
-                    "command": ["python", "app.py"]
-                }
-            ]
-        }
-        """
-        with self.assertRaises(SystemExit) as exc_info:
-            load_policy_from_str(custom_json)
+            load_policy_from_json(custom_json)
         self.assertEqual(exc_info.exception.code, 1)
 
     def test_json_missing_containerImage(self):
@@ -898,6 +897,7 @@ class CustomJsonParsingIncorrect(unittest.TestCase):
             "version": "1.0",
             "containers": [
                 {
+                    "name": "mcr.microsoft.com/azurelinux/distroless/base:3.0",
                     "environmentVariables": [
                         {
                             "name": "port",
@@ -911,7 +911,7 @@ class CustomJsonParsingIncorrect(unittest.TestCase):
         }
         """
         with self.assertRaises(SystemExit) as exc_info:
-            load_policy_from_str(custom_json)
+            load_policy_from_json(custom_json)
         self.assertEqual(exc_info.exception.code, 1)
 
     def test_json_missing_environmentVariables(self):
@@ -920,15 +920,24 @@ class CustomJsonParsingIncorrect(unittest.TestCase):
             "version": "1.0",
             "containers": [
                 {
-                    "containerImage": "mcr.microsoft.com/azuredocs/aci-dataprocessing-cc:v1",
+                    "name": "mcr.microsoft.com/azurelinux/distroless/base:3.0",
+                    "containerImage": "mcr.microsoft.com/azurelinux/distroless/base:3.0",
                     "command": ["python", "app.py"]
                 }
             ]
         }
         """
-        with self.assertRaises(SystemExit) as exc_info:
-            load_policy_from_str(custom_json)
-        self.assertEqual(exc_info.exception.code, 1)
+        with load_policy_from_json(custom_json) as aci_policy:
+            aci_policy.populate_policy_content_for_all_images()
+
+            self.assertIsNotNone(
+                json.loads(
+                    aci_policy.get_serialized_output(
+                        output_type=OutputType.RAW, rego_boilerplate=False, omit_id=True
+                    )
+                )[0].get(config.POLICY_FIELD_CONTAINERS_ELEMENTS_ENVS)
+            )
+
 
     def test_json_missing_command(self):
         custom_json = """
@@ -936,7 +945,8 @@ class CustomJsonParsingIncorrect(unittest.TestCase):
             "version": "1.0",
             "containers": [
                 {
-                    "containerImage": "mcr.microsoft.com/azuredocs/aci-dataprocessing-cc:v1",
+                    "name": "mcr.microsoft.com/aci/msi-atlas-adapter:master_20201210.1",
+                    "containerImage": "mcr.microsoft.com/aci/msi-atlas-adapter:master_20201210.1",
                     "environmentVariables": [
                         {
                             "name": "port",
@@ -948,6 +958,15 @@ class CustomJsonParsingIncorrect(unittest.TestCase):
             ]
         }
         """
-        with self.assertRaises(SystemExit) as exc_info:
-            load_policy_from_str(custom_json)
-        self.assertEqual(exc_info.exception.code, 1)
+        with load_policy_from_json(custom_json) as aci_policy:
+            aci_policy.populate_policy_content_for_all_images()
+
+            self.assertIsNotNone(
+                json.loads(
+                    aci_policy.get_serialized_output(
+                        output_type=OutputType.RAW, rego_boilerplate=False, omit_id=True
+                    )
+                )[0].get(config.POLICY_FIELD_CONTAINERS_ELEMENTS_COMMANDS)
+            )
+
+

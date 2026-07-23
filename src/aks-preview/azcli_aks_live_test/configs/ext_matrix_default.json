@@ -21,28 +21,30 @@
             "test_aks_disable_addon_gitops"
         ],
         "gpu, no quota": [
-            "test_aks_nodepool_add_with_gpu_instance_profile"
+            "test_aks_nodepool_add_with_gpu_instance_profile",
+            "test_aks_gpu_driver_type",
+            "test_aks_nodepool_add_with_enable_managed_gpu",
+            "test_aks_nodepool_update_with_enable_managed_gpu",
+            "test_aks_nodepool_add_with_gpu_mig_strategy"
         ],
-        "overlay migration, missing toggle": [
-            "test_aks_azure_cni_overlay_migration"
+        "pod ip allocation mode static block, missing feature registration": [
+            "test_aks_create_with_pod_ip_allocation_mode_static_block"
         ],
-        "slb to nat gateway": [
-            "test_aks_update_outbound_from_slb_to_natgateway"
+        "managed nat gateway v2, missing feature registration": [
+            "test_aks_create_and_update_with_managed_nat_gateway_v2"
         ],
-        "trusted access role, waiting GA": [
-            "test_get_trustedaccess_roles",
-            "test_aks_trustedaccess_rolebinding"
-        ],
-        "v2 monitoring addon, missing namespace registration": [
-            "test_aks_create_with_azuremonitormetrics",
-            "test_aks_update_with_azuremonitormetrics"
-        ],
-        "workload runtime, missing feature registration": [
+        "[deprecated] workload runtime, missing feature registration": [
             "test_aks_nodepool_add_with_workload_runtime"
         ],
-        "artifact streaming, missing feature registration & toggle": [
-            "test_aks_nodepool_add_with_artifact_streaming",
-            "test_aks_nodepool_update_with_artifact_streaming"
+        "automatic, no quota": [
+            "test_aks_automatic_sku",
+            "test_aks_automatic_sku_with_hosted_system_enabled"
+        ],
+        "maxBlockedNodes, missing feature registration & toggle": [
+            "test_aks_nodepool_max_blocked_nodes"
+        ],
+        "vms autoscaler, missing feature registration": [
+            "test_aks_create_autoscaler_then_update_vms_pool"
         ]
     }
 }

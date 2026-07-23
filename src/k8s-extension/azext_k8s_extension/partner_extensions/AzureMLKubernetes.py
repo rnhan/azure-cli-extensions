@@ -26,11 +26,9 @@ import azure.mgmt.loganalytics
 import azure.mgmt.loganalytics.models
 from azure.cli.core.azclierror import AzureResponseError, InvalidArgumentValueError, MutuallyExclusiveArgumentError, ResourceNotFoundError
 from azure.cli.core.commands.client_factory import get_mgmt_service_client, get_subscription_id
+from azure.core.exceptions import HttpResponseError
 from azure.mgmt.resource.locks.models import ManagementLockObject
 from knack.log import get_logger
-from msrestazure.azure_exceptions import CloudError
-from msrest.exceptions import HttpOperationError
-import azure.core.exceptions
 
 from .._client_factory import cf_resources
 from .DefaultExtension import DefaultExtension, user_confirmation_factory
@@ -115,12 +113,12 @@ class AzureMLKubernetes(DefaultExtension):
         self.OPEN_SHIFT = 'openshift'
 
     def Create(self, cmd, client, resource_group_name, cluster_name, name, cluster_type, cluster_rp,
-               extension_type, scope, auto_upgrade_minor_version, release_train, version, target_namespace,
+               extension_type, scope, auto_upgrade_minor_version, auto_upgrade_mode, release_train, version, target_namespace,
                release_namespace, configuration_settings, configuration_protected_settings,
                configuration_settings_file, configuration_protected_settings_file, plan_name,
                plan_publisher, plan_product):
 
-        logger.warning("Troubleshooting: {}".format(self.TSG_LINK))
+        logger.warning("Troubleshooting: %s", self.TSG_LINK)
 
         if scope == 'namespace':
             raise InvalidArgumentValueError("Invalid scope '{}'.  This extension can't be installed "
@@ -170,9 +168,9 @@ class AzureMLKubernetes(DefaultExtension):
 
                 if resource.properties.get('distribution', '').lower() == self.OPEN_SHIFT:
                     configuration_settings[self.OPEN_SHIFT] = 'true'
-            except:
+            except (AttributeError, KeyError, TypeError):
                 pass
-        except CloudError as ex:
+        except HttpResponseError as ex:
             raise ex
 
         # generate values for the extension if none is set.
@@ -216,24 +214,24 @@ class AzureMLKubernetes(DefaultExtension):
         extension = Extension(
             extension_type=extension_type,
             auto_upgrade_minor_version=auto_upgrade_minor_version,
+            auto_upgrade_mode=auto_upgrade_mode,
             release_train=release_train,
             version=version,
             scope=ext_scope,
             configuration_settings=configuration_settings,
             configuration_protected_settings=configuration_protected_settings,
-            identity=None,
-            location=""
         )
         return extension, name, create_identity
 
     def Delete(self, cmd, client, resource_group_name, cluster_name, name, cluster_type, cluster_rp, yes):
-        logger.warning("Troubleshooting: {}".format(self.TSG_LINK))
+        logger.warning("Troubleshooting: %s", self.TSG_LINK)
         user_confirmation_factory(cmd, yes)
 
-    def Update(self, cmd, resource_group_name, cluster_name, auto_upgrade_minor_version, release_train, version, configuration_settings,
+    # pylint: disable=too-many-branches
+    def Update(self, cmd, resource_group_name, cluster_name, auto_upgrade_minor_version, auto_upgrade_mode, release_train, version, configuration_settings,
                configuration_protected_settings, original_extension, yes=False):
 
-        logger.warning("Troubleshooting: {}".format(self.TSG_LINK))
+        logger.warning("Troubleshooting: %s", self.TSG_LINK)
 
         input_configuration_settings = copy.deepcopy(configuration_settings)
         input_configuration_protected_settings = copy.deepcopy(configuration_protected_settings)
@@ -333,7 +331,7 @@ class AzureMLKubernetes(DefaultExtension):
                         cmd, subscription_id, resource_group_name, cluster_name, '', True)
                     configuration_protected_settings[self.AZURE_LOG_ANALYTICS_CONNECTION_STRING] = shared_key
                     logger.info("Get log analytics connection string succeeded.")
-                except azure.core.exceptions.HttpResponseError:
+                except HttpResponseError:
                     logger.info("Failed to get log analytics connection string.")
 
             original_extension_config_settings = original_extension.configuration_settings
@@ -346,7 +344,7 @@ class AzureMLKubernetes(DefaultExtension):
                         cmd, subscription_id, resource_group_name, cluster_name, '', self.RELAY_HC_AUTH_NAME, True)
                     configuration_protected_settings[self.RELAY_SERVER_CONNECTION_STRING] = relay_connection_string
                     logger.info("Get relay connection string succeeded.")
-                except azure.core.exceptions.HttpResponseError as ex:
+                except HttpResponseError as ex:
                     if ex.response.status_code == 404:
                         raise ResourceNotFoundError("Relay server not found. "
                                                     "Check {} for more information.".format(self.TSG_LINK)) from ex
@@ -360,7 +358,7 @@ class AzureMLKubernetes(DefaultExtension):
                         cmd, subscription_id, resource_group_name, cluster_name, '', {}, True)
                     configuration_protected_settings[self.SERVICE_BUS_CONNECTION_STRING] = service_bus_connection_string
                     logger.info("Get service bus connection string succeeded.")
-                except azure.core.exceptions.HttpResponseError as ex:
+                except HttpResponseError as ex:
                     if ex.response.status_code == 404:
                         raise ResourceNotFoundError("Service bus not found."
                                                     "Check {} for more information.".format(self.TSG_LINK)) from ex
@@ -389,6 +387,7 @@ class AzureMLKubernetes(DefaultExtension):
             configuration_protected_settings = input_configuration_protected_settings
 
         return PatchExtension(auto_upgrade_minor_version=auto_upgrade_minor_version,
+                              auto_upgrade_mode=auto_upgrade_mode,
                               release_train=release_train,
                               version=version,
                               configuration_settings=configuration_settings,
@@ -632,7 +631,7 @@ def _get_relay_connection_str(
                                                                    "namespace_name": relay_namespace_name,
                                                                    "hybrid_connection_name": hybrid_connection_name,
                                                                    "name": auth_rule_name})
-    except azure.core.exceptions.HttpResponseError as e:
+    except HttpResponseError as e:
         if e.response.status_code != 404 or get_key_only:
             raise e
         # create namespace
@@ -687,7 +686,7 @@ def _get_service_bus_connection_string(cmd, subscription_id, resource_group_name
             key: azure.mgmt.servicebus.models.AccessKeys = service_bus_client.namespaces.list_keys(
                 resource_group_name, service_bus_namespace_name, rule.name)
             return key.primary_connection_string, service_bus_resource_id
-    except azure.core.exceptions.HttpResponseError as e:
+    except HttpResponseError as e:
         if e.response.status_code != 404 or get_key_only:
             raise e
         # create namespace
@@ -741,7 +740,7 @@ def _get_log_analytics_ws_connection_string(
         customer_id = log_analytics_ws_object.customer_id
         shared_key = log_analytics_ws_client.shared_keys.get_shared_keys(
             resource_group_name, log_analytics_ws_name).primary_shared_key
-    except azure.core.exceptions.HttpResponseError as e:
+    except HttpResponseError as e:
         if e.response.status_code != 404 or get_key_only:
             raise e
         log_analytics_ws = azure.mgmt.loganalytics.models.Workspace(location=cluster_location, tags=resource_tag)
@@ -791,5 +790,4 @@ def _check_nodeselector_existed(configuration_settings, configuration_protected_
 def _is_valid_service_type(service_type):
     if service_type:
         return service_type.lower() == 'nodeport' or service_type.lower() == 'loadbalancer' or service_type.lower() == 'clusterip'
-    else:
-        return False
+    return False

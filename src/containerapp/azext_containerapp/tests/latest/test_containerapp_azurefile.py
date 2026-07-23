@@ -9,8 +9,11 @@ import unittest
 
 from azure.cli.command_modules.containerapp._utils import format_location
 
+from azure.cli.testsdk.decorators import serial_test
 from azure.cli.testsdk.scenario_tests import AllowLargeResponse
 from azure.cli.testsdk import (ScenarioTest, ResourceGroupPreparer, JMESPathCheck, live_only, StorageAccountPreparer)
+
+from .custom_preparers import SubnetPreparer
 
 TEST_DIR = os.path.abspath(os.path.join(os.path.abspath(__file__), '..'))
 from .common import (TEST_LOCATION, STAGE_LOCATION, write_test_file,
@@ -20,9 +23,13 @@ from .utils import create_containerapp_env
 
 
 class ContainerAppMountAzureFileTest(ScenarioTest):
+    def __init__(self, *arg, **kwargs):
+        super().__init__(*arg, random_config_dir=True, **kwargs)
+
     @AllowLargeResponse(8192)
     @ResourceGroupPreparer(location="eastus")
-    def test_container_app_mount_azurefile_e2e(self, resource_group):
+    @SubnetPreparer(location="centralus", delegations='Microsoft.App/environments', service_endpoints="Microsoft.Storage.Global")
+    def test_container_app_mount_azurefile_e2e(self, resource_group, subnet_id, vnet_name, subnet_name):
         self.cmd('configure --defaults location={}'.format(TEST_LOCATION))
 
         env = self.create_random_name(prefix='env', length=24)
@@ -37,7 +44,7 @@ class ContainerAppMountAzureFileTest(ScenarioTest):
         self.cmd(
             f'az storage share-rm create --resource-group {resource_group}  --storage-account {storage} --name {share} --quota 1024 --enabled-protocols SMB --output none')
 
-        create_containerapp_env(self, env, resource_group, TEST_LOCATION)
+        create_containerapp_env(self, env, resource_group, TEST_LOCATION, subnetId=subnet_id)
         account_key = self.cmd(f'az storage account keys list -g {resource_group} -n {storage} --query "[0].value" '
                                '-otsv').output.strip()
 

@@ -5,26 +5,43 @@
 # --------------------------------------------------------------------------
 # pylint: disable=line-too-long
 # pylint: disable=unused-import
+# WARNING: This test only works when run in the devbox.
 
 from azure.cli.testsdk import ScenarioTest, ResourceGroupPreparer, live_only
 from azure.cli.testsdk.scenario_tests import AllowLargeResponse
 import time
 
 
-def create_vault_and_policy(test):
-    backup_vault = test.cmd('az dataprotection backup-vault create '
-        '-g "{rg}" --vault-name "{vaultName}" -l {location} '
-        '--storage-settings datastore-type="VaultStore" type="LocallyRedundant" --type SystemAssigned '
-        '--soft-delete-state Off',
-        checks=[
-            test.exists('identity.principalId')
-        ]).get_output_in_json()
+def create_vault_and_policy(test, useSystemAssigned=True):
+    if useSystemAssigned:
+        backup_vault = test.cmd('az dataprotection backup-vault create '
+                                '-g "{rg}" --vault-name "{vaultName}" -l {location} '
+                                '--storage-settings datastore-type="VaultStore" type="LocallyRedundant" --type SystemAssigned '
+                                '--soft-delete-state Off',
+                                checks=[
+                                    test.exists('identity.principalId')
+                                ]).get_output_in_json()
 
-    # Fix for 'Cannot find user or service principal in graph database' error. Confirming sp is created for the backup vault.
-    sp_list = []
-    while backup_vault['identity']['principalId'] not in sp_list:
-        sp_list = test.cmd('az ad sp list --display-name "{vaultName}" --query [].id').get_output_in_json()
-        time.sleep(10)
+        # Fix for 'Cannot find user or service principal in graph database' error. Confirming sp is created for the backup vault.
+        sp_list = []
+        while backup_vault['identity']['principalId'] not in sp_list:
+            sp_list = test.cmd('az ad sp list --display-name "{vaultName}" --query [].id').get_output_in_json()
+            time.sleep(10)
+    else:
+        backup_vault = test.cmd('az dataprotection backup-vault create '
+                                '-g "{rg}" --vault-name "{vaultName}" -l {location} '
+                                '--storage-settings datastore-type="VaultStore" type="LocallyRedundant" --type UserAssigned '
+                                '--uami {uamiUrl} '
+                                '--soft-delete-state Off',
+                                checks=[
+                                    test.exists('identity.userAssignedIdentities')
+                                ]).get_output_in_json()
+
+        # Fix for 'Cannot find user or service principal in graph database' error. Confirming sp is created for the backup vault.
+        sp_list = []
+        while backup_vault['identity']['userAssignedIdentities']['{uamiUrl}']['principalId'] not in sp_list:
+            sp_list = test.cmd('az ad sp list --display-name "{vaultName}" --query [].id').get_output_in_json()
+            time.sleep(10)
 
     policy_json = test.cmd('az dataprotection backup-policy get-default-policy-template --datasource-type "{dataSourceType}"').get_output_in_json()
     test.kwargs.update({"policy": policy_json})
@@ -34,6 +51,36 @@ def create_vault_and_policy(test):
 
 
 class UpdateMSIPermissionsScenarioTest(ScenarioTest):
+
+    @live_only()
+    @AllowLargeResponse()
+    @ResourceGroupPreparer(name_prefix='clitest-dpp-updatemsipermissions-', location='centraluseuap')
+    def test_dataprotection_update_msi_permissions_disk_uami(test):
+        test.kwargs.update({
+            'location': 'centraluseuap',
+            'vaultName': "clitest-bkp-vault",
+            'policyName': 'diskpolicy',
+            'dataSourceType': 'AzureDisk',
+            'diskId': '/subscriptions/38304e13-357e-405e-9e9a-220351dcce8c/resourceGroups/clitest-dpp-rg/providers/Microsoft.Compute/disks/clitest-disk-donotdelete',
+            'operation': "Backup",
+            'permissionsScope': "Resource",
+            'uamiUrl': '/subscriptions/38304e13-357e-405e-9e9a-220351dcce8c/resourceGroups/clitest-dpp-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/dppcliuamiccy'
+        })
+        create_vault_and_policy(test, useSystemAssigned=False)
+        backup_instance_json = test.cmd('az dataprotection backup-instance initialize --datasource-type "{dataSourceType}" '
+                                        '-l {location} --policy-id "{policyId}" --datasource-id "{diskId}" --snapshot-rg "{rg}" '
+                                        '--uami {uamiUrl} --tags Owner=dppclitest').get_output_in_json()
+        test.kwargs.update({
+            "backupInstance": backup_instance_json,
+        })
+        test.cmd('az dataprotection backup-instance update-msi-permissions '
+                 '-g "{rg}" --vault-name "{vaultName}" '
+                 '--datasource-type "{dataSourceType}" '
+                 '--operation "{operation}" '
+                 '--permissions-scope "{permissionsScope}" '
+                 '--uami "{uamiUrl}" '
+                 '--backup-instance "{backupInstance}" --yes')
+        # time.sleep(10)
 
     @live_only()
     @AllowLargeResponse()
@@ -78,7 +125,7 @@ class UpdateMSIPermissionsScenarioTest(ScenarioTest):
             "ossDb": "postgres",
             "ossDbId": "/subscriptions/38304e13-357e-405e-9e9a-220351dcce8c/resourceGroups/oss-clitest-rg/providers/Microsoft.DBforPostgreSQL/servers/oss-clitest-server/databases/postgres",
             "secretStoreUri": "https://oss-clitest-keyvault.vault.azure.net/secrets/oss-clitest-secret",
-            "keyVaultId":  "/subscriptions/38304e13-357e-405e-9e9a-220351dcce8c/resourceGroups/oss-clitest-rg/providers/Microsoft.KeyVault/vaults/oss-clitest-keyvault"
+            "keyVaultId": "/subscriptions/38304e13-357e-405e-9e9a-220351dcce8c/resourceGroups/oss-clitest-rg/providers/Microsoft.KeyVault/vaults/oss-clitest-keyvault"
         })
         create_vault_and_policy(test)
         backup_instance_guid = "faec6818-0720-11ec-bd1b-c8f750f92764"
@@ -98,6 +145,87 @@ class UpdateMSIPermissionsScenarioTest(ScenarioTest):
                  '--permissions-scope "{permissionsScope}" '
                  '--operation "{operation}" '
                  '--keyvault-id "{keyVaultId}" --yes')
+        # time.sleep(10)
+
+    # Uses persistent Cosmos DB accounts pre-provisioned in cosmos-bugbash-CLIrg-6 (subscription
+    # 97cda027-4279-4cde-b4ff-19afa0021d87). The test provisions a fresh backup vault in a
+    # ResourceGroupPreparer-managed RG and exercises update-msi-permissions for the AzureCosmosDB
+    # workload, which assigns Reader on the data source RG and Cosmos DB Operator on the data source
+    # (see Manifests/AzureCosmosDB.py::backupVaultPermissions).
+    @live_only()
+    @AllowLargeResponse()
+    @ResourceGroupPreparer(name_prefix='clitest-dpp-updatemsipermissions-', location='eastus2euap')
+    def test_dataprotection_update_msi_permissions_cosmosdb(test):
+        test.kwargs.update({
+            'location': 'eastus2euap',
+            'vaultName': 'clitest-bkp-vault',
+            'policyName': 'cosmospolicy',
+            'dataSourceType': 'AzureCosmosDB',
+            'operation': 'Backup',
+            'permissionsScope': 'ResourceGroup',
+            'cosmosDbName': 'cosmosbugbash-cli6-src',
+            'cosmosDbId': '/subscriptions/97cda027-4279-4cde-b4ff-19afa0021d87/resourceGroups/cosmos-bugbash-CLIrg-6/providers/Microsoft.DocumentDB/databaseAccounts/cosmosbugbash-cli6-src',
+        })
+        create_vault_and_policy(test)
+
+        backup_instance_guid = "faec6818-0720-11ec-bd1b-c8f750f92764"
+        backup_instance_json = test.cmd('az dataprotection backup-instance initialize --datasource-type "{dataSourceType}" '
+                                        '-l "{location}" --policy-id "{policyId}" --datasource-id "{cosmosDbId}"').get_output_in_json()
+        backup_instance_json["backup_instance_name"] = (test.kwargs['cosmosDbName'] + "-" +
+                                                       test.kwargs['cosmosDbName'] + "-" +
+                                                       backup_instance_guid)
+        test.kwargs.update({
+            "backupInstance": backup_instance_json,
+        })
+
+        test.cmd('az dataprotection backup-instance update-msi-permissions '
+                 '-g "{rg}" --vault-name "{vaultName}" '
+                 '--datasource-type "{dataSourceType}" '
+                 '--operation "{operation}" '
+                 '--permissions-scope "{permissionsScope}" '
+                 '--backup-instance "{backupInstance}" --yes')
+        # time.sleep(10)
+
+    # Uses persistent Cosmos DB accounts pre-provisioned in cosmos-bugbash-CLIrg-6 (subscription
+    # 97cda027-4279-4cde-b4ff-19afa0021d87). The test provisions a fresh backup vault in a
+    # ResourceGroupPreparer-managed RG and exercises update-msi-permissions --operation Restore
+    # for the AzureCosmosDB workload, which assigns Cosmos DB Operator on the target Cosmos DB
+    # account (see Manifests/AzureCosmosDB.py::backupVaultRestorePermissions). This is the
+    # regression test for the fix that adds AzureCosmosDB to the Restore allow-list in
+    # custom.py::dataprotection_backup_instance_update_msi_permissions.
+    @live_only()
+    @AllowLargeResponse()
+    @ResourceGroupPreparer(name_prefix='clitest-dpp-updatemsipermissions-', location='eastus2euap')
+    def test_dataprotection_update_msi_permissions_cosmosdb_restore(test):
+        test.kwargs.update({
+            'location': 'eastus2euap',
+            'vaultName': 'clitest-bkp-vault',
+            'policyName': 'cosmospolicy',
+            'dataSourceType': 'AzureCosmosDB',
+            'operation': 'Restore',
+            'permissionsScope': 'Resource',
+            'sourceDataStore': 'VaultStore',
+            'recoveryPointId': 'dummy-recovery-point-id',
+            'targetCosmosDbId': '/subscriptions/97cda027-4279-4cde-b4ff-19afa0021d87/resourceGroups/cosmos-bugbash-CLIrg-6/providers/Microsoft.DocumentDB/databaseAccounts/cosmosbugbash-cli6-tgt',
+        })
+        create_vault_and_policy(test)
+
+        restore_request_json = test.cmd('az dataprotection backup-instance restore initialize-for-data-recovery '
+                                        '--datasource-type "{dataSourceType}" '
+                                        '--restore-location "{location}" '
+                                        '--source-datastore "{sourceDataStore}" '
+                                        '--recovery-point-id "{recoveryPointId}" '
+                                        '--target-resource-id "{targetCosmosDbId}"').get_output_in_json()
+        test.kwargs.update({
+            "restoreRequest": restore_request_json,
+        })
+
+        test.cmd('az dataprotection backup-instance update-msi-permissions '
+                 '-g "{rg}" --vault-name "{vaultName}" '
+                 '--datasource-type "{dataSourceType}" '
+                 '--operation "{operation}" '
+                 '--permissions-scope "{permissionsScope}" '
+                 '--restore-request-object "{restoreRequest}" --yes')
         # time.sleep(10)
 
     @live_only()
@@ -123,13 +251,13 @@ class UpdateMSIPermissionsScenarioTest(ScenarioTest):
             "backupConfig": backup_config_json
         })
         backup_instance_json = test.cmd('az dataprotection backup-instance initialize '
-                                    '--datasource-id "{aksClusterId}" '
-                                    '--datasource-location "{location}" '
-                                    '--datasource-type "{dataSourceType}" '
-                                    '--policy-id "{policyId}" '
-                                    '--backup-configuration "{backupConfig}" '
-                                    '--friendly-name "{friendlyName}" '
-                                    '--snapshot-resource-group-name "{rg}"').get_output_in_json()
+                                        '--datasource-id "{aksClusterId}" '
+                                        '--datasource-location "{location}" '
+                                        '--datasource-type "{dataSourceType}" '
+                                        '--policy-id "{policyId}" '
+                                        '--backup-configuration "{backupConfig}" '
+                                        '--friendly-name "{friendlyName}" '
+                                        '--snapshot-resource-group-name "{rg}"').get_output_in_json()
         test.kwargs.update({
             "backupInstance": backup_instance_json,
         })

@@ -13,19 +13,21 @@ from azure.cli.core.aaz import *
 
 @register_command(
     "elastic-san volume list",
-    is_preview=True,
 )
 class List(AAZCommand):
     """List Volumes in a Volume Group.
 
     :example: List Volumes in a Volume Group.
         az elastic-san volume list -g "rg" -e "san_name" -v "vg_name"
+
+    :example: List soft-deleted volumes
+        az elastic-san volume list -g rg_name -e san_name -v volume_group_name --access-soft-deleted-resources true
     """
 
     _aaz_info = {
-        "version": "2023-01-01",
+        "version": "2025-09-01",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.elasticsan/elasticsans/{}/volumegroups/{}/volumes", "2023-01-01"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.elasticsan/elasticsans/{}/volumegroups/{}/volumes", "2025-09-01"],
         ]
     }
 
@@ -141,7 +143,7 @@ class List(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-01-01",
+                    "api-version", "2025-09-01",
                     required=True,
                 ),
             }
@@ -176,9 +178,10 @@ class List(AAZCommand):
             _schema_on_200 = cls._schema_on_200
             _schema_on_200.next_link = AAZStrType(
                 serialized_name="nextLink",
-                flags={"read_only": True},
             )
-            _schema_on_200.value = AAZListType()
+            _schema_on_200.value = AAZListType(
+                flags={"required": True},
+            )
 
             value = cls._schema_on_200.value
             value.Element = AAZObjectType()

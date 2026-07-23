@@ -15,22 +15,28 @@ from azure.cli.core.aaz import *
     "network perimeter profile access-rule create",
 )
 class Create(AAZCommand):
-    """Creates or updates a network access rule.
+    """Create a network security perimeter profile access rule.
 
     :example: Create IP based access rule
         az network perimeter profile access-rule create -n MyAccessRule --profile-name MyProfile --perimeter-name MyPerimeter -g MyResourceGroup --address-prefixes "[10.10.0.0/16]"
+
+    :example: Create NSP based access rule
+        az network perimeter profile access-rule create -n MyAccessRule --profile-name MyProfile --perimeter-name MyPerimeter -g MyResourceGroup --nsp "[{id:<NSP_ARM_ID>}]"
 
     :example: Create FQDN based access rule
         az network perimeter profile access-rule create -n MyAccessRule --profile-name MyProfile --perimeter-name MyPerimeter -g MyResourceGroup --fqdn "['www.abc.com', 'www.google.com']" --direction "Outbound"
 
     :example: Create Subscription based access rule
         az network perimeter profile access-rule create -n MyAccessRule --profile-name MyProfile --perimeter-name MyPerimeter -g MyResourceGroup --subscriptions [0].id="<SubscriptionID1>" [1].id="<SubscriptionID2>"
+
+    :example: Create ServiceTags based access rule
+        az network perimeter profile access-rule create -n MyAccessRule --profile-name MyProfile --perimeter-name MyPerimeter -g MyResourceGroup --service-tags  [st1,st2]
     """
 
     _aaz_info = {
-        "version": "2023-07-01-preview",
+        "version": "2024-10-01",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.network/networksecurityperimeters/{}/profiles/{}/accessrules/{}", "2023-07-01-preview"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.network/networksecurityperimeters/{}/profiles/{}/accessrules/{}", "2024-10-01"],
         ]
     }
 
@@ -54,39 +60,32 @@ class Create(AAZCommand):
             options=["-n", "--name", "--access-rule-name"],
             help="The name of the NSP access rule.",
             required=True,
+            fmt=AAZStrArgFormat(
+                pattern="(^[a-zA-Z0-9]+[a-zA-Z0-9_.-]*[a-zA-Z0-9_]+$)|(^[a-zA-Z0-9]$)",
+                max_length=80,
+            ),
         )
         _args_schema.perimeter_name = AAZStrArg(
             options=["--perimeter-name"],
             help="The name of the network security perimeter.",
             required=True,
+            fmt=AAZStrArgFormat(
+                pattern="(^[a-zA-Z0-9]+[a-zA-Z0-9_.-]*[a-zA-Z0-9_]+$)|(^[a-zA-Z0-9]$)",
+                max_length=80,
+            ),
         )
         _args_schema.profile_name = AAZStrArg(
             options=["--profile-name"],
             help="The name of the NSP profile.",
             required=True,
+            fmt=AAZStrArgFormat(
+                pattern="(^[a-zA-Z0-9]+[a-zA-Z0-9_.-]*[a-zA-Z0-9_]+$)|(^[a-zA-Z0-9]$)",
+                max_length=80,
+            ),
         )
         _args_schema.resource_group = AAZResourceGroupNameArg(
             required=True,
         )
-
-        # define Arg Group "Parameters"
-
-        _args_schema = cls._args_schema
-        _args_schema.location = AAZResourceLocationArg(
-            arg_group="Parameters",
-            help="Resource location.",
-            fmt=AAZResourceLocationArgFormat(
-                resource_group_arg="resource_group",
-            ),
-        )
-        _args_schema.tags = AAZDictArg(
-            options=["--tags"],
-            arg_group="Parameters",
-            help="Resource tags.",
-        )
-
-        tags = cls._args_schema.tags
-        tags.Element = AAZStrArg()
 
         # define Arg Group "Properties"
 
@@ -105,17 +104,22 @@ class Create(AAZCommand):
         _args_schema.email_addresses = AAZListArg(
             options=["--email-addresses"],
             arg_group="Properties",
-            help="Outbound rules email address format.",
+            help="Outbound rules in email address format. This access rule type is currently unavailable for use",
         )
         _args_schema.fqdn = AAZListArg(
             options=["--fqdn"],
             arg_group="Properties",
-            help="Outbound rules fully qualified domain name format.",
+            help="Outbound rules in fully qualified domain name format.",
         )
         _args_schema.phone_numbers = AAZListArg(
             options=["--phone-numbers"],
             arg_group="Properties",
-            help="Outbound rules phone number format.",
+            help="Outbound rules in phone number format. This access rule type is currently unavailable for use",
+        )
+        _args_schema.service_tags = AAZListArg(
+            options=["--service-tags"],
+            arg_group="Properties",
+            help="Inbound rules of type service tag. This access rule type is currently unavailable for use.",
         )
         _args_schema.subscriptions = AAZListArg(
             options=["--subscriptions"],
@@ -135,11 +139,14 @@ class Create(AAZCommand):
         phone_numbers = cls._args_schema.phone_numbers
         phone_numbers.Element = AAZStrArg()
 
+        service_tags = cls._args_schema.service_tags
+        service_tags.Element = AAZStrArg()
+
         subscriptions = cls._args_schema.subscriptions
         subscriptions.Element = AAZObjectArg()
 
         _element = cls._args_schema.subscriptions.Element
-        _element.id = AAZStrArg(
+        _element.id = AAZResourceIdArg(
             options=["id"],
             help="Subscription ID in the ARM ID fromat.",
         )
@@ -147,7 +154,7 @@ class Create(AAZCommand):
 
     def _execute_operations(self):
         self.pre_operations()
-        self.NspAccessRulesCreateOrUpdate(ctx=self.ctx)()
+        self.NetworkSecurityPerimeterAccessRulesCreateOrUpdate(ctx=self.ctx)()
         self.post_operations()
 
     @register_callback
@@ -162,7 +169,7 @@ class Create(AAZCommand):
         result = self.deserialize_output(self.ctx.vars.instance, client_flatten=True)
         return result
 
-    class NspAccessRulesCreateOrUpdate(AAZHttpOperation):
+    class NetworkSecurityPerimeterAccessRulesCreateOrUpdate(AAZHttpOperation):
         CLIENT_TYPE = "MgmtClient"
 
         def __call__(self, *args, **kwargs):
@@ -218,7 +225,7 @@ class Create(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-07-01-preview",
+                    "api-version", "2024-10-01",
                     required=True,
                 ),
             }
@@ -243,10 +250,7 @@ class Create(AAZCommand):
                 typ=AAZObjectType,
                 typ_kwargs={"flags": {"required": True, "client_flatten": True}}
             )
-            _builder.set_prop("location", AAZStrType, ".location")
-            _builder.set_prop("name", AAZStrType, ".access_rule_name")
-            _builder.set_prop("properties", AAZObjectType)
-            _builder.set_prop("tags", AAZDictType, ".tags")
+            _builder.set_prop("properties", AAZObjectType, typ_kwargs={"flags": {"client_flatten": True}})
 
             properties = _builder.get(".properties")
             if properties is not None:
@@ -255,6 +259,7 @@ class Create(AAZCommand):
                 properties.set_prop("emailAddresses", AAZListType, ".email_addresses")
                 properties.set_prop("fullyQualifiedDomainNames", AAZListType, ".fqdn")
                 properties.set_prop("phoneNumbers", AAZListType, ".phone_numbers")
+                properties.set_prop("serviceTags", AAZListType, ".service_tags")
                 properties.set_prop("subscriptions", AAZListType, ".subscriptions")
 
             address_prefixes = _builder.get(".properties.addressPrefixes")
@@ -273,6 +278,10 @@ class Create(AAZCommand):
             if phone_numbers is not None:
                 phone_numbers.set_elements(AAZStrType, ".")
 
+            service_tags = _builder.get(".properties.serviceTags")
+            if service_tags is not None:
+                service_tags.set_elements(AAZStrType, ".")
+
             subscriptions = _builder.get(".properties.subscriptions")
             if subscriptions is not None:
                 subscriptions.set_elements(AAZObjectType, ".")
@@ -280,10 +289,6 @@ class Create(AAZCommand):
             _elements = _builder.get(".properties.subscriptions[]")
             if _elements is not None:
                 _elements.set_prop("id", AAZStrType, ".id")
-
-            tags = _builder.get(".tags")
-            if tags is not None:
-                tags.set_elements(AAZStrType, ".")
 
             return self.serialize_content(_content_value)
 
@@ -308,10 +313,16 @@ class Create(AAZCommand):
             _schema_on_200_201.id = AAZStrType(
                 flags={"read_only": True},
             )
-            _schema_on_200_201.location = AAZStrType()
-            _schema_on_200_201.name = AAZStrType()
-            _schema_on_200_201.properties = AAZObjectType()
-            _schema_on_200_201.tags = AAZDictType()
+            _schema_on_200_201.name = AAZStrType(
+                flags={"read_only": True},
+            )
+            _schema_on_200_201.properties = AAZObjectType(
+                flags={"client_flatten": True},
+            )
+            _schema_on_200_201.system_data = AAZObjectType(
+                serialized_name="systemData",
+                flags={"read_only": True},
+            )
             _schema_on_200_201.type = AAZStrType(
                 flags={"read_only": True},
             )
@@ -337,6 +348,9 @@ class Create(AAZCommand):
             properties.provisioning_state = AAZStrType(
                 serialized_name="provisioningState",
                 flags={"read_only": True},
+            )
+            properties.service_tags = AAZListType(
+                serialized_name="serviceTags",
             )
             properties.subscriptions = AAZListType()
 
@@ -367,14 +381,34 @@ class Create(AAZCommand):
             phone_numbers = cls._schema_on_200_201.properties.phone_numbers
             phone_numbers.Element = AAZStrType()
 
+            service_tags = cls._schema_on_200_201.properties.service_tags
+            service_tags.Element = AAZStrType()
+
             subscriptions = cls._schema_on_200_201.properties.subscriptions
             subscriptions.Element = AAZObjectType()
 
             _element = cls._schema_on_200_201.properties.subscriptions.Element
             _element.id = AAZStrType()
 
-            tags = cls._schema_on_200_201.tags
-            tags.Element = AAZStrType()
+            system_data = cls._schema_on_200_201.system_data
+            system_data.created_at = AAZStrType(
+                serialized_name="createdAt",
+            )
+            system_data.created_by = AAZStrType(
+                serialized_name="createdBy",
+            )
+            system_data.created_by_type = AAZStrType(
+                serialized_name="createdByType",
+            )
+            system_data.last_modified_at = AAZStrType(
+                serialized_name="lastModifiedAt",
+            )
+            system_data.last_modified_by = AAZStrType(
+                serialized_name="lastModifiedBy",
+            )
+            system_data.last_modified_by_type = AAZStrType(
+                serialized_name="lastModifiedByType",
+            )
 
             return cls._schema_on_200_201
 

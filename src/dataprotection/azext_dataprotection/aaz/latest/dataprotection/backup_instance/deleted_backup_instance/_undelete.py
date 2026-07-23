@@ -13,16 +13,15 @@ from azure.cli.core.aaz import *
 
 @register_command(
     "dataprotection backup-instance deleted-backup-instance undelete",
-    is_experimental=True,
 )
 class Undelete(AAZCommand):
     """Undelete soft-deleted backup instances.
     """
 
     _aaz_info = {
-        "version": "2023-05-01",
+        "version": "2025-07-01",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.dataprotection/backupvaults/{}/deletedbackupinstances/{}/undelete", "2023-05-01"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.dataprotection/backupvaults/{}/deletedbackupinstances/{}/undelete", "2025-07-01"],
         ]
     }
 
@@ -85,7 +84,7 @@ class Undelete(AAZCommand):
                     session,
                     self.on_200,
                     self.on_error,
-                    lro_options={"final-state-via": "azure-async-operation"},
+                    lro_options={"final-state-via": "location"},
                     path_format_arguments=self.url_parameters,
                 )
             if session.http_response.status_code in [200]:
@@ -94,7 +93,7 @@ class Undelete(AAZCommand):
                     session,
                     self.on_200,
                     self.on_error,
-                    lro_options={"final-state-via": "azure-async-operation"},
+                    lro_options={"final-state-via": "location"},
                     path_format_arguments=self.url_parameters,
                 )
 
@@ -141,7 +140,7 @@ class Undelete(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-05-01",
+                    "api-version", "2025-07-01",
                     required=True,
                 ),
             }

@@ -11,8 +11,11 @@ from azext_aks_preview._helpers import (
     check_is_private_link_cluster,
     get_cluster_snapshot,
     get_cluster_snapshot_by_snapshot_id,
+    get_monitoring_addon_key,
     get_nodepool_snapshot,
     get_nodepool_snapshot_by_snapshot_id,
+    process_message_for_run_command,
+    filter_hard_taints,
 )
 from azext_aks_preview.__init__ import register_aks_preview_resource_type
 from azext_aks_preview._client_factory import CUSTOM_MGMT_AKS_PREVIEW
@@ -23,6 +26,7 @@ from azure.cli.core.azclierror import (
     BadRequestError,
     InvalidArgumentValueError,
     ResourceNotFoundError,
+    CLIError,
 )
 from azure.core.exceptions import AzureError, HttpResponseError
 from azext_aks_preview.tests.latest.mocks import MockCLI, MockCmd
@@ -142,6 +146,118 @@ class CheckManagedClusterTestCase(unittest.TestCase):
         api_server_access_profile.enable_private_cluster = True
         mc_3.api_server_access_profile = api_server_access_profile
         self.assertEqual(check_is_private_link_cluster(mc_3), True)
+
+
+class CheckProcessRunCommandMessage(unittest.TestCase):
+    def test_process_message_for_run_command(self):
+        successful_message = "Enable succeeded: \n[stdout]\n'Mon Feb 26 20:55:28 UTC 2024 - SUCCESS: Successfully tested DNS resolution to management.azure.com'\n'Mon Feb 26 20:55:29 UTC 2024 - SUCCESS: Successfully retrieved access token'\n'Mon Feb 26 20:55:30 UTC 2024 - SUCCESS: Successfully tested management.azure.com with returned status code 200'\n'Mon Feb 26 20:55:30 UTC 2024 - WARNING: No apiserver FQDN provided. Skipping apiserver check.'\n'Mon Feb 26 20:55:30 UTC 2024 - SUCCESS: Successfully tested DNS resolution to acs-mirror.azureedge.net'\n'Mon Feb 26 20:55:30 UTC 2024 - SUCCESS: Successfully tested acs-mirror.azureedge.net with returned status code 400. This is expected since acs-mirror.azureedge.net is a repository endpoint which requires a full package path to get 200 status code.'\n'Mon Feb 26 20:55:30 UTC 2024 - SUCCESS: Successfully tested DNS resolution to packages.microsoft.com'\n'Mon Feb 26 20:55:30 UTC 2024 - SUCCESS: Successfully tested packages.microsoft.com with returned status code 200'\n'Mon Feb 26 20:55:30 UTC 2024 - SUCCESS: Successfully tested DNS resolution to eastus.data.mcr.microsoft.com'\n'Mon Feb 26 20:55:30 UTC 2024 - SUCCESS: Successfully tested eastus.data.mcr.microsoft.com with returned status code 400. This is expected since eastus.data.mcr.microsoft.com is a repository endpoint which requires a full package path to get 200 status code.'\n'Mon Feb 26 20:55:30 UTC 2024 - SUCCESS: Successfully tested DNS resolution to login.microsoftonline.com'\n'Mon Feb 26 20:55:31 UTC 2024 - SUCCESS: Successfully tested login.microsoftonline.com with returned status code 200'\n'Mon Feb 26 20:55:31 UTC 2024 - SUCCESS: Successfully tested DNS resolution to mcr.microsoft.com'\n'Mon Feb 26 20:55:31 UTC 2024 - SUCCESS: Successfully tested mcr.microsoft.com with returned status code 200'\n\n[stderr]\n"
+        processed_message = process_message_for_run_command(successful_message)
+        self.assertEqual(processed_message, None)
+
+        failed_message = "Enable succeeded: \n[stdout]\n\n[stderr]\nbash: /opt/azure/containers/aks-check.sh: No such file or directory\n"
+        err = "Error: bash: /opt/azure/containers/aks-check.sh: No such file or directory"
+        with self.assertRaises(CLIError) as cm:
+            process_message_for_run_command(failed_message)
+        self.assertEqual(str(cm.exception), err)
+
+
+class FilterHardTaintsTestCase(unittest.TestCase):
+    def test_filter_hard_taints_keeps_only_soft_taints(self):
+        input_taints = ["taint1=val1:NoSchedule", "taint2=val2:NoExecute", "taint3=val3:PreferNoSchedule"]
+        expected_filtered_taints = ["taint3=val3:PreferNoSchedule"]
+        self.assertEqual(filter_hard_taints(input_taints), expected_filtered_taints)
+
+    def test_filter_hard_taints_preserves_critical_addons_only_taints(self):
+        input_taints = [
+            "CriticalAddonsOnly=true:NoSchedule",  
+            "CriticalAddonsOnly=true:NoExecute",
+            "taint1=val1:NoSchedule",
+            "taint2=val2:PreferNoSchedule"
+        ]
+        expected_filtered_taints = [
+            "CriticalAddonsOnly=true:NoSchedule", 
+            "CriticalAddonsOnly=true:NoExecute", 
+            "taint2=val2:PreferNoSchedule"
+        ]
+        self.assertEqual(filter_hard_taints(input_taints), expected_filtered_taints)
+    
+    def test_filter_hard_taints_with_empty_list(self):
+        input_taints = []
+        expected_filtered_taints = []
+        self.assertEqual(filter_hard_taints(input_taints), expected_filtered_taints)
+    
+    def test_filter_hard_taints_with_empty_strings(self):
+        input_taints = ["taint1=val1:NoSchedule", "", "taint3=val3:PreferNoSchedule"]
+        expected_filtered_taints = ["taint3=val3:PreferNoSchedule"]
+        self.assertEqual(filter_hard_taints(input_taints), expected_filtered_taints)
+    
+    def test_filter_hard_taints_with_invalid_format(self):
+        input_taints = ["invalid-format", "taint1=val1:NoSchedule", "another-invalid", "taint2=val2:PreferNoSchedule"]
+        expected_filtered_taints = ["invalid-format", "another-invalid", "taint2=val2:PreferNoSchedule"]
+        self.assertEqual(filter_hard_taints(input_taints), expected_filtered_taints)
+    
+    def test_filter_hard_taints_case_insensitive(self):
+        input_taints = ["taint1=val1:noschedule", "taint2=val2:PREFERNOSCHEDULE", "taint3=val3:prefernoschedule"]
+        expected_filtered_taints = ["taint2=val2:PREFERNOSCHEDULE", "taint3=val3:prefernoschedule"]
+        self.assertEqual(filter_hard_taints(input_taints), expected_filtered_taints)
+    
+    def test_filter_hard_taints_mixed_effects(self):
+        input_taints = [
+            "key1=value1:NoSchedule", 
+            "key2=value2:NoExecute", 
+            "key3=value3:PreferNoSchedule",
+            "key4:NoSchedule",
+            "key5:PreferNoSchedule"
+        ]
+        expected_filtered_taints = ["key3=value3:PreferNoSchedule", "key5:PreferNoSchedule"]
+        self.assertEqual(filter_hard_taints(input_taints), expected_filtered_taints)
+
+
+class TestGetMonitoringAddonKey(unittest.TestCase):
+    """Tests for the get_monitoring_addon_key helper."""
+
+    def test_returns_canonical_when_present(self):
+        addon_profiles = {"omsagent": Mock(enabled=True)}
+        result = get_monitoring_addon_key(addon_profiles, "omsagent")
+        self.assertEqual(result, "omsagent")
+        # dict should be unchanged
+        self.assertIn("omsagent", addon_profiles)
+
+    def test_normalizes_camelcase_key(self):
+        addon_profiles = {"omsAgent": Mock(enabled=True)}
+        result = get_monitoring_addon_key(addon_profiles, "omsagent")
+        self.assertEqual(result, "omsagent")
+        # dict should have been re-keyed
+        self.assertIn("omsagent", addon_profiles)
+        self.assertNotIn("omsAgent", addon_profiles)
+
+    def test_normalizes_arbitrary_casing(self):
+        addon_profiles = {"OMSagent": Mock(enabled=True)}
+        result = get_monitoring_addon_key(addon_profiles, "omsagent")
+        self.assertEqual(result, "omsagent")
+        self.assertIn("omsagent", addon_profiles)
+        self.assertNotIn("OMSagent", addon_profiles)
+
+    def test_returns_canonical_when_none_profiles(self):
+        result = get_monitoring_addon_key(None, "omsagent")
+        self.assertEqual(result, "omsagent")
+
+    def test_returns_canonical_when_key_not_present(self):
+        addon_profiles = {"some_other_addon": Mock(enabled=True)}
+        result = get_monitoring_addon_key(addon_profiles, "omsagent")
+        self.assertEqual(result, "omsagent")
+
+    def test_prefers_exact_match_over_case_insensitive(self):
+        # If both canonical and variant exist, canonical wins (no re-keying)
+        addon_profiles = {
+            "omsagent": Mock(enabled=True),
+            "omsAgent": Mock(enabled=False),
+        }
+        result = get_monitoring_addon_key(addon_profiles, "omsagent")
+        self.assertEqual(result, "omsagent")
+        # Both keys should still be present (no re-keying needed)
+        self.assertIn("omsagent", addon_profiles)
+        self.assertIn("omsAgent", addon_profiles)
 
 
 if __name__ == "__main__":

@@ -17,14 +17,14 @@ from azure.cli.core.aaz import *
 class Update(AAZCommand):
     """Update to update certain properties of the IP Prefix resource.
 
-    :example: Update IP prefix
+    :example: Update the Ip prefix
         az networkfabric ipprefix update  -g "example-rg" --resource-name "example-ipprefix" --ip-prefix-rules "[{action:Permit,sequenceNumber:4155123341,networkPrefix:'10.10.10.10/30',condition:GreaterThanOrEqualTo,subnetMaskLength:10}]"
     """
 
     _aaz_info = {
-        "version": "2023-06-15",
+        "version": "2026-01-15-preview",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.managednetworkfabric/ipprefixes/{}", "2023-06-15"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.managednetworkfabric/ipprefixes/{}", "2026-01-15-preview"],
         ]
     }
 
@@ -50,9 +50,11 @@ class Update(AAZCommand):
             help="Name of the IP Prefix.",
             required=True,
             id_part="name",
+            fmt=AAZStrArgFormat(
+                pattern="^[a-zA-Z]{1}[a-zA-Z0-9-_]{2,127}$",
+            ),
         )
         _args_schema.resource_group = AAZResourceGroupNameArg(
-            help="Name of the resource group",
             required=True,
         )
 
@@ -62,7 +64,7 @@ class Update(AAZCommand):
         _args_schema.tags = AAZDictArg(
             options=["--tags"],
             arg_group="Body",
-            help="Resource tags",
+            help="Resource tags.",
         )
 
         tags = cls._args_schema.tags
@@ -74,12 +76,14 @@ class Update(AAZCommand):
         _args_schema.annotation = AAZStrArg(
             options=["--annotation"],
             arg_group="Properties",
-            help="Description for underlying resource.",
+            help="Switch configuration description.",
+            nullable=True,
         )
         _args_schema.ip_prefix_rules = AAZListArg(
             options=["--ip-prefix-rules"],
             arg_group="Properties",
             help="The list of IP Prefix Rules.",
+            nullable=True,
         )
 
         ip_prefix_rules = cls._args_schema.ip_prefix_rules
@@ -88,7 +92,7 @@ class Update(AAZCommand):
         _element = cls._args_schema.ip_prefix_rules.Element
         _element.action = AAZStrArg(
             options=["action"],
-            help="Action to be taken on the configuration. Example: Permit.",
+            help="Action to be taken on the configuration. Example: Permit | Deny.",
             required=True,
             enum={"Deny": "Deny", "Permit": "Permit"},
         )
@@ -99,7 +103,7 @@ class Update(AAZCommand):
         )
         _element.network_prefix = AAZStrArg(
             options=["network-prefix"],
-            help="Network Prefix specifying IPv4/IPv6 packets to be permitted or denied. Example: 1.1.1.0/24.",
+            help="Network Prefix specifying IPv4/IPv6 packets to be permitted or denied. Example: 1.1.1.0/24 | 3FFE:FFFF:0:CD30::/126",
             required=True,
         )
         _element.sequence_number = AAZIntArg(
@@ -198,7 +202,7 @@ class Update(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-06-15",
+                    "api-version", "2026-01-15-preview",
                     required=True,
                 ),
             }
@@ -228,8 +232,8 @@ class Update(AAZCommand):
 
             properties = _builder.get(".properties")
             if properties is not None:
-                properties.set_prop("annotation", AAZStrType, ".annotation")
-                properties.set_prop("ipPrefixRules", AAZListType, ".ip_prefix_rules")
+                properties.set_prop("annotation", AAZStrType, ".annotation", typ_kwargs={"nullable": True})
+                properties.set_prop("ipPrefixRules", AAZListType, ".ip_prefix_rules", typ_kwargs={"nullable": True})
 
             ip_prefix_rules = _builder.get(".properties.ipPrefixRules")
             if ip_prefix_rules is not None:
@@ -302,6 +306,15 @@ class Update(AAZCommand):
                 serialized_name="ipPrefixRules",
                 flags={"required": True},
             )
+            properties.last_operation = AAZObjectType(
+                serialized_name="lastOperation",
+                flags={"read_only": True},
+            )
+            properties.network_fabric_id = AAZStrType(
+                serialized_name="networkFabricId",
+                nullable=True,
+                flags={"read_only": True},
+            )
             properties.provisioning_state = AAZStrType(
                 serialized_name="provisioningState",
                 flags={"read_only": True},
@@ -325,6 +338,11 @@ class Update(AAZCommand):
             )
             _element.subnet_mask_length = AAZStrType(
                 serialized_name="subnetMaskLength",
+            )
+
+            last_operation = cls._schema_on_200.properties.last_operation
+            last_operation.details = AAZStrType(
+                flags={"read_only": True},
             )
 
             system_data = cls._schema_on_200.system_data

@@ -16,20 +16,17 @@ from knack.arguments import CLIArgumentType
 from ._completers import get_af_subresource_completion_list
 from ._validators import (
     get_public_ip_validator, get_subnet_validator, validate_application_rule_protocols,
-    validate_firewall_policy, validate_rule_group_collection, process_private_ranges,
+    validate_firewall_policy, process_private_ranges,
     process_threat_intel_allowlist_ip_addresses, process_threat_intel_allowlist_fqdns,
-    validate_virtual_hub, get_management_subnet_validator, get_management_public_ip_validator,
-    validate_ip_groups)
+    validate_virtual_hub, get_management_subnet_validator, get_management_public_ip_validator)
 
 
 # pylint: disable=too-many-locals, too-many-branches, too-many-statements
 def load_arguments(self, _):
     (AzureFirewallNetworkRuleProtocol, AzureFirewallRCActionType,
-     AzureFirewallNatRCActionType, FirewallPolicySkuTier, FirewallPolicyIntrusionDetectionStateType,
-     FirewallPolicyIntrusionDetectionProtocol, AzureFirewallSkuTier) = \
+     AzureFirewallNatRCActionType, AzureFirewallSkuTier) = \
         self.get_models('AzureFirewallNetworkRuleProtocol', 'AzureFirewallRCActionType',
-                        'AzureFirewallNatRCActionType', 'FirewallPolicySkuTier', 'FirewallPolicyIntrusionDetectionStateType',
-                        'FirewallPolicyIntrusionDetectionProtocol', 'AzureFirewallSkuTier')
+                        'AzureFirewallNatRCActionType', 'AzureFirewallSkuTier')
 
     firewall_name_type = CLIArgumentType(options_list=['--firewall-name', '-f'], metavar='NAME', help='Azure Firewall name.', id_part='name', completer=get_resource_name_completion_list('Microsoft.Network/azureFirewalls'))
     collection_name_type = CLIArgumentType(options_list=['--collection-name', '-c'], help='Name of the rule collection.', id_part='child_name_1')
@@ -69,6 +66,8 @@ def load_arguments(self, _):
                    arg_type=get_three_state_flag(), help='Allow fat flow logging. By default it is false.')
         c.argument('enable_udp_log_optimization', options_list=['--enable-udp-log-optimization', '--udp-log-optimization'],
                    arg_type=get_three_state_flag(), help='Allow UDP log optimization. By default it is false.')
+        c.argument('enable_dnstap_logging', options_list=['--enable-dnstap-logging', '--dnstap-logging'],
+                   arg_type=get_three_state_flag(), help='Allow dnstap logging. By default it is false.')
 
     with self.argument_context('network firewall', arg_group='Virtual Hub Public Ip') as c:
         c.argument('hub_public_ip_count', options_list=['--public-ip-count', '--count'], type=int,

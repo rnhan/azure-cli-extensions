@@ -15,16 +15,16 @@ from azure.cli.core.aaz import *
     "new-relic monitor show",
 )
 class Show(AAZCommand):
-    """Get a NewRelicMonitorResource
+    """Retrieves the properties and configuration details of a specific New Relic monitor resource, providing insight into its setup and status.
 
     :example: Get a NewRelicMonitorResource.
         az new-relic monitor show --resource-group MyResourceGroup --monitor-name MyNewRelicMonitor
     """
 
     _aaz_info = {
-        "version": "2022-07-01",
+        "version": "2024-01-01",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/newrelic.observability/monitors/{}", "2022-07-01"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/newrelic.observability/monitors/{}", "2024-01-01"],
         ]
     }
 
@@ -46,11 +46,12 @@ class Show(AAZCommand):
         _args_schema = cls._args_schema
         _args_schema.monitor_name = AAZStrArg(
             options=["-n", "--name", "--monitor-name"],
-            help="Name of the Monitors resource",
+            help="Name of the Monitoring resource",
             required=True,
             id_part="name",
         )
         _args_schema.resource_group = AAZResourceGroupNameArg(
+            help="Name of resource group. You can configure the default group using `az configure --defaults group=<name>`.",
             required=True,
         )
         return cls._args_schema
@@ -120,7 +121,7 @@ class Show(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2022-07-01",
+                    "api-version", "2024-01-01",
                     required=True,
                 ),
             }
@@ -236,6 +237,12 @@ class Show(AAZCommand):
             )
             properties.provisioning_state = AAZStrType(
                 serialized_name="provisioningState",
+            )
+            properties.saa_s_azure_subscription_status = AAZStrType(
+                serialized_name="saaSAzureSubscriptionStatus",
+            )
+            properties.subscription_state = AAZStrType(
+                serialized_name="subscriptionState",
             )
             properties.user_info = AAZObjectType(
                 serialized_name="userInfo",

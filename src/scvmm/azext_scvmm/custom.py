@@ -2,8 +2,9 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
-# pylint: disable=unused-argument,too-many-lines
+# pylint: disable=unused-argument,too-many-lines,too-many-locals
 
+from collections import defaultdict
 from getpass import getpass
 from azure.cli.command_modules.acs._client_factory import get_resources_client
 from azure.cli.core.azclierror import (
@@ -13,11 +14,14 @@ from azure.cli.core.azclierror import (
     InvalidArgumentValueError,
 )
 from azure.cli.core.util import sdk_no_wait
+from azure.cli.core.commands.client_factory import get_subscription_id
 from azure.core.exceptions import ResourceNotFoundError  # type: ignore
-from msrestazure.tools import is_valid_resource_id
-from .scvmm_utils import get_resource_id, get_extended_location
+from azure.mgmt.core.tools import is_valid_resource_id
+from .scvmm_utils import get_logger, get_resource_id, get_extended_location
 from .scvmm_constants import (
     AVAILABILITYSET_RESOURCE_TYPE,
+    MACHINE_KIND,
+    SCVMM_API_VERSION,
     SCVMM_NAMESPACE,
     CLOUD_RESOURCE_TYPE,
     VMMSERVER_RESOURCE_TYPE,
@@ -26,6 +30,7 @@ from .scvmm_constants import (
     INVENTORY_ITEM_TYPE,
     MACHINE_KIND_SCVMM,
     DEFAULT_VMMSERVER_PORT,
+    EXTENDED_LOCATION_TYPE,
     EXTENDED_LOCATION_NAMESPACE,
     CUSTOM_LOCATION_RESOURCE_TYPE,
     MACHINES_RESOURCE_TYPE,
@@ -52,36 +57,49 @@ from .scvmm_constants import (
 )
 from .vendored_sdks.scvmm.models import (
     Cloud,
+    CloudProperties,
+    ExtendedLocation,
     HardwareProfile,
     HardwareProfileUpdate,
     InfrastructureProfile,
-    OsProfileForVMInstance,
+    OsProfileForVmInstance,
     VirtualMachineInstance,
+    VirtualMachineInstanceProperties,
     VirtualMachineInstanceUpdate,
+    VirtualMachineInstanceUpdateProperties,
     VirtualMachineCreateCheckpoint,
     VirtualMachineDeleteCheckpoint,
     VirtualMachineRestoreCheckpoint,
     VirtualMachineTemplate,
+    VirtualMachineTemplateProperties,
     VirtualNetwork,
-    VMMServer,
-    VMMCredential,
+    VirtualNetworkProperties,
+    VmmServer,
+    VmmServerProperties,
+    VmmCredential,
     AllocationMethod,
     NetworkInterface,
     NetworkProfile,
     NetworkInterfaceUpdate,
     NetworkProfileUpdate,
-    StorageQoSPolicyDetails,
+    StorageQosPolicyDetails,
     VirtualDisk,
     VirtualDiskUpdate,
     StorageProfile,
     StorageProfileUpdate,
-    ResourcePatch,
     StopVirtualMachineOptions,
     AvailabilitySetListItem,
     AvailabilitySet,
+    AvailabilitySetProperties,
     GuestAgent,
+    GuestAgentProperties,
     GuestCredential,
     HttpProxyConfiguration,
+    VmmServerTagsUpdate,
+    VirtualNetworkTagsUpdate,
+    VirtualMachineTemplateTagsUpdate,
+    AvailabilitySetTagsUpdate,
+    CloudTagsUpdate,
 )
 
 from .vendored_sdks.hybridcompute.models import (
@@ -98,7 +116,7 @@ from .vendored_sdks.scvmm.operations import (
     VirtualNetworksOperations,
     VirtualMachineTemplatesOperations,
     VirtualMachineInstancesOperations,
-    VMInstanceGuestAgentsOperations,
+    GuestAgentsOperations,
     AvailabilitySetsOperations,
     InventoryItemsOperations,
 )
@@ -108,8 +126,11 @@ from .vendored_sdks.hybridcompute.operations import (
     MachineExtensionsOperations,
 )
 
+from .vendored_sdks.resourcegraph.models import QueryRequest, QueryRequestOptions, QueryResponse
+
 from ._client_factory import (
     cf_machine,
+    cf_resource_graph,
     cf_virtual_machine_instance,
 )
 
@@ -181,7 +202,7 @@ def connect_vmmserver(
             print('Please type y/n or leave empty.')
     assert fqdn
 
-    username_creds = VMMCredential(
+    username_creds = VmmCredential(
         username=username, password=password
     )
 
@@ -193,13 +214,15 @@ def connect_vmmserver(
         custom_location,
     )
 
-    vmmserver = VMMServer(
+    vmmserver = VmmServer(
         location=location,
         extended_location=get_extended_location(custom_location_id),
-        fqdn=fqdn,
-        port=port,
-        credentials=username_creds,
         tags=tags,
+        properties=VmmServerProperties(
+            fqdn=fqdn,
+            credentials=username_creds,
+            port=port,
+        ),
     )
 
     return sdk_no_wait(
@@ -219,7 +242,7 @@ def update_vmmserver(
     tags=None,
     no_wait=False,
 ):
-    vmmserver_update = ResourcePatch(tags=tags)
+    vmmserver_update = VmmServerTagsUpdate(tags=tags)
     return sdk_no_wait(
         no_wait,
         client.begin_update,
@@ -276,9 +299,11 @@ def create_cloud(
     cloud = Cloud(
         location=location,
         extended_location=get_extended_location(custom_location),
-        vmm_server_id=vmmserver,
-        uuid=uuid,
-        inventory_item_id=inventory_item,
+        properties=CloudProperties(
+            vmm_server_id=vmmserver,
+            uuid=uuid,
+            inventory_item_id=inventory_item,
+        ),
         tags=tags,
     )
 
@@ -299,7 +324,7 @@ def update_cloud(
     tags=None,
     no_wait=False,
 ):
-    cloud_update = ResourcePatch(tags=tags)
+    cloud_update = CloudTagsUpdate(tags=tags)
     return sdk_no_wait(
         no_wait,
         client.begin_update,
@@ -357,9 +382,11 @@ def create_virtual_network(
     virtual_network = VirtualNetwork(
         location=location,
         extended_location=get_extended_location(custom_location),
-        vmm_server_id=vmmserver,
-        uuid=uuid,
-        inventory_item_id=inventory_item,
+        properties=VirtualNetworkProperties(
+            vmm_server_id=vmmserver,
+            uuid=uuid,
+            inventory_item_id=inventory_item,
+        ),
         tags=tags,
     )
 
@@ -380,7 +407,7 @@ def update_virtual_network(
     tags=None,
     no_wait=False,
 ):
-    virtual_network_update = ResourcePatch(tags=tags)
+    virtual_network_update = VirtualNetworkTagsUpdate(tags=tags)
     return sdk_no_wait(
         no_wait,
         client.begin_update,
@@ -438,9 +465,11 @@ def create_vm_template(
     vm_template = VirtualMachineTemplate(
         location=location,
         extended_location=get_extended_location(custom_location),
-        vmm_server_id=vmmserver,
-        uuid=uuid,
-        inventory_item_id=inventory_item,
+        properties=VirtualMachineTemplateProperties(
+            vmm_server_id=vmmserver,
+            uuid=uuid,
+            inventory_item_id=inventory_item,
+        ),
         tags=tags,
     )
 
@@ -461,7 +490,7 @@ def update_vm_template(
     tags=None,
     no_wait=False,
 ):
-    vm_template_update = ResourcePatch(tags=tags)
+    vm_template_update = VirtualMachineTemplateTagsUpdate(tags=tags)
     return sdk_no_wait(
         no_wait,
         client.begin_update,
@@ -516,6 +545,163 @@ def get_hcrp_machine_id(
     )
     assert machine_id is not None
     return machine_id
+
+
+def create_from_machines(
+    cmd,
+    client: VirtualMachineInstancesOperations,
+    scvmm,
+    rg_name=None,
+    resource_name=None,
+):
+    scvmm_id = scvmm
+    machine_id = resource_name
+    if resource_name is not None:
+        if rg_name is None:
+            raise RequiredArgumentMissingError(
+                "--resource-group is required when --machine-name is provided."
+            )
+        machine_id = get_resource_id(
+            cmd,
+            rg_name,
+            HCRP_NAMESPACE,
+            MACHINES_RESOURCE_TYPE,
+            resource_name,
+        )
+    if not is_valid_resource_id(scvmm_id):
+        raise InvalidArgumentValueError(
+            "Please provide a valid scvmm resource id "
+            "using --scvmm-id."
+        )
+    assert isinstance(scvmm_id, str)
+
+    logger = get_logger(__name__)
+    arg_client = cf_resource_graph(cmd.cli_ctx)
+    machine_client = cf_machine(cmd.cli_ctx)
+    scvmm_sub = scvmm_id.split("/")[2]
+    resources_client = get_resources_client(cmd.cli_ctx, scvmm_sub)
+    scvmm = resources_client.get_by_id(scvmm_id, SCVMM_API_VERSION)
+    logger.info("Searching for machines in the SCVMM %s ...", scvmm.name)
+
+    query = f"""
+Resources
+{rg_name and "| where resourceGroup =~ '{}'".format(rg_name) or ""}
+{machine_id and "| where id =~ '{}'".format(machine_id) or ""}
+| where type =~ 'Microsoft.HybridCompute/machines'
+| where isempty(kind) or kind =~ '{MACHINE_KIND}'
+| extend p=parse_json(properties)
+| extend u = tolower(tostring(p['vmUuid']))
+| where isnotempty(u)
+| where location =~ '{scvmm.location}'
+| extend vmUuidRev = strcat(
+    substring(u, 6, 2), substring(u, 4, 2), substring(u, 2, 2), substring(u, 0, 2), '-',
+    substring(u, 11, 2), substring(u, 9, 2), '-',
+    substring(u, 16, 2), substring(u, 14, 2), '-',
+    substring(u, 19))
+| extend vmUuid=pack_array(u, vmUuidRev)
+| mv-expand vmUuid
+| extend vmUuid=tostring(vmUuid)
+| project machineId=id, name, resourceGroup, vmUuid, kind
+| join kind=inner (
+ExtensibilityResources
+| where type =~ 'Microsoft.SCVMM/VMMServers/InventoryItems'
+| where kind =~ 'VirtualMachine'
+| where id startswith '{scvmm.id}/InventoryItems'
+| extend p=parse_json(properties)
+| extend biosId = tolower(tostring(p['biosGuid']))
+| extend managedResourceId=tolower(tostring(p['managedResourceId']))
+| project inventoryId=id, biosId, managedResourceId
+) on $left.vmUuid == $right.biosId
+| project-away vmUuid
+"""
+    query = " ".join(query.splitlines())
+
+    # https://github.com/wpbrown/azmeta-libs/blob/4495d2d55f052032fe11416f5c59e2f2e79c2d73/azmeta/src/azmeta/access/resource_graph.py
+    skip_token = None
+    vm_list = []
+    while True:
+        query_options = QueryRequestOptions(skip_token=skip_token)
+        query_request = QueryRequest(
+            subscriptions=[get_subscription_id(cmd.cli_ctx)],
+            query=query,
+            options=query_options,
+        )
+        query_response: QueryResponse = arg_client.resources(query_request)
+        vm_list.extend(query_response.data)
+        skip_token = query_response.skip_token
+        if skip_token is None:
+            break
+    logger.info("%s machines will be attempted to be linked to the SCVMM %s ...", len(vm_list), scvmm.name)
+    failed = 0
+    linked = 0
+    biosId2VM = defaultdict(list)
+    for vm in vm_list:
+        biosId2VM[vm["biosId"]].append(vm)
+    for i, vm in enumerate(vm_list):
+        prefix = f"[{i + 1}/{len(vm_list)}]"
+        machineId = vm["machineId"]
+        machineName = vm["name"]
+        machineRG = vm["resourceGroup"]
+        machineKind = vm["kind"]
+        inventoryId = vm["inventoryId"]
+        managedResourceId = vm["managedResourceId"]
+        biosId = vm["biosId"]
+        if len(biosId2VM[biosId]) > 1:
+            logger.warning(
+                "%s Skipping machine %s with biosId %s "
+                "because there are multiple machines with the same biosId: %s .",
+                prefix, machineName, biosId, biosId2VM[biosId])
+            continue
+        if managedResourceId:
+            if SCVMM_NAMESPACE.lower() in managedResourceId.lower():
+                logger.info(
+                    "%s Machine %s is already linked to managed resource %s .",
+                    prefix, machineName, managedResourceId)
+                continue
+            if managedResourceId.lower() != machineId.lower():
+                logger.warning(
+                    "%s Skipping machine %s because the inventory item "
+                    "is linked to a different resource: %s .",
+                    prefix, machineName, managedResourceId)
+                continue
+        logger.info(
+            "%s Linking machine %s to SCVMM %s with inventoryId: %s ...",
+            prefix, machineName, scvmm.name, inventoryId)
+        vmi = VirtualMachineInstance(
+            extended_location=ExtendedLocation(
+                type=EXTENDED_LOCATION_TYPE,
+                name=scvmm.extended_location.name,
+            ),
+            properties=VirtualMachineInstanceProperties(
+                infrastructure_profile=InfrastructureProfile(
+                    inventory_item_id=inventoryId,
+                ),
+            )
+        )
+        try:
+            if not machineKind:
+                m = MachineUpdate(
+                    kind=MACHINE_KIND,
+                )
+                _ = machine_client.update(machineRG, machineName, m)
+            _ = client.begin_create_or_update(
+                machineId, vmi
+            ).result()
+            linked += 1
+        except Exception as e:  # pylint: disable=broad-except
+            logger.warning(
+                "%s Failed to link machine %s to SCVMM %s. Error: %s",
+                prefix, machineName, scvmm.name, e)
+            failed += 1
+    logger.info(
+        "[%s/%s] machines were successfully linked to the SCVMM %s .",
+        linked, len(vm_list), scvmm.name)
+    logger.info(
+        "[%s/%s] machines failed to be linked to the SCVMM %s .",
+        failed, len(vm_list), scvmm.name)
+    logger.info(
+        "[%s/%s] machines were skipped.",
+        len(vm_list) - linked - failed, len(vm_list))
 
 
 # pylint: disable=too-many-locals
@@ -574,7 +760,7 @@ def create_vm(
         )
 
     if admin_password is not None:
-        os_profile = OsProfileForVMInstance(admin_password=admin_password)
+        os_profile = OsProfileForVmInstance(admin_password=admin_password)
 
     if nics is not None:
         network_profile = NetworkProfile(
@@ -645,14 +831,18 @@ def create_vm(
     )
     extended_location = get_extended_location(custom_location_id)
 
-    vm = VirtualMachineInstance(
-        extended_location=extended_location,
+    vm_props = VirtualMachineInstanceProperties(
         hardware_profile=hardware_profile,
         os_profile=os_profile,
         network_profile=network_profile,
         storage_profile=storage_profile,
         infrastructure_profile=infrastructure_profile,
         availability_sets=availability_sets,
+    )
+
+    vm = VirtualMachineInstance(
+        extended_location=extended_location,
+        properties=vm_props,
         tags=tags,
     )
 
@@ -755,9 +945,13 @@ def update_vm(
     if hardware_profile is None and availability_sets is None:
         return client.get(machine_id)
 
-    vm_update = VirtualMachineInstanceUpdate(
+    vm_update_props = VirtualMachineInstanceUpdateProperties(
         hardware_profile=hardware_profile,
         availability_sets=availability_sets,
+    )
+
+    vm_update = VirtualMachineInstanceUpdate(
+        properties=vm_update_props,
     )
 
     return sdk_no_wait(
@@ -1035,9 +1229,9 @@ def get_disks(input_disks):
             elif key == VHD_TYPE:
                 disk.vhd_type = value
             elif key == QOS_NAME:
-                disk.storage_qo_s_policy = StorageQoSPolicyDetails(name=value)
+                disk.storage_qos_policy = StorageQosPolicyDetails(name=value)
             elif key == QOS_ID:
-                disk.storage_qo_s_policy = StorageQoSPolicyDetails(id=value)
+                disk.storage_qos_policy = StorageQosPolicyDetails(id=value)
             else:
                 raise UnrecognizedArgumentError(
                     f'Invalid parameter: {key} specified for disk.'
@@ -1106,11 +1300,12 @@ def add_nic(
 
     nics_update = []
     vm = client.get(machine_id)
+    vm: VirtualMachineInstance = vm
     if (
-        vm.network_profile is not None
-        and vm.network_profile.network_interfaces is not None  # noqa: W503
+        vm.properties.network_profile is not None
+        and vm.properties.network_profile.network_interfaces is not None  # noqa: W503
     ):
-        for nic in vm.network_profile.network_interfaces:
+        for nic in vm.properties.network_profile.network_interfaces:
             nic_update = NetworkInterfaceUpdate(
                 name=nic.name,
                 ipv4_address_type=nic.ipv4_address_type,
@@ -1124,7 +1319,8 @@ def add_nic(
 
     nics_update.append(nic_to_add)
     network_profile = NetworkProfileUpdate(network_interfaces=nics_update)
-    vm_update = VirtualMachineInstanceUpdate(network_profile=network_profile)
+    vm_update_props = VirtualMachineInstanceUpdateProperties(network_profile=network_profile)
+    vm_update = VirtualMachineInstanceUpdate(properties=vm_update_props)
 
     return sdk_no_wait(
         no_wait,
@@ -1183,11 +1379,12 @@ def update_nic(
     nics_update = []
     nic_found = False
     vm = client.get(machine_id)
+    vm: VirtualMachineInstance = vm
     if (
-        vm.network_profile is not None
-        and vm.network_profile.network_interfaces is not None  # noqa: W503
+        vm.properties.network_profile is not None
+        and vm.properties.network_profile.network_interfaces is not None  # noqa: W503
     ):
-        for nic in vm.network_profile.network_interfaces:
+        for nic in vm.properties.network_profile.network_interfaces:
             nic_update = NetworkInterfaceUpdate(
                 name=nic.name,
                 ipv4_address_type=nic.ipv4_address_type,
@@ -1227,7 +1424,8 @@ def update_nic(
         )
 
     network_profile = NetworkProfileUpdate(network_interfaces=nics_update)
-    vm_update = VirtualMachineInstanceUpdate(network_profile=network_profile)
+    vm_update_props = VirtualMachineInstanceUpdateProperties(network_profile=network_profile)
+    vm_update = VirtualMachineInstanceUpdate(properties=vm_update_props)
 
     return sdk_no_wait(
         no_wait,
@@ -1252,8 +1450,9 @@ def list_nics(
     )
 
     vm = client.get(machine_id)
-    if vm.network_profile is not None:
-        return vm.network_profile.network_interfaces
+    vm: VirtualMachineInstance = vm
+    if vm.properties.network_profile is not None:
+        return vm.properties.network_profile.network_interfaces
     return None
 
 
@@ -1273,11 +1472,12 @@ def show_nic(
     )
 
     vm = client.get(machine_id)
+    vm: VirtualMachineInstance = vm
     if (
-        vm.network_profile is not None
-        and vm.network_profile.network_interfaces is not None  # noqa: W503
+        vm.properties.network_profile is not None
+        and vm.properties.network_profile.network_interfaces is not None  # noqa: W503
     ):
-        for nic in vm.network_profile.network_interfaces:
+        for nic in vm.properties.network_profile.network_interfaces:
             if nic.name == nic_name:
                 return nic
     return None
@@ -1306,11 +1506,12 @@ def delete_nics(
 
     nics_update = []
     vm = client.get(machine_id)
+    vm: VirtualMachineInstance = vm
     if (
-        vm.network_profile is not None
-        and vm.network_profile.network_interfaces is not None  # noqa: W503
+        vm.properties.network_profile is not None
+        and vm.properties.network_profile.network_interfaces is not None  # noqa: W503
     ):
-        for nic in vm.network_profile.network_interfaces:
+        for nic in vm.properties.network_profile.network_interfaces:
             if nic.name in nics_to_delete:
                 nics_to_delete[nic.name] = False
                 continue
@@ -1334,7 +1535,8 @@ def delete_nics(
         )
 
     network_profile = NetworkProfileUpdate(network_interfaces=nics_update)
-    vm_update = VirtualMachineInstanceUpdate(network_profile=network_profile)
+    vm_update_props = VirtualMachineInstanceUpdateProperties(network_profile=network_profile)
+    vm_update = VirtualMachineInstanceUpdate(properties=vm_update_props)
 
     return sdk_no_wait(
         no_wait,
@@ -1374,9 +1576,9 @@ def add_disk(
             'Both name and id of Storage QoS Policy cannot be specified.'
         )
     if qos_name is not None:
-        storage_qos_policy = StorageQoSPolicyDetails(name=qos_name)
+        storage_qos_policy = StorageQosPolicyDetails(name=qos_name)
     if qos_id is not None:
-        storage_qos_policy = StorageQoSPolicyDetails(id=qos_id)
+        storage_qos_policy = StorageQosPolicyDetails(id=qos_id)
 
     disk_to_add = VirtualDiskUpdate(
         name=disk_name,
@@ -1385,7 +1587,7 @@ def add_disk(
         lun=lun,
         bus_type=bus_type,
         vhd_type=vhd_type,
-        storage_qo_s_policy=storage_qos_policy,
+        storage_qos_policy=storage_qos_policy,
     )
 
     machine_id = get_hcrp_machine_id(
@@ -1396,23 +1598,29 @@ def add_disk(
 
     disks_update = []
     vm = client.get(machine_id)
-    if vm.storage_profile is not None and vm.storage_profile.disks is not None:
-        for disk in vm.storage_profile.disks:
+    vm: VirtualMachineInstance = vm
+    if (
+        vm.properties is not None
+        and vm.properties.storage_profile is not None
+        and vm.properties.storage_profile.disks is not None
+    ):
+        for disk in vm.properties.storage_profile.disks:
             disk_update = VirtualDiskUpdate(
                 name=disk.name,
-                disk_size_gb=disk.disk_size_gb,
+                disk_size_gb=disk.max_disk_size_gb,
                 bus=disk.bus,
                 lun=disk.lun,
                 bus_type=disk.bus_type,
-                vhd_type=vhd_type,
-                storage_qo_s_policy=storage_qos_policy,
+                vhd_type=disk.vhd_type,
+                storage_qos_policy=disk.storage_qos_policy,
                 disk_id=disk.disk_id,
             )
             disks_update.append(disk_update)
 
     disks_update.append(disk_to_add)
     storage_profile = StorageProfileUpdate(disks=disks_update)
-    vm_update = VirtualMachineInstanceUpdate(storage_profile=storage_profile)
+    vm_update_props = VirtualMachineInstanceUpdateProperties(storage_profile=storage_profile)
+    vm_update = VirtualMachineInstanceUpdate(properties=vm_update_props)
 
     return sdk_no_wait(
         no_wait,
@@ -1459,24 +1667,28 @@ def update_disk(
             'Both name and id of Storage QoS Policy cannot be specified.'
         )
     if qos_name is not None:
-        storage_qos_policy = StorageQoSPolicyDetails(name=qos_name)
+        storage_qos_policy = StorageQosPolicyDetails(name=qos_name)
     if qos_id is not None:
-        storage_qos_policy = StorageQoSPolicyDetails(id=qos_id)
+        storage_qos_policy = StorageQosPolicyDetails(id=qos_id)
 
     disks_update = []
     disk_found = False
     vm = client.get(machine_id)
-    if vm.storage_profile is not None and vm.storage_profile.disks is not None:
-        for disk in vm.storage_profile.disks:
-            disk: VirtualDisk = disk
+    vm: VirtualMachineInstance = vm
+    if (
+        vm.properties is not None
+        and vm.properties.storage_profile is not None
+        and vm.properties.storage_profile.disks is not None
+    ):
+        for disk in vm.properties.storage_profile.disks:
             disk_update = VirtualDiskUpdate(
                 name=disk.name,
-                disk_size_gb=disk.disk_size_gb,
+                disk_size_gb=disk.max_disk_size_gb,
                 bus=disk.bus,
                 lun=disk.lun,
                 bus_type=disk.bus_type,
                 vhd_type=disk.vhd_type,
-                storage_qo_s_policy=disk.storage_qo_s_policy,
+                storage_qos_policy=disk.storage_qos_policy,
                 disk_id=disk.disk_id,
             )
             if (disk_name is not None and disk.name == disk_name) or (
@@ -1503,7 +1715,7 @@ def update_disk(
                 if vhd_type is not None:
                     disk_update.vhd_type = vhd_type
                 if storage_qos_policy is not None:
-                    disk_update.storage_qo_s_policy = storage_qos_policy
+                    disk_update.storage_qos_policy = storage_qos_policy
             disks_update.append(disk_update)
 
     if not disk_found:
@@ -1512,7 +1724,8 @@ def update_disk(
         )
 
     storage_profile = StorageProfileUpdate(disks=disks_update)
-    vm_update = VirtualMachineInstanceUpdate(storage_profile=storage_profile)
+    vm_update_props = VirtualMachineInstanceUpdateProperties(storage_profile=storage_profile)
+    vm_update = VirtualMachineInstanceUpdate(properties=vm_update_props)
 
     return sdk_no_wait(
         no_wait,
@@ -1539,8 +1752,9 @@ def list_disks(
     )
 
     vm = client.get(machine_id)
-    if vm.storage_profile is not None:
-        return vm.storage_profile.disks
+    vm: VirtualMachineInstance = vm
+    if vm.properties.storage_profile is not None:
+        return vm.properties.storage_profile.disks
     return None
 
 
@@ -1562,8 +1776,9 @@ def show_disk(
     )
 
     vm = client.get(machine_id)
-    if vm.storage_profile is not None and vm.storage_profile.disks is not None:
-        for disk in vm.storage_profile.disks:
+    vm: VirtualMachineInstance = vm
+    if vm.properties.storage_profile is not None and vm.properties.storage_profile.disks is not None:
+        for disk in vm.properties.storage_profile.disks:
             if disk.name == disk_name:
                 return disk
     return None
@@ -1592,19 +1807,24 @@ def delete_disks(
 
     disks_update = []
     vm = client.get(machine_id)
-    if vm.storage_profile is not None and vm.storage_profile.disks is not None:
-        for disk in vm.storage_profile.disks:
+    vm: VirtualMachineInstance = vm
+    if (
+        vm.properties is not None
+        and vm.properties.storage_profile is not None
+        and vm.properties.storage_profile.disks is not None
+    ):
+        for disk in vm.properties.storage_profile.disks:
             if disk.name in disks_to_delete:
                 disks_to_delete[disk.name] = False
                 continue
             disk_update = VirtualDiskUpdate(
                 name=disk.name,
-                disk_size_gb=disk.disk_size_gb,
+                disk_size_gb=disk.max_disk_size_gb,
                 bus=disk.bus,
                 lun=disk.lun,
                 bus_type=disk.bus_type,
                 vhd_type=disk.vhd_type,
-                storage_qo_s_policy=disk.storage_qo_s_policy,
+                storage_qos_policy=disk.storage_qos_policy,
                 disk_id=disk.disk_id,
             )
             disks_update.append(disk_update)
@@ -1618,7 +1838,8 @@ def delete_disks(
         )
 
     storage_profile = StorageProfileUpdate(disks=disks_update)
-    vm_update = VirtualMachineInstanceUpdate(storage_profile=storage_profile)
+    vm_update_props = VirtualMachineInstanceUpdateProperties(storage_profile=storage_profile)
+    vm_update = VirtualMachineInstanceUpdate(properties=vm_update_props)
 
     return sdk_no_wait(
         no_wait,
@@ -1629,7 +1850,6 @@ def delete_disks(
 
 
 # endregion
-
 
 # region Availability Sets
 
@@ -1650,8 +1870,10 @@ def create_avset(
     avset = AvailabilitySet(
         location=location,
         extended_location=get_extended_location(custom_location),
-        vmm_server_id=vmmserver,
-        availability_set_name=avset_name,
+        properties=AvailabilitySetProperties(
+            vmm_server_id=vmmserver,
+            availability_set_name=avset_name,
+        ),
         tags=tags,
     )
 
@@ -1672,7 +1894,7 @@ def update_avset(
     tags=None,
     no_wait=False,
 ):
-    avset_update = ResourcePatch(tags=tags)
+    avset_update = AvailabilitySetTagsUpdate(tags=tags)
     return sdk_no_wait(
         no_wait,
         client.begin_update,
@@ -1764,7 +1986,7 @@ def enable_system_identity(
 
 def enable_guest_agent(
     cmd,
-    client: VMInstanceGuestAgentsOperations,
+    client: GuestAgentsOperations,
     resource_group_name,
     vm_name,
     username,
@@ -1794,11 +2016,12 @@ def enable_guest_agent(
     if https_proxy:
         https_proxy_config = HttpProxyConfiguration(https_proxy=https_proxy)
 
-    guest_agent = GuestAgent(
+    guest_agent_props = GuestAgentProperties(
         credentials=vm_creds,
         http_proxy_config=https_proxy_config,
         provisioning_action=GUEST_AGENT_PROVISIONING_ACTION_INSTALL,
     )
+    guest_agent = GuestAgent(properties=guest_agent_props)
 
     return sdk_no_wait(
         no_wait,
@@ -1810,7 +2033,7 @@ def enable_guest_agent(
 
 def show_guest_agent(
     cmd,
-    client: VMInstanceGuestAgentsOperations,
+    client: GuestAgentsOperations,
     resource_group_name,
     vm_name,
 ):

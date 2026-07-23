@@ -25,9 +25,9 @@ class Update(AAZCommand):
     """
 
     _aaz_info = {
-        "version": "2023-06-15",
+        "version": "2026-01-15-preview",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.managednetworkfabric/routepolicies/{}", "2023-06-15"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.managednetworkfabric/routepolicies/{}", "2026-01-15-preview"],
         ]
     }
 
@@ -49,7 +49,6 @@ class Update(AAZCommand):
 
         _args_schema = cls._args_schema
         _args_schema.resource_group = AAZResourceGroupNameArg(
-            help="Name of the resource group",
             required=True,
         )
         _args_schema.resource_name = AAZStrArg(
@@ -57,6 +56,9 @@ class Update(AAZCommand):
             help="Name of the Route Policy.",
             required=True,
             id_part="name",
+            fmt=AAZStrArgFormat(
+                pattern="^[a-zA-Z]{1}[a-zA-Z0-9-_]{2,127}$",
+            ),
         )
 
         # define Arg Group "Body"
@@ -65,7 +67,7 @@ class Update(AAZCommand):
         _args_schema.tags = AAZDictArg(
             options=["--tags"],
             arg_group="Body",
-            help="Resource tags",
+            help="Resource tags.",
         )
 
         tags = cls._args_schema.tags
@@ -77,13 +79,15 @@ class Update(AAZCommand):
         _args_schema.default_action = AAZStrArg(
             options=["--default-action"],
             arg_group="Properties",
-            help="Default action that needs to be applied when no condition is matched. Example: Permit.",
+            help="Default action that needs to be applied when no condition is matched. Example: Permit | Deny.",
+            nullable=True,
             enum={"Deny": "Deny", "Permit": "Permit"},
         )
         _args_schema.statements = AAZListArg(
             options=["--statements"],
             arg_group="Properties",
             help="Route Policy statements.",
+            nullable=True,
         )
 
         statements = cls._args_schema.statements
@@ -97,7 +101,7 @@ class Update(AAZCommand):
         )
         _element.annotation = AAZStrArg(
             options=["annotation"],
-            help="Description for underlying resource.",
+            help="Switch configuration description.",
         )
         _element.condition = AAZObjectArg(
             options=["condition"],
@@ -117,12 +121,9 @@ class Update(AAZCommand):
         action = cls._args_schema.statements.Element.action
         action.action_type = AAZStrArg(
             options=["action-type"],
-            help="Action type. Example: Permit.",
+            help="Action type. Example: Permit | Deny | Continue.",
             required=True,
             enum={"Continue": "Continue", "Deny": "Deny", "Permit": "Permit"},
-            fmt=AAZStrArgFormat(
-                min_length=1,
-            ),
         )
         action.ip_community_properties = AAZObjectArg(
             options=["ip-community-properties"],
@@ -190,11 +191,8 @@ class Update(AAZCommand):
         )
         condition.type = AAZStrArg(
             options=["type"],
-            help="Type of the condition used. Default value is Or.",
+            help="Type of the condition used.",
             enum={"And": "And", "Or": "Or"},
-            fmt=AAZStrArgFormat(
-                min_length=1,
-            ),
         )
 
         ip_community_ids = cls._args_schema.statements.Element.condition.ip_community_ids
@@ -327,7 +325,7 @@ class Update(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-06-15",
+                    "api-version", "2026-01-15-preview",
                     required=True,
                 ),
             }
@@ -357,8 +355,8 @@ class Update(AAZCommand):
 
             properties = _builder.get(".properties")
             if properties is not None:
-                properties.set_prop("defaultAction", AAZStrType, ".default_action")
-                properties.set_prop("statements", AAZListType, ".statements")
+                properties.set_prop("defaultAction", AAZStrType, ".default_action", typ_kwargs={"nullable": True})
+                properties.set_prop("statements", AAZListType, ".statements", typ_kwargs={"nullable": True})
 
             statements = _builder.get(".properties.statements")
             if statements is not None:
@@ -466,9 +464,14 @@ class Update(AAZCommand):
             properties.default_action = AAZStrType(
                 serialized_name="defaultAction",
             )
+            properties.last_operation = AAZObjectType(
+                serialized_name="lastOperation",
+                flags={"read_only": True},
+            )
             properties.network_fabric_id = AAZStrType(
                 serialized_name="networkFabricId",
                 flags={"required": True},
+                nullable=True,
             )
             properties.provisioning_state = AAZStrType(
                 serialized_name="provisioningState",
@@ -476,6 +479,11 @@ class Update(AAZCommand):
             )
             properties.statements = AAZListType(
                 flags={"required": True},
+            )
+
+            last_operation = cls._schema_on_200.properties.last_operation
+            last_operation.details = AAZStrType(
+                flags={"read_only": True},
             )
 
             statements = cls._schema_on_200.properties.statements

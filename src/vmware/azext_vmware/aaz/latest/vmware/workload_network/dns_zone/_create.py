@@ -18,13 +18,13 @@ class Create(AAZCommand):
     """Create a DNS zone by id in a private cloud workload network.
 
     :example: Create a DNS zone by ID in a workload network.
-        az vmware workload-network dns-zone create --resource-group group1 --private-cloud cloud1 --dns-zone dnsZone1 --display-name dnsZone1 --domain domain1 --dns-server-ips 1.1.1.1 --source-ip 8.8.8.8 --dns-services 1 --revision 1
+        az vmware workload-network dns-zone create --resource-group group1 --private-cloud cloud1 --dns-zone dnsZone1 --display-name dnsZone1 --domain "[]" --dns-server-ips "[1.1.1.1]" --source-ip 8.8.8.8 --revision 1
     """
 
     _aaz_info = {
-        "version": "2023-03-01",
+        "version": "2025-09-01",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.avs/privateclouds/{}/workloadnetworks/default/dnszones/{}", "2023-03-01"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.avs/privateclouds/{}/workloadnetworks/default/dnszones/{}", "2025-09-01"],
         ]
     }
 
@@ -49,13 +49,16 @@ class Create(AAZCommand):
             options=["-n", "--name", "--dns-zone"],
             help="NSX DNS Zone identifier. Generally the same as the DNS Zone's display name",
             required=True,
+            fmt=AAZStrArgFormat(
+                pattern="^[-\\w\\._]+$",
+            ),
         )
         _args_schema.private_cloud = AAZStrArg(
             options=["-c", "--private-cloud"],
             help="Name of the private cloud",
             required=True,
             fmt=AAZStrArgFormat(
-                pattern="^[-\w\._]+$",
+                pattern="^[-\\w\\._]+$",
             ),
         )
         _args_schema.resource_group = AAZResourceGroupNameArg(
@@ -188,7 +191,7 @@ class Create(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-03-01",
+                    "api-version", "2025-09-01",
                     required=True,
                 ),
             }
@@ -261,6 +264,10 @@ class Create(AAZCommand):
             _schema_on_200_201.properties = AAZObjectType(
                 flags={"client_flatten": True},
             )
+            _schema_on_200_201.system_data = AAZObjectType(
+                serialized_name="systemData",
+                flags={"read_only": True},
+            )
             _schema_on_200_201.type = AAZStrType(
                 flags={"read_only": True},
             )
@@ -290,6 +297,26 @@ class Create(AAZCommand):
 
             domain = cls._schema_on_200_201.properties.domain
             domain.Element = AAZStrType()
+
+            system_data = cls._schema_on_200_201.system_data
+            system_data.created_at = AAZStrType(
+                serialized_name="createdAt",
+            )
+            system_data.created_by = AAZStrType(
+                serialized_name="createdBy",
+            )
+            system_data.created_by_type = AAZStrType(
+                serialized_name="createdByType",
+            )
+            system_data.last_modified_at = AAZStrType(
+                serialized_name="lastModifiedAt",
+            )
+            system_data.last_modified_by = AAZStrType(
+                serialized_name="lastModifiedBy",
+            )
+            system_data.last_modified_by_type = AAZStrType(
+                serialized_name="lastModifiedByType",
+            )
 
             return cls._schema_on_200_201
 

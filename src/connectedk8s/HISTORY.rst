@@ -2,6 +2,155 @@
 
 Release History
 ===============
+1.11.1
++++++++
+* Added ARM64 support for Helm binary installation.
+* Handle removal of '--all' flag in Helm 4 to ensure compatibility.
+* Added Helm overrides support for Application Gateway for Containers (AGC).
+* Updated CSP version.
+* Updated CLIENT_PROXY_VERSION to 1.3.033892.
+* Updated pre-diagnostics version.
+
+1.11.0
++++++
+* [Breaking Change] Removed deprecated '--app-id' and '--app-secret' RBAC parameters from the extension.
+* Update cluster diagnostics image to comply with Pod Security Standards-Restricted level( Updated image version:1.31.2).
+* Add endpoint overrides for Azure Government cloud environments
+* Update Proxy Image to 1.3.032281
+
+1.10.11
++++++++
+* Removed hardcoded public ARM endpoint URL for Government clouds.
+* Fixed incorrect MCR endpoint URLs for Government cloud environments.
+
+1.10.10
++++++
+* Deprecated '--app-id' and '--app-secret' RBAC parameters from the extension by adding them to _breaking_change.py.
+* Bug fix for https://github.com/Azure/azure-cli-extensions/issues/8498.
+* Update warning to use the latest kubelogin version which has support for generating PoP token.
+
+1.10.9
+++++++
+* Added support for associating and disassociating gateways in CLI and updated SDK version to '2025-08-01-preview'.
+* Updated cluster diagnostics image to 1.29.3
+
+1.10.8
+++++++
+* Force delete parameter updated to `connectedk8s delete` command to allow force deletion of connectedk8s ARM resource.
+* Parameterize the MCR url for Airgapped clouds.
+* Update error strings for config and connectivity errors in connect command.
+
+1.10.7
+++++++
+* Added support for discovering additional k8s distributions and Infrastructure.
+* Updated Connect command help to indicate the kubeconfig prerequisite.
+* Fixed the issue where the 'connectedk8s proxy' command would fail with newer versions of the Azure CLI.
+
+1.10.6
+++++++
+* Added support for downloading helm binaries from MCR.
+* Added warnings for custom location feature based on Service Principal Name or User permissions to retrieve OID.
+
+1.10.5
+++++++
+* Fixed bug impacting long-running operations of the az connectedk8s proxy command.
+* Refactored code to reduce proxy command startup time.
+* Added support for downloading proxy binaries from MCR, including more architecture-specific versions.
+* Enhanced telemetry to capture detailed error information during Helm installation failures.
+
+1.10.4
+++++++
+* Fixed the issue where the 'connectedk8s proxy' command would fail if the kubeconfig file was empty.
+
+1.10.3
+++++++
+* Fixed linting and styling issues, and added type annotations.
+* Fixed the issue where the 'connectedk8s troubleshoot' command did not work when workload identity was not enabled on the cluster.
+* Fixed an issue where ArcAgentryConfigurations were unintentionally altered during updates that did not modify proxy settings
+
+1.10.2
+++++++
+* Update for disconnected environment scenario.
+
+1.10.1
+++++++
+* Fixed an issue where the proxy settings were not disabled when the 'disable_proxy' parameter was provided in the update command.
+
+1.10.0
+++++++
+* Add support for Arc Gateway feature using '--gateway-resource-id' and '--disable-gateway' parameters.
+* Bug fix for Workload Identity poll or agent state.
+* Bug fix for connectedk8s update with workload identity enabled.
+* Update pycryptodome to 3.20.0.
+
+1.9.3
+++++++
+* Removed a workaround that is no longer needed after updating to MSAL 1.30.0+
+
+1.9.2
+++++++
+* Fixed the issue where pre-onboarding diagnostic checks failed for clusters running Kubernetes v1.31.0.
+
+1.9.1
+++++++
+* Fixed the issue where executing a second `connectedk8s connect` command would inadvertently delete the "azure-arc-release" namespace.
+
+1.9.0
+++++++
+* Upgrading to v0.2.2 of ArcK8sDiagnoser
+* Fix Style and Linter issues.
+* Increase Max Timeout for Onboarding Helm Install to 20 mins (from 10).
+
+1.8.0
+++++++
+* New api version 2024-07-1-preview added
+* Adding functionality for workload identity feature.
+* Cluster create and update waits for agent state
+
+1.7.3
+++++++
+* Skip helm archive download if helm is already installed.
+
+1.7.2
+++++++
+* Fixed Broken Import for Service Principal
+
+1.7.1
+++++++
+* Fixed PoP token for proxy command using service principal.
+
+1.7.0
+++++++
+* Update helm binary download source.
+* Introduce "--skip-ssl-verification" flag.
+
+1.6.8
+++++++
+* Add support for running multiple proxy instances on the same machine using different ports.
+
+1.6.7
+++++++
+* Improve Error logs during Arc Onboarding scenarios, Style fixes.
+
+1.6.6
+++++++
+* Fix proxy live test.
+* Fix unused variable and parameter.
+* Use makedirs instead of mkdir for installing kubectl.
+
+1.6.5
+++++++
+* Fix tenant ID retrieval for proxy command.
+
+1.6.4
+++++++
+* Replace AAD Graph with Microsoft Graph for getting Custom Locations RP service principal application object ID.
+* Will require Application.Read.All permission for Microsoft Graph to activate Custom Locations automatically. See below for work-around:
+https://learn.microsoft.com/en-us/azure/azure-arc/kubernetes/custom-locations#enable-custom-locations-on-your-cluster
+
+1.6.3
+++++++
+* Skip checking operation version support for non-stable release trains.
 
 1.6.2
 ++++++
@@ -14,7 +163,6 @@ Release History
 
 1.6.0
 ++++++
-
 * Updated Helm from 3.6.3 to 3.12.2
 
 1.5.6

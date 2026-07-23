@@ -42,16 +42,10 @@ class RunCommandScenarioTest(ScenarioTest):
         rand_string = 'test'
         self.kwargs.update({
             'machine': 'testmachine',
-            'rg': 'az-sdk-test',
-            'scope': 'scope-' + rand_string,
-            'vnet': 'vnet-' + rand_string,
-            'subnet': 'subnet-' + rand_string,
-            'private_endpoint': 'pe-' + rand_string,
-            'private_endpoint_connection': 'pec-' + rand_string,
-            'location': 'eastus2euap',
-            'customScriptName': 'custom-' + rand_string,
-            'subscription': 'e6fe6705-4c9c-4b54-81d2-e455780e20b8',
-            'runcommand': 'myRunCommand',
+            'rg': 'ytongtest',
+            'location': 'westus2',
+            'subscription': '00000000-0000-0000-0000-000000000000',
+            'runcommand': 'myRunCommand2',
         })
 
         parameters_string = '''[{"name":"param1","value":"value1"}]'''
@@ -74,7 +68,7 @@ class RunCommandScenarioTest(ScenarioTest):
                 '--resource-group "{rg}" '
                 '--machine-name "{machine}"',
                 checks=[
-                    self.check('length(@)', 1)
+                    self.check('length(@)', 2)
                 ])
 
         self.cmd('az connectedmachine run-command show '
@@ -91,7 +85,7 @@ class RunCommandScenarioTest(ScenarioTest):
                 '--name "{runcommand}" '
                 '--machine-name "{machine}" '
                 '--subscription "{subscription}" '
-                '--tags Tag1="Value1"',
+                '--tags Tag1=Value1',
                 checks=[
                     self.check('type','Microsoft.HybridCompute/machines/runcommands'),
                     self.check('instanceView.executionState','Succeeded')

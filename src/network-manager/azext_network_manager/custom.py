@@ -17,6 +17,44 @@ from .aaz.latest.network.manager.connection.management_group import Create as _C
 from .aaz.latest.network.manager.connection.subscription import Create as _ConnectionSubscriptionCreate
 from .aaz.latest.network.manager.connect_config import Create as _ConnectConfigCreate
 from .aaz.latest.network.manager.connect_config import Update as _ConnectConfigUpdate
+from .aaz.latest.network.manager.ipam_pool.static_cidr import Update as _StaticCidrUpdate
+import re
+
+# Valid hub resource-id patterns:
+#   1. VNet:           .../Microsoft.Network/virtualNetworks/{name}
+#   2. vWAN hub policy:.../Microsoft.Network/virtualHubs/{name}/connectionPolicies/{name}
+_HUB_RESOURCE_ID_PATTERNS = [
+    re.compile(
+        r'^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.Network'
+        r'/virtualNetworks/[^/]+$',
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r'^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.Network'
+        r'/virtualHubs/[^/]+/connectionPolicies/[^/]+$',
+        re.IGNORECASE,
+    ),
+]
+
+
+def _validate_hub_resource_ids(args):
+    """Validate each hub resource-id against the allowed ARM resource-id patterns."""
+    from azure.cli.core.aaz import has_value
+    from azure.cli.core.azclierror import InvalidArgumentValueError
+    if not has_value(args.hubs):
+        return
+    for i, hub in enumerate(args.hubs):
+        if not has_value(hub.resource_id):
+            continue
+        resource_id = hub.resource_id.to_serialized_data()
+        if not any(pattern.match(resource_id) for pattern in _HUB_RESOURCE_ID_PATTERNS):
+            raise InvalidArgumentValueError(
+                f"--hubs[{i}].resource-id: Invalid format. resource-id must match one of:\n"
+                "  /subscriptions/{{subscription}}/resourceGroups/{{resource_group}}"
+                "/providers/Microsoft.Network/virtualNetworks/{{name}}\n"
+                "  /subscriptions/{{subscription}}/resourceGroups/{{resource_group}}"
+                "/providers/Microsoft.Network/virtualHubs/{{name}}/connectionPolicies/{{name}}"
+            )
 
 
 def network_manager_create(cmd,
@@ -166,11 +204,11 @@ def network_manager_admin_rule_create(cmd,
                                       configuration_name,
                                       rule_collection_name,
                                       rule_name,
-                                      kind,
                                       protocol,
                                       access,
                                       priority,
                                       direction,
+                                      kind="Custom",
                                       description=None,
                                       sources=None,
                                       destinations=None,
@@ -293,22 +331,40 @@ class ConnectionManagementGroupCreate(_ConnectionManagementGroupCreate):
 class ConnectConfigCreate(_ConnectConfigCreate):
     @classmethod
     def _build_arguments_schema(cls, *args, **kwargs):
-        from azure.cli.core.aaz import AAZResourceIdArgFormat
         args_schema = super()._build_arguments_schema(*args, **kwargs)
-        args_schema.hubs._element.resource_id._fmt = AAZResourceIdArgFormat(
-            template="/subscriptions/{subscription}/resourceGroups/{resource_group}/providers/Microsoft.Network/"
-                     "virtualNetworks/{}",
-        )
         return args_schema
+
+    def pre_operations(self):
+        _validate_hub_resource_ids(self.ctx.args)
 
 
 class ConnectConfigUpdate(_ConnectConfigUpdate):
     @classmethod
     def _build_arguments_schema(cls, *args, **kwargs):
-        from azure.cli.core.aaz import AAZResourceIdArgFormat
         args_schema = super()._build_arguments_schema(*args, **kwargs)
-        args_schema.hubs._element.resource_id._fmt = AAZResourceIdArgFormat(
-            template="/subscriptions/{subscription}/resourceGroups/{resource_group}/providers/Microsoft.Network/"
-                     "virtualNetworks/{}",
-        )
         return args_schema
+
+    def pre_operations(self):
+        _validate_hub_resource_ids(self.ctx.args)
+
+
+class StaticCidrUpdate(_StaticCidrUpdate):
+    @classmethod
+    def _build_arguments_schema(cls, *args, **kwargs):
+        args_schema = super()._build_arguments_schema(*args, **kwargs)
+        return args_schema
+
+    def pre_operations(self):
+        from azure.cli.core.aaz import has_value
+        args = self.ctx.args
+
+        address_prefixes_provided = has_value(args.address_prefixes)
+        num_ip_provided = has_value(args.number_of_ip_addresses_to_allocate)
+
+        # if address_prefixes is provided and number_of_ip_addresses_to_allocate is not provided
+        if address_prefixes_provided and not num_ip_provided:
+            args.number_of_ip_addresses_to_allocate = "0"
+
+        # if number_of_ip_addresses_to_allocate is provided and address_prefixes is not provided
+        elif num_ip_provided and not address_prefixes_provided:
+            args.address_prefixes = []

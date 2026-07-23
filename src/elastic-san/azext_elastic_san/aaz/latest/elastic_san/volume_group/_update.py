@@ -13,7 +13,6 @@ from azure.cli.core.aaz import *
 
 @register_command(
     "elastic-san volume-group update",
-    is_preview=True,
 )
 class Update(AAZCommand):
     """Update a Volume Group.
@@ -35,9 +34,9 @@ class Update(AAZCommand):
     """
 
     _aaz_info = {
-        "version": "2023-01-01",
+        "version": "2025-09-01",
         "resources": [
-            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.elasticsan/elasticsans/{}/volumegroups/{}", "2023-01-01"],
+            ["mgmt-plane", "/subscriptions/{}/resourcegroups/{}/providers/microsoft.elasticsan/elasticsans/{}/volumegroups/{}", "2025-09-01"],
         ]
     }
 
@@ -128,6 +127,12 @@ class Update(AAZCommand):
             options=["--encryption-properties"],
             arg_group="Properties",
             help="Encryption Properties describing Key Vault and Identity information",
+            nullable=True,
+        )
+        _args_schema.enforce_data_integrity_check_for_iscsi = AAZBoolArg(
+            options=["--data-integrity-check", "--enforce-data-integrity-check-for-iscsi"],
+            arg_group="Properties",
+            help="A boolean indicating whether or not Data Integrity Check is enabled",
             nullable=True,
         )
         _args_schema.network_acls = AAZObjectArg(
@@ -287,7 +292,7 @@ class Update(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-01-01",
+                    "api-version", "2025-09-01",
                     required=True,
                 ),
             }
@@ -390,7 +395,7 @@ class Update(AAZCommand):
         def query_parameters(self):
             parameters = {
                 **self.serialize_query_param(
-                    "api-version", "2023-01-01",
+                    "api-version", "2025-09-01",
                     required=True,
                 ),
             }
@@ -448,7 +453,7 @@ class Update(AAZCommand):
                 value=instance,
                 typ=AAZObjectType
             )
-            _builder.set_prop("identity", AAZObjectType, ".identity")
+            _builder.set_prop("identity", AAZIdentityObjectType, ".identity")
             _builder.set_prop("properties", AAZObjectType, typ_kwargs={"flags": {"client_flatten": True}})
 
             identity = _builder.get(".identity")
@@ -464,6 +469,7 @@ class Update(AAZCommand):
             if properties is not None:
                 properties.set_prop("encryption", AAZStrType, ".encryption")
                 properties.set_prop("encryptionProperties", AAZObjectType, ".encryption_properties")
+                properties.set_prop("enforceDataIntegrityCheckForIscsi", AAZBoolType, ".enforce_data_integrity_check_for_iscsi")
                 properties.set_prop("networkAcls", AAZObjectType, ".network_acls")
                 properties.set_prop("protocolType", AAZStrType, ".protocol_type")
 
@@ -572,7 +578,7 @@ class _UpdateHelper:
         volume_group_read.id = AAZStrType(
             flags={"read_only": True},
         )
-        volume_group_read.identity = AAZObjectType()
+        volume_group_read.identity = AAZIdentityObjectType()
         volume_group_read.name = AAZStrType(
             flags={"read_only": True},
         )
@@ -621,6 +627,9 @@ class _UpdateHelper:
         properties.encryption = AAZStrType()
         properties.encryption_properties = AAZObjectType(
             serialized_name="encryptionProperties",
+        )
+        properties.enforce_data_integrity_check_for_iscsi = AAZBoolType(
+            serialized_name="enforceDataIntegrityCheckForIscsi",
         )
         properties.network_acls = AAZObjectType(
             serialized_name="networkAcls",

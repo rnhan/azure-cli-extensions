@@ -14,6 +14,11 @@ from azure.cli.command_modules.acs.addonconfiguration import (
     sanitize_loganalytics_ws_resource_id,
     ensure_default_log_analytics_workspace_for_monitoring
 )
+import azure.cli.command_modules.acs.addonconfiguration
+from azext_aks_preview._helpers import (
+    check_is_monitoring_addon_enabled,
+)
+
 from azext_aks_preview._client_factory import CUSTOM_MGMT_AKS_PREVIEW
 from azext_aks_preview._roleassignments import add_role_assignment
 from azext_aks_preview._consts import (
@@ -40,6 +45,22 @@ from azext_aks_preview._consts import (
 
 logger = get_logger(__name__)
 
+azure.cli.command_modules.acs.addonconfiguration.ContainerInsightsStreams = [
+    "Microsoft-ContainerLog",
+    "Microsoft-ContainerLogV2-HighScale",
+    "Microsoft-KubeEvents",
+    "Microsoft-KubePodInventory",
+    "Microsoft-KubeNodeInventory",
+    "Microsoft-KubePVInventory",
+    "Microsoft-KubeServices",
+    "Microsoft-KubeMonAgentEvents",
+    "Microsoft-InsightsMetrics",
+    "Microsoft-ContainerInventory",
+    "Microsoft-ContainerNodeInventory",
+    "Microsoft-Perf",
+    "Microsoft-ContainerNetworkLogs",
+]
+
 
 # pylint: disable=too-many-locals
 def enable_addons(
@@ -65,7 +86,9 @@ def enable_addons(
     dns_zone_resource_ids=None,
     enable_msi_auth_for_monitoring=True,
     enable_syslog=False,
-    data_collection_settings=None
+    data_collection_settings=None,
+    ampls_resource_id=None,
+    enable_high_log_scale_mode=False,
 ):
     instance = client.get(resource_group_name, name)
     # this is overwritten by _update_addons(), so the value needs to be recorded here
@@ -74,6 +97,10 @@ def enable_addons(
         msi_auth = True
     else:
         enable_msi_auth_for_monitoring = False
+
+    is_private_cluster = False
+    if instance.api_server_access_profile and instance.api_server_access_profile.enable_private_cluster:
+        is_private_cluster = True
 
     subscription_id = get_subscription_id(cmd.cli_ctx)
     instance = update_addons(
@@ -99,13 +126,12 @@ def enable_addons(
         rotation_poll_interval=rotation_poll_interval,
         no_wait=no_wait,
         dns_zone_resource_id=dns_zone_resource_id,
-        dns_zone_resource_ids=dns_zone_resource_ids,
-        enable_syslog=enable_syslog,
-        data_collection_settings=data_collection_settings,
+        dns_zone_resource_ids=dns_zone_resource_ids
     )
 
-    if CONST_MONITORING_ADDON_NAME in instance.addon_profiles and instance.addon_profiles[
-       CONST_MONITORING_ADDON_NAME].enabled:
+    monitoring_addon_enabled = check_is_monitoring_addon_enabled(addons, instance)
+
+    if monitoring_addon_enabled:
         if CONST_MONITORING_USING_AAD_MSI_AUTH in instance.addon_profiles[CONST_MONITORING_ADDON_NAME].config and \
                 str(instance.addon_profiles[CONST_MONITORING_ADDON_NAME].config[
                     CONST_MONITORING_USING_AAD_MSI_AUTH]).lower() == 'true':
@@ -124,7 +150,10 @@ def enable_addons(
                 create_dcr=True,
                 create_dcra=True,
                 enable_syslog=enable_syslog,
-                data_collection_settings=data_collection_settings
+                data_collection_settings=data_collection_settings,
+                is_private_cluster=is_private_cluster,
+                ampls_resource_id=ampls_resource_id,
+                enable_high_log_scale_mode=enable_high_log_scale_mode
             )
         else:
             # monitoring addon will use legacy path
@@ -145,8 +174,6 @@ def enable_addons(
                 data_collection_settings=data_collection_settings
             )
 
-    monitoring_addon_enabled = CONST_MONITORING_ADDON_NAME in instance.addon_profiles and instance.addon_profiles[
-        CONST_MONITORING_ADDON_NAME].enabled
     ingress_appgw_addon_enabled = CONST_INGRESS_APPGW_ADDON_NAME in instance.addon_profiles and instance.addon_profiles[
         CONST_INGRESS_APPGW_ADDON_NAME].enabled
 
@@ -204,8 +231,6 @@ def update_addons(
     dns_zone_resource_id=None,
     dns_zone_resource_ids=None,
     no_wait=False,  # pylint: disable=unused-argument
-    enable_syslog=False,  # pylint: disable=unused-argument
-    data_collection_settings=None,  # pylint: disable=unused-argument
 ):
     # parse the comma-separated addons argument
     addon_args = addons.split(',')
@@ -228,6 +253,11 @@ def update_addons(
         resource_type=CUSTOM_MGMT_AKS_PREVIEW,
         operation_group="managed_clusters",
     )
+    ManagedClusterIngressProfileApplicationLoadBalancer = cmd.get_models(
+        "ManagedClusterIngressProfileApplicationLoadBalancer",
+        resource_type=CUSTOM_MGMT_AKS_PREVIEW,
+        operation_group="managed_clusters",
+    )
     ManagedClusterIngressProfileWebAppRouting = cmd.get_models(
         "ManagedClusterIngressProfileWebAppRouting",
         resource_type=CUSTOM_MGMT_AKS_PREVIEW,
@@ -236,6 +266,19 @@ def update_addons(
 
     # for each addons argument
     for addon_arg in addon_args:
+        if addon_arg == "applicationloadbalancer":
+            # application load balancer settings are in ingress profile, not addon profile
+            if instance.ingress_profile is None:
+                instance.ingress_profile = ManagedClusterIngressProfile()
+            if instance.ingress_profile.application_load_balancer is None:
+                instance.ingress_profile.application_load_balancer = (
+                    ManagedClusterIngressProfileApplicationLoadBalancer()
+                )
+
+            instance.ingress_profile.application_load_balancer.enabled = enable
+
+            continue
+
         if addon_arg == "web_application_routing":
             # web app routing settings are in ingress profile, not addon profile, so deal
             # with it separately
@@ -398,6 +441,7 @@ def add_ingress_appgw_addon_role_assignment(result, cmd):
     service_principal_msi_id = None
     # Check if service principal exists, if it does, assign permissions to service principal
     # Else, provide permissions to MSI
+    is_service_principal = False
     if (
             hasattr(result, 'service_principal_profile') and
             hasattr(result.service_principal_profile, 'client_id') and
@@ -418,7 +462,7 @@ def add_ingress_appgw_addon_role_assignment(result, cmd):
 
     if service_principal_msi_id is not None:
         config = result.addon_profiles[CONST_INGRESS_APPGW_ADDON_NAME].config
-        from msrestazure.tools import parse_resource_id, resource_id
+        from azure.mgmt.core.tools import parse_resource_id, resource_id
         if CONST_INGRESS_APPGW_APPLICATION_GATEWAY_ID in config:
             appgw_id = config[CONST_INGRESS_APPGW_APPLICATION_GATEWAY_ID]
             parsed_appgw_id = parse_resource_id(appgw_id)

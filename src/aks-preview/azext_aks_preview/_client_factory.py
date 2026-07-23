@@ -13,6 +13,9 @@ from knack.util import CLIError
 CUSTOM_MGMT_AKS_PREVIEW = CustomResourceType('azext_aks_preview.vendored_sdks.azure_mgmt_preview_aks',
                                              'ContainerServiceClient')
 
+CUSTOM_MGMT_AKS_PIS_PREVIEW = CustomResourceType('azext_aks_preview.vendored_sdks.azure_mgmt_preview_aks_pis',
+                                                 'ContainerServiceClient')
+
 # Note: cf_xxx, as the client_factory option value of a command group at command declaration, it should ignore
 # parameters other than cli_ctx; get_xxx_client is used as the client of other services in the command implementation,
 # and usually accepts subscription_id as a parameter to reconfigure the subscription when sending the request
@@ -21,6 +24,10 @@ CUSTOM_MGMT_AKS_PREVIEW = CustomResourceType('azext_aks_preview.vendored_sdks.az
 # container service clients
 def get_container_service_client(cli_ctx, subscription_id=None):
     return get_mgmt_service_client(cli_ctx, CUSTOM_MGMT_AKS_PREVIEW, subscription_id=subscription_id)
+
+
+def get_container_service_pis_client(cli_ctx, subscription_id=None):
+    return get_mgmt_service_client(cli_ctx, CUSTOM_MGMT_AKS_PIS_PREVIEW, subscription_id=subscription_id)
 
 
 def cf_container_services(cli_ctx, *_):
@@ -35,12 +42,28 @@ def cf_agent_pools(cli_ctx, *_):
     return get_container_service_client(cli_ctx).agent_pools
 
 
+def cf_managed_namespaces(cli_ctx, *_):
+    return get_container_service_client(cli_ctx).managed_namespaces
+
+
 def cf_machines(cli_ctx, *_):
     return get_container_service_client(cli_ctx).machines
 
 
+def cf_identity_bindings(cli_ctx, *_):
+    return get_container_service_client(cli_ctx).identity_bindings
+
+
+def cf_operations(cli_ctx, *_):
+    return get_container_service_client(cli_ctx).operation_status_result
+
+
 def cf_maintenance_configurations(cli_ctx, *_):
     return get_container_service_client(cli_ctx).maintenance_configurations
+
+
+def cf_maintenance_windows(cli_ctx, *_):
+    return get_container_service_client(cli_ctx).maintenance_windows
 
 
 def cf_nodepool_snapshots(cli_ctx, *_):
@@ -57,18 +80,6 @@ def cf_mc_snapshots(cli_ctx, *_):
 
 def get_mc_snapshots_client(cli_ctx, subscription_id=None):
     return get_container_service_client(cli_ctx, subscription_id=subscription_id).managed_cluster_snapshots
-
-
-def cf_trustedaccess_role(cli_ctx, *_):
-    return get_container_service_client(cli_ctx).trusted_access_roles
-
-
-def cf_trustedaccess_role_binding(cli_ctx, *_):
-    return get_container_service_client(cli_ctx).trusted_access_role_bindings
-
-
-def get_compute_client(cli_ctx, *_):
-    return get_mgmt_service_client(cli_ctx, ResourceType.MGMT_COMPUTE)
 
 
 def get_resource_groups_client(cli_ctx, subscription_id=None):
@@ -101,21 +112,6 @@ def get_auth_management_client(cli_ctx, scope=None, **_):
         else:
             raise CLIError(f"{scope} does not contain subscription Id.")
     return get_mgmt_service_client(cli_ctx, ResourceType.MGMT_AUTHORIZATION, subscription_id=subscription_id)
-
-
-def get_graph_rbac_management_client(cli_ctx, **_):
-    from azure.cli.core.commands.client_factory import configure_common_settings
-    from azure.cli.core._profile import Profile
-    from azure.graphrbac import GraphRbacManagementClient
-
-    profile = Profile(cli_ctx=cli_ctx)
-    cred, _, tenant_id = profile.get_login_credentials(
-        resource=cli_ctx.cloud.endpoints.active_directory_graph_resource_id)
-    client = GraphRbacManagementClient(
-        cred, tenant_id,
-        base_url=cli_ctx.cloud.endpoints.active_directory_graph_resource_id)
-    configure_common_settings(cli_ctx, client)
-    return client
 
 
 def get_resource_by_name(cli_ctx, resource_name, resource_type):
@@ -162,3 +158,19 @@ def get_providers_client_factory(cli_ctx, subscription_id=None):
 
 def get_keyvault_client(cli_ctx, subscription_id=None):
     return get_mgmt_service_client(cli_ctx, ResourceType.MGMT_KEYVAULT, subscription_id=subscription_id).vaults
+
+
+def cf_load_balancers(cli_ctx, *_):
+    return get_container_service_client(cli_ctx).load_balancers
+
+
+def cf_jwt_authenticators(cli_ctx, *_):
+    return get_container_service_client(cli_ctx).jwt_authenticators
+
+
+def cf_vm_skus(cli_ctx, *_):
+    return get_container_service_client(cli_ctx).vm_skus
+
+
+def cf_prepared_image_specifications(cli_ctx, *_, subscription_id=None):
+    return get_container_service_pis_client(cli_ctx, subscription_id=subscription_id).prepared_image_specifications
