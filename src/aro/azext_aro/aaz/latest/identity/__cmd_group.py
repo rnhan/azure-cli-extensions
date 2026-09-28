@@ -8,5 +8,13 @@
 # pylint: skip-file
 # flake8: noqa
 
-from .__cmd_group import *
-from ._acknowledge import *
+from azure.cli.core.aaz import *
+
+
+class __CMDGroup(AAZCommandGroup):
+    """Manage Managed Identity
+    """
+    pass
+
+
+__all__ = ["__CMDGroup"]
